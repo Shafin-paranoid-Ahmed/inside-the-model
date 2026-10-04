@@ -1,0 +1,143 @@
+---
+title: "Constitutional AI and RLAIF"
+summary: "Use written principles and AI feedback in place of much of the human labeling."
+day: 12
+track: alignment
+order: 6
+level: advanced
+duration: 25
+prereqs: ["alignment/rlhf"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+What if the model could critique itself against a written list of principles?
+
+<Step title="A constitution: principles written down">
+
+A constitution is a short list of principles in plain language, and it replaces many individual human judgements with rules that anyone can read and argue about.
+
+{/*
+IDEA: explicit, inspectable principles vs implicit labeler preferences. In the toy, each principle is a checkable predicate on a response (src/lib/align bank features and text): "Answer the question that was asked", "Be accurate", "Do not pad the answer with flattery", "Do not refuse a harmless request". Say once: in Bai et al. the principles are applied by a language model reading them; here a small rule checker plays that role so every judgement is visible.
+WIDGET: CritiqueRevise mode="rules". Principle list on the left; the 8 candidates for one prompt on the right, each with a mark per principle it violates.
+MOTION over t: a scan line moves down the candidates; for each, the principles light up one by one as they are checked; violation marks appear (--viz-neg).
+TRY: find the only candidates with zero violations.
+NUMBERS: violations per candidate for the shown prompt.
+*/}
+
+</Step>
+
+<Step title="Critique and revision">
+
+The model writes a response, critiques it against a randomly chosen principle, and then rewrites it to fix the problem, and this can repeat several times.
+
+{/*
+IDEA: the SL-CAI loop: sample, critique (pick a principle, check it), revise (move to the response that fixes that violation with the fewest other changes). Real CAI samples a principle per round; so does the toy (seeded).
+WIDGET: CritiqueRevise mode="revise" rounds=4 seed=3. A response card; a critique line quoting the chosen principle and what it found; an arrow to the revised response; a violations counter.
+MOTION over t: round by round, the critique text types in, the revised card slides over the old one, the violation count ticks down. Loops over 3 different starting responses.
+TRY: find a round where the sampled principle finds nothing to fix.
+NUMBERS: violations before and after 4 rounds, averaged over all sampled starts.
+*/}
+
+</Step>
+
+<Step title="Fine-tuning on the revisions">
+
+The revised responses become a new supervised dataset, so the model learns to produce the improved answers directly, without the critique step.
+
+{/*
+IDEA: SL-CAI = SFT on revisions (same mechanism as /learn/alignment/sft/, moment matching).
+WIDGET: CritiqueRevise mode="sl" steps=150. Feature-weight bars of the policy moving from SFT to SL-CAI; probability bars for one prompt; average violations of the policy's responses over training.
+MOTION over t: bars tween per step; violations curve falls.
+TRY: compare the probability of the padded answer before and after.
+NUMBERS: expected violations before and after; gold reward before and after.
+*/}
+
+</Step>
+
+<Step title="AI feedback in place of human labels">
+
+For the reinforcement learning stage, an AI model compares pairs of responses using the constitution, producing preference labels without a person in the loop. This is RLAIF.
+
+{/*
+IDEA: RLAIF labels. The judge prefers the response with fewer violations (ties broken by a noisy coin, seeded). Compare with human labels: AI labels have no length bias but inherit the constitution's gaps.
+WIDGET: PreferenceLab mode="pairs" labels="ai" pairs=200 seed=4 (same pairs and seed as the rlhf lesson's first step, only the labeler changes).
+MOTION over t: the same pairs as in /learn/alignment/rlhf/ appear; the AI's choice and the human choice shown side by side; agreement tallies count.
+TRY: find a pair where the human and the AI judge disagree, and say which principle decided it.
+NUMBERS: agreement AI vs human, AI vs gold, human vs gold.
+*/}
+
+</Step>
+
+<Step title="RLAIF end to end">
+
+Training a reward model on the AI labels and running the same PPO loop gives a policy shaped by the constitution rather than by the labelers' habits.
+
+{/*
+IDEA: same pipeline, different labels; the length exploit does not appear because the labels never rewarded length.
+WIDGET: PreferenceLab mode="ppo" labels="ai" beta=0.1 iters=200 seed=6. Same view as the rlhf ppo step, with the human-label run's gold curve as a faint comparison line.
+MOTION over t: as the rlhf ppo mode.
+TRY: compare the final gold reward with the human-label run.
+NUMBERS: final proxy, gold, KL for AI labels vs human labels (beta 0.1). PROBE FIRST; quote whichever way it comes out.
+*/}
+
+</Step>
+
+<Step title="Who writes the principles?">
+
+The behaviour now follows from the text of the constitution, so a careless principle shows up directly in the model, which is both an advantage and a responsibility.
+
+{/*
+IDEA: advantages (transparency, cheap, scalable, editable) and open questions (who decides, rule conflicts, judge errors, over-refusal). Demonstrate: turning on an overly cautious principle ("Avoid any answer that could be wrong") makes the AI judge prefer refusals and hedges, and the trained policy becomes evasive.
+WIDGET: CritiqueRevise mode="edit" toggles for each principle, including the extra cautious one (off by default). Shows the resulting RLAIF policy's probability of refusing or hedging and its gold reward (runs precomputed for each toggle combination that the UI offers; at most 2^5 = 32 tiny runs, or restrict to single toggles).
+MOTION over t: when a toggle changes, the policy bars retrain visibly from SFT over the timeline (the run for that toggle set).
+TRY: switch on the cautious principle and watch refusals rise.
+NUMBERS: refusal-or-hedge probability and gold reward with and without the cautious principle.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Common misunderstandings about constitutional AI.
+
+{/*
+NO WIDGET. Misconceptions:
+1. "Constitutional AI removes humans." People write the principles and evaluate the result; Bai et al. still used human labels for helpfulness.
+2. "The model obeys the constitution like code." Principles shape training data; behaviour is learned and imperfect.
+3. "AI labels are unbiased." They carry the judge model's and the principles' biases.
+4. "More principles are always safer." Over-cautious principles produce evasive models.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Questions on critique, revision and AI feedback.
+
+{/*
+NO WIDGET. Questions:
+1. What are the two training stages of constitutional AI?
+2. Why sample one principle per critique instead of checking all at once? (diversity; matches the paper's procedure)
+3. A response pads a correct answer with flattery. Which principle catches it, and what is the revision?
+4. Why did RLAIF in the widget not reward long answers?
+5. Give one risk of letting an AI judge label its own training data.
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers on constitutional AI and AI feedback.
+
+{/*
+NO WIDGET. References:
+- Yuntao Bai et al., "Constitutional AI: Harmlessness from AI Feedback", arXiv:2212.08073.
+- Yuntao Bai et al., "Training a Helpful and Harmless Assistant with Reinforcement Learning from Human Feedback", arXiv:2204.05862.
+- Harrison Lee et al., "RLAIF vs. RLHF: Scaling Reinforcement Learning from Human Feedback with AI Feedback", arXiv:2309.00267 (VERIFY title).
+- Anthropic, "Claude's Constitution", May 2023 (VERIFY URL and date) and the later published constitution (VERIFY, frontier: research from primary source if cited).
+- Lianmin Zheng et al., "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena", arXiv:2306.05685 (judge biases).
+Next: /learn/alignment/rlvr/
+*/}
+
+</Step>

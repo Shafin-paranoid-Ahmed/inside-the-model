@@ -1,0 +1,179 @@
+---
+title: "Normalization: BatchNorm, LayerNorm, RMSNorm"
+summary: "Normalize activations along different axes, then learn why BN, LN and RMSNorm behave differently."
+day: 6
+track: neural-networks
+order: 4
+level: core
+duration: 30
+prereqs: ["neural-networks/weight-initialization"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import NormalizationLab from '../../../components/widgets/NormalizationLab/NormalizationLab.svelte';
+
+<Step title="Keep every layer's numbers on a familiar scale">
+
+[Good initialization](/learn/neural-networks/weight-initialization/) gets a network's signals to a sensible size at the start. Then training changes the weights, and the signals drift: one layer's outputs might grow to hundreds while another's shrink toward zero. Every later layer has to keep adapting to the new scale. A **normalization layer** fixes this by rescaling activations on every forward pass, so the next layer always sees numbers around zero with a spread of about one.
+
+The recipe is the same as standardizing exam scores: take a group of numbers, subtract their mean, divide by their standard deviation. The normalization methods in this lesson differ only in **which numbers form a group**.
+
+The figure is a small matrix of activations: each row is one example, each column is one feature. Outlined cells are one group. Follow the highlighted value through the four steps underneath: find its group's mean and spread, subtract the mean, divide by the standard deviation, then apply a learned gain and shift. The output table fills in step by step.
+
+<NormalizationLab client:visible mode="standardize" title="From activations to normalized values" />
+
+<details>
+<summary>Show the math</summary>
+
+For values $x_1,\ldots,x_m$ in one group, $\mu = \frac{1}{m}\sum_i x_i$ and $v = \frac{1}{m}\sum_i (x_i-\mu)^2$. Each value becomes
+
+$$\hat x_i = \frac{x_i - \mu}{\sqrt{v+\epsilon}}.$$
+
+The small $\epsilon$ prevents division by zero when every value in a group is the same. Because it is added to the variance, the result's variance is very slightly below one.
+
+</details>
+
+</Step>
+
+<Step title="BatchNorm: each feature is a group">
+
+**Batch Normalization** (BatchNorm) normalizes each feature separately, using all the examples in the current mini-batch. In the matrix, each **column** is a group.
+
+That means an example's output depends on which other examples are in its batch. Drag **Example x2 offset** and watch the worked value for x1: x1 did not change, but its column now contains a different x2, so the column's mean changes and so does x1's result.
+
+<NormalizationLab client:visible mode="batch" title="BatchNorm: one group per feature" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+mean = x.mean(dim=0, keepdim=True)          # average over examples, per feature
+var = x.var(dim=0, unbiased=False, keepdim=True)
+z = (x - mean) / (var + eps).sqrt()
+y = gamma * z + beta
+```
+
+</details>
+
+</Step>
+
+<Step title="LayerNorm: each example is a group">
+
+**Layer Normalization** (LayerNorm) turns the grouping sideways: each example is normalized across its own features. In the matrix, each **row** is a group.
+
+Drag the same **Example x2 offset** slider. This time x1's result does not move, because x2 is not in x1's row. Each example is normalized on its own, which is why LayerNorm suits models that process one sequence at a time or use small, varying batches. The original Transformer used LayerNorm.
+
+<NormalizationLab client:visible mode="layer" title="LayerNorm: one group per example" />
+
+<details>
+<summary>Show the math</summary>
+
+For row $b$ with $d$ features, $\mu_b = \frac{1}{d}\sum_j x_{bj}$ and $v_b = \frac{1}{d}\sum_j(x_{bj}-\mu_b)^2$, then $\hat{x}_{bj}=(x_{bj}-\mu_b)/\sqrt{v_b+\epsilon}$. No value from another example appears in these sums.
+
+</details>
+
+</Step>
+
+<Step title="RMSNorm: rescale without centering">
+
+**RMSNorm** groups each row like LayerNorm, but skips the subtraction. It divides each value by the row's **root mean square** (RMS): square the values, average them, take the square root. This is cheaper and works about as well in practice, which is why many large language models, such as LLaMA, use it.
+
+Step 2 in the figure now says "Keep the value": nothing is subtracted. Open **Output means and variances** and you will see the row means are no longer zero. RMSNorm controls the size of the numbers, not where they are centered.
+
+<NormalizationLab client:visible mode="rms" title="RMSNorm: divide by the root mean square" />
+
+<details>
+<summary>Show the math</summary>
+
+$$\hat x_j = \frac{x_j}{\sqrt{\frac{1}{d}\sum_k x_k^2+\epsilon}}.$$
+
+Real implementations learn one gain per feature and usually no shift.
+
+</details>
+
+</Step>
+
+<Step title="A learned gain and shift give the freedom back">
+
+Forcing every layer to output mean zero and spread one would be too restrictive: sometimes the next layer works better with bigger or shifted values. So normalization ends with a learned **gain** $\gamma$ and **shift** $\beta$: $y=\gamma\hat{x}+\beta$. If it helps, training can even learn to undo the normalization.
+
+The gain and shift controls are open below the figure. Change gamma or beta and watch only step 4 of the calculation change.
+
+<NormalizationLab client:visible mode="affine" title="Learned gain and shift after normalization" />
+
+</Step>
+
+<Step title="BatchNorm needs saved statistics at test time">
+
+When a trained model makes a prediction, there may be no batch at all, just one example. And a prediction should not change depending on which other examples happen to arrive with it. So during training, BatchNorm keeps a running average of each feature's mean and variance. At test time it uses those saved numbers instead of the current batch.
+
+The figure shows x1's output both ways. Drag **Example x2 offset**: the training-mode result changes, because the batch changed. The test-mode result stays put, because it uses the saved statistics. LayerNorm and RMSNorm never need this, since they only look at one example.
+
+<NormalizationLab client:visible mode="inference" title="BatchNorm at training time and at test time" />
+
+<details>
+<summary>Show the math</summary>
+
+After each training batch, the running mean is updated as $\mu_{run} \leftarrow (1-m)\,\mu_{run} + m\,\mu_{batch}$, with momentum $m=0.2$ in this figure, and the same for the variance. Frameworks differ in their default momentum and in whether they use the population or sample variance.
+
+</details>
+
+</Step>
+
+<Step title="Which one to use">
+
+The choice mostly follows the architecture. BatchNorm is common in convolutional image networks, where batches are large. LayerNorm and RMSNorm work one example at a time, so they suit transformers and other sequence models: the original Transformer used LayerNorm, and LLaMA uses RMSNorm.
+
+Normalization is one of several tools that keep deep networks trainable, alongside [initialization](/learn/neural-networks/weight-initialization/), residual connections and a sensible [learning rate](/learn/neural-networks/learning-rate-schedules/). Next, [dropout and regularizers](/learn/neural-networks/dropout-regularizers/) tackle a different problem: overfitting.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** a normalized layer always outputs mean zero and variance one. **Actually** the learned gain and shift can change both, and RMSNorm does not center at all.
+- **You might think** BatchNorm and LayerNorm are the same idea with different names. **Actually** BatchNorm groups each feature across examples; LayerNorm groups each example across features.
+- **You might think** BatchNorm uses the current batch at test time. **Actually** it uses running statistics saved during training.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>For a matrix with examples in rows and features in columns, which values does BatchNorm group together?</summary>
+
+Each column: one feature, across all the examples in the batch.
+
+</details>
+
+<details>
+<summary>Why does changing x2 change BatchNorm's output for x1, but not LayerNorm's?</summary>
+
+In BatchNorm, x2 is in each of x1's column groups, so it changes their statistics. In LayerNorm, x1's group is its own row, which does not contain x2.
+
+</details>
+
+<details>
+<summary>Does RMSNorm make a row's mean zero?</summary>
+
+No. It divides by the root mean square but never subtracts the mean.
+
+</details>
+
+<details>
+<summary>Why does normalization end with a learned gain and shift?</summary>
+
+So the network can choose the scale and center that work best for the next layer, including undoing the normalization if that helps.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Ioffe and Szegedy (2015), [Batch Normalization](https://arxiv.org/abs/1502.03167).
+- Ba, Kiros and Hinton (2016), [Layer Normalization](https://arxiv.org/abs/1607.06450).
+- Zhang and Sennrich (2019), [Root Mean Square Layer Normalization](https://arxiv.org/abs/1910.07467).
+- Vaswani et al. (2017), [Attention Is All You Need](https://arxiv.org/abs/1706.03762), the original Transformer.
+- Touvron et al. (2023), [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/abs/2302.13971), which uses RMSNorm.
+
+</Step>

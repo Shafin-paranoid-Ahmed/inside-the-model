@@ -1,0 +1,224 @@
+---
+title: "The Chain Rule, Visually"
+summary: "See gradients as products of local derivatives along paths through the graph."
+day: 5
+track: neural-networks
+order: 2
+level: core
+duration: 25
+prereqs: ["neural-networks/computational-graphs","math/chain-rule"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import BackpropViz from '../../../components/widgets/BackpropViz/BackpropViz.svelte';
+import ChainRuleLinks from '../../../components/widgets/ChainRuleLinks/ChainRuleLinks.svelte';
+
+<Step title="Gears that multiply">
+
+Picture three gears in a row. Turn the first one and the second turns 2 times as fast. The second drives a third that turns only about half as fast as the second. How much faster or slower is the third than the first? You multiply: $2 \times 0.5 = 1$. Nobody needs to look at the whole machine; you read each mesh and multiply.
+
+A chain of functions is that machine. Take $u = x^2$, then $v = \sin u$, then $L = v^2$. Each function is a mesh, and its **slope** is its gear ratio: how many units of output wiggle you get per unit of input wiggle. The chain rule says the ratio of the whole chain is the product of the ratios of its links.
+
+Watch the figure. The point on each curve is the current value, and it shakes because $x$ is being wiggled by a small amount. Look at how the shaking grows or shrinks from one panel to the next. The bars at the bottom show it directly.
+
+<ChainRuleLinks client:visible x={1} title="Three links, three slopes" />
+
+The sections below take this apart. First, what a slope actually measures.
+
+</Step>
+
+<Step title="A derivative is a ratio of wiggles">
+
+Wiggle the input of a function by a tiny amount $\Delta x$ and its output moves by a tiny amount $\Delta y$. The **derivative** is the ratio $\Delta y / \Delta x$ in the limit where the wiggle is small. Geometrically it is the slope of the **tangent line**, the straight line that hugs the curve at that point. The magenta line in each panel is that tangent.
+
+A function can be a very different amplifier at different points. Look at the first panel at $x = 1$: the curve $u = x^2$ has slope $2x = 2$, so a wiggle of 0.1 in $x$ becomes a wiggle of about 0.2 in $u$. Drag $x$ toward 0 in the slider below the figure and watch the tangent flatten: at $x = 0$ the slope is 0 and the wiggle in $x$ produces almost none in $u$.
+
+The wiggle picture is the reason gradients can be computed at all. Around one point, every smooth function looks like its tangent line, a plain multiplication. So a chain of smooth functions, zoomed in close enough, looks like a chain of multiplications.
+
+<ChainRuleLinks client:visible x={1} title="Drag x and watch the tangent lines tilt" />
+
+</Step>
+
+<Step title="Two links, one product">
+
+Take just the first two links, $x \to u \to v$ with $u = x^2$ and $v = \sin u$, at $x = 1$.
+
+- The first slope is $du/dx = 2x = 2$.
+- At $u = 1$ the second slope is $dv/du = \cos u = \cos 1 = 0.540$.
+
+A wiggle $\Delta x$ becomes $\Delta u = 2\,\Delta x$, and that $\Delta u$ becomes $\Delta v = 0.540\,\Delta u = 0.540 \cdot 2\,\Delta x = 1.081\,\Delta x$. So $dv/dx = 2 \times 0.540 = 1.081$. This is the entire argument: the second link sees the first link's output wiggle as *its* input wiggle, and scales it again.
+
+One detail matters: the second slope is evaluated at the value the first link produced ($u = 1$), not at $x$. Each node's local derivative is computed at the number that arrived in the forward pass, which is why the forward values must be kept for the backward pass.
+
+Follow the timeline through the first two panels: each local slope scales the wiggle that arrived from the previous link. The third panel continues the same product into $L$.
+
+<ChainRuleLinks client:visible x={1} title="Follow the local slopes in order" />
+
+<details>
+<summary>Show the math</summary>
+
+For $v = g(u(x))$ the chain rule is
+
+$$\frac{dv}{dx} = \frac{dv}{du}\,\frac{du}{dx} = g'(u(x))\,u'(x).$$
+
+Why it works: for a small $\Delta x$, $u(x + \Delta x) \approx u(x) + u'(x)\Delta x$, and then $g(u + \Delta u) \approx g(u) + g'(u)\Delta u$. Substituting one into the other gives $\Delta v \approx g'(u)\,u'(x)\,\Delta x$. The approximation errors are of order $(\Delta x)^2$, so they disappear from the ratio as $\Delta x \to 0$.
+
+</details>
+
+</Step>
+
+<Step title="Three links, and the numbers">
+
+Add the third link, $L = v^2$, so the chain is $x \to u \to v \to L$. The slopes at $x = 1$ are
+
+$$\frac{du}{dx} = 2, \qquad \frac{dv}{du} = \cos 1 = 0.540, \qquad \frac{dL}{dv} = 2v = 2 \sin 1 = 1.683.$$
+
+Multiplying: $\dfrac{dL}{dx} = 2 \times 0.540 \times 1.683 = 1.819$.
+
+To check, the figure computes the **numerical derivative** on its own: it evaluates the whole chain at $x - h$ and $x + h$ for a tiny $h$ and divides the change in $L$ by $2h$. That needs no calculus, and it agrees with the product of slopes to more digits than are displayed. Move $x$ anywhere and the two numbers keep matching. The same comparison, a finite difference against an analytic gradient, is how automatic differentiation code is tested.
+
+Let the timeline run to its end to see the slopes multiply. The bars show the wiggle growing by a factor of 2 at $u$, shrinking to about 1.08 at $v$ (that is $2 \times 0.540$), and growing to 1.82 at $L$.
+
+<ChainRuleLinks client:visible x={1} title="The product of slopes matches the numerical derivative" />
+
+<details>
+<summary>Show the math</summary>
+
+For $L = f_3(f_2(f_1(x)))$ with $u = f_1(x)$ and $v = f_2(u)$,
+
+$$\frac{dL}{dx} = f_3'(v)\; f_2'(u)\; f_1'(x).$$
+
+Every factor is a local derivative, evaluated at the value that link received in the forward pass. Here $f_1(x) = x^2$, $f_2 = \sin$, $f_3(v) = v^2$, so
+
+$$\frac{dL}{dx} = 2\sin(x^2)\cdot\cos(x^2)\cdot 2x,$$
+
+and at $x = 1$ this is $2(0.841)(0.540)(2) = 1.819$. The numerical value is $1.8186$.
+
+</details>
+
+</Step>
+
+<Step title="A flat link silences the chain">
+
+A product is small if any factor is small. Switch the figure to the second chain, $u = 2x$, $v = \tanh u$, $L = 3v^2$, and use its slider.
+
+At $x = 0.3$ the tanh is in its steep middle: $u = 0.6$, the slope $1 - \tanh^2(0.6) = 0.712$, and the whole product is $2 \times 0.712 \times 3.22 = 4.59$. Now drag $x$ up to 1.2. Then $u = 2.4$, deep in the flat part of tanh, and its slope collapses to $1 - \tanh^2(2.4) = 0.032$. The other two links have not become smaller (they are $2$ and $6\tanh(2.4) = 5.90$), yet the product falls to $0.38$. One flat link is enough.
+
+This is the mechanism behind vanishing gradients: in a deep network there are hundreds of such links in a row, and the product can become tiny. The lesson on [vanishing and exploding gradients](/learn/neural-networks/vanishing-exploding-gradients/) makes that quantitative.
+
+<ChainRuleLinks client:visible chain="saturate" x={1.2} title="Flat link, small product" />
+
+</Step>
+
+<Step title="The same rule on a graph">
+
+Everything so far was a straight line of functions. A computational graph is the same idea; each edge is a link with its own local derivative. Go back to $L = (a \cdot b + c)^2$ with $a = 2$, $b = -3$, $c = 10$. To get $\partial L/\partial a$, follow the single path from $a$ to $L$ and multiply the local derivative on each edge:
+
+- $\partial L/\partial s = 2s = 8$ (the square node, at $s = 4$)
+- $\partial s/\partial m = 1$ (the add node)
+- $\partial m/\partial a = b = -3$ (the multiply node, the other input)
+
+$$\frac{\partial L}{\partial a} = 8 \times 1 \times (-3) = -24.$$
+
+Run the backward pass and click node $a$: the gradient wave moves from $L$ toward the inputs, and the panel writes the same product with the numbers filled in. Click $b$ or $c$ to see their paths. For $b$ the multiply node's local derivative is $a = 2$, so $\partial L/\partial b = 8 \cdot 1 \cdot 2 = 16$. For $c$ there is no multiply, so it is $8 \cdot 1 = 8$.
+
+<BackpropViz client:visible mode="expr" loopPhase="backward" select="a" title="A path from L back to a" />
+
+</Step>
+
+<Step title="Several paths: add them up">
+
+What if there are several routes from an input to the loss? Then the input influences the loss through each route, and the influences **add**. Multiply along each path, sum across paths.
+
+The 2-3-1 network from [the backprop lesson](/learn/neural-networks/backprop-mlp/) has this shape. The input $x_1$ feeds all three hidden units, and each hidden unit feeds the output. So there are three paths from $x_1$ to the loss, one through each hidden unit, and
+
+$$\frac{\partial L}{\partial x_1} = \sum_{j=1}^{3} \delta_j\, w_{j1} = (1.68)(0.5) + (-1.23)(-0.7) + (0.734)(0.3) = 1.92.$$
+
+Here $\delta_j = \partial L/\partial z_j$ is the gradient that has already arrived at hidden unit $j$'s pre-activation, which itself is the product of everything downstream (the path from the loss to that unit). The three terms are $0.84$, $0.86$ and $0.22$. Click $x_1$ in the figure and look at the panel: three product paths joined by plus signs.
+
+<BackpropViz client:visible loopPhase="backward" initialPhase="update" select="x1" title="Three paths from x₁ to the loss" />
+
+<details>
+<summary>Show the math</summary>
+
+The multivariable chain rule. If $L$ depends on $x$ through intermediate variables $z_1, \dots, z_k$, each of which depends on $x$, then
+
+$$\frac{\partial L}{\partial x} = \sum_{j=1}^{k} \frac{\partial L}{\partial z_j}\,\frac{\partial z_j}{\partial x}.$$
+
+Applied recursively, this equals the sum over all paths from $x$ to $L$ of the product of the local derivatives along the path. The number of paths can grow exponentially with depth, but the sum can be organized so that shared factors are computed once. That is the subject of the next step.
+
+</details>
+
+</Step>
+
+<Step title="Why the sweep runs backward">
+
+Take a chain with $n$ links and its product of slopes $s_1 s_2 \cdots s_n$. Multiplication can be grouped in any order, so there are two natural ways to build it up.
+
+- **From the input side:** compute $s_1$, then $s_1 s_2$, then $s_1 s_2 s_3$, and so on. Every partial product is the derivative of an intermediate value **with respect to the input**. This gives you one input's effect on everything, and you need a separate sweep for every other input.
+- **From the output side:** compute $s_n$, then $s_{n-1}s_n$, then $s_{n-2}s_{n-1}s_n$. Every partial product is the derivative of **the output** with respect to an intermediate value. One sweep gives you the loss's sensitivity to *every* node.
+
+Training has one loss and millions of parameters, so the second way is the right one: one sweep, all the gradients. That second way is backpropagation. It is the same chain rule, grouped from the output end. The lesson on [automatic differentiation](/learn/neural-networks/autodiff/) shows both directions side by side and compares their cost.
+
+Watch the backward phase: one sweep carries gradients from the loss through the graph to its inputs and parameters.
+
+<BackpropViz client:visible mode="expr" loopPhase="backward" title="One backward sweep reaches every node" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think the chain rule multiplies the functions. Actually** it multiplies their *derivatives*, each evaluated at the value that link received. The functions themselves are composed, not multiplied.
+
+**You might think each local derivative is a fixed number. Actually** it depends on the current input. The slope of $\sin u$ is $\cos u$, which is $0.54$ at $u = 1$ and negative at $u = 3$. A local derivative is computed at the forward-pass value, then used once.
+
+**You might think gradients from different paths get multiplied. Actually** they **multiply along** a path and **add across** paths. Getting these two the wrong way round is the most common slip.
+
+**You might think you must expand and differentiate the whole formula first. Actually** backprop can compute gradients from each node's local derivative and reuse intermediate results. You can simplify symbolically too, but a sequence of local calculations is the scalable procedure used in a model.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. For u = 3x and v = u², what is dv/dx at x = 2?</summary>
+
+At $x = 2$, $u = 6$. The slopes are $du/dx = 3$ and $dv/du = 2u = 12$. So $dv/dx = 3 \times 12 = 36$. Check: $v = 9x^2$, so $dv/dx = 18x = 36$.
+
+</details>
+
+<details>
+<summary>2. In (a·b + c)² with a = 2, b = −3, c = 10, what is ∂L/∂c, and why is there no factor of a or b in it?</summary>
+
+$\partial L/\partial c = 2s \cdot 1 = 8$. The path from $c$ to $L$ goes through the add node and the square node only. The add node's local derivative with respect to $c$ is 1, and it does not involve $a$ or $b$.
+
+</details>
+
+<details>
+<summary>3. f = a·b + a with a = 2, b = −3. Compute ∂f/∂a by summing paths.</summary>
+
+There are two paths from $a$ to $f$. Through the multiply node the factor is $b = -3$. Through the add node directly the factor is $1$. The paths add: $-3 + 1 = -2$.
+
+</details>
+
+<details>
+<summary>4. Why does one nearly flat link (a slope close to 0) make the whole gradient small?</summary>
+
+Because the whole gradient is a product and any factor near zero drags the product toward zero, whatever the other factors are.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Christopher Olah, [Calculus on Computational Graphs: Backpropagation](https://colah.github.io/posts/2015-08-Backprop/). The "sum over paths" and "forward versus reverse grouping" arguments, with clean diagrams.
+- Rumelhart, Hinton and Williams, "Learning representations by back-propagating errors", *Nature* 323 (1986). The chain rule applied layer by layer to multilayer networks.
+- 3Blue1Brown, [Backpropagation calculus](https://www.3blue1brown.com/lessons/backpropagation-calculus). The chain rule for a chain of single neurons, with animation.
+- Grant Sanderson's chain-rule intuition also appears in the sibling math lesson: [The Chain Rule](/learn/math/chain-rule/).
+
+Next: [the forward and backward pass](/learn/neural-networks/forward-backward-pass/) puts these pieces in order.
+
+</Step>

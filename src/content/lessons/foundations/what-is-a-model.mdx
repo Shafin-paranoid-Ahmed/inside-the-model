@@ -1,0 +1,139 @@
+---
+title: "What Is a Model?"
+summary: "A model is a function with adjustable knobs called parameters."
+day: 1
+track: foundations
+order: 1
+level: intro
+duration: 15
+prereqs: []
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ModelKnobs from '../../../components/widgets/ModelKnobs/ModelKnobs.svelte';
+
+<Step title="How much should this house cost?">
+
+Suppose you want a program that guesses the price of a house from its floor area. You give it a number, say 100 square metres, and it hands back a number: a price in thousands of dollars.
+
+That program is a **model**. It sounds grand, but a model is nothing more than a rule that turns an input into an output. In the picture below, the teal line is the rule. To predict the price of a 100 m² house, find 100 on the horizontal axis, go up to the line, and read across. The dashed lines do that for three example houses.
+
+Now look at what the timeline is doing. Something is being turned, and the whole line tilts as it turns. That something is a **knob**, and it is the most important idea in this course.
+
+<ModelKnobs client:visible knobs={1} title="One knob: turning w tilts the line" />
+
+Drag the slider yourself if you like. Every value of the knob is a different model, and each one gives different predictions for the same house.
+
+</Step>
+
+<Step title="A function with knobs">
+
+Here is the rule written out. For a house of area $x$ (in square metres), the model predicts a price $\hat y$ (in thousands of dollars):
+
+$$\hat y = w \cdot x + b$$
+
+The letters $w$ and $b$ are the knobs, and the name for them is **parameters**. The letter $w$ is the *slope*: how many extra thousand dollars each additional square metre adds. The letter $b$ is the *base price*: what a house of zero area would cost, which is where the line crosses the vertical axis. The input $x$ is *not* a knob. It changes from house to house, while the knobs stay put until someone turns them.
+
+Try a concrete setting: $w = 2$ and $b = 35$. A 100 m² house is predicted to cost $2 \times 100 + 35 = 235$ thousand dollars. A 60 m² house costs $2 \times 60 + 35 = 155$.
+
+Watch the timeline turn $w$ and then $b$. Turning $w$ tilts the line around its left end; turning $b$ slides the whole line up or down. The readout under the figure recomputes all three predictions as the knobs move.
+
+<ModelKnobs client:visible knobs={2} title="Two knobs: w tilts the line, b slides it" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def model(x, w, b):
+    return w * x + b          # a function with two knobs
+
+model(100, w=2.0, b=35)       # 235.0
+model(100, w=1.2, b=20)       # 140.0  same input, different knobs, different answer
+```
+
+</details>
+
+</Step>
+
+<Step title="Same shape, different behavior">
+
+Change the knobs and the *shape* of the rule stays the same: it is always a straight line. What changes is the behavior. One setting says a 100 m² house costs 235 thousand; another says 140 thousand. The set of all lines you can get by turning $w$ and $b$ is called the model's **family**, and choosing a model means choosing one member of that family.
+
+Real models work exactly this way, only with more knobs. A small neural network has thousands of parameters; a large language model has billions. The function is more elaborate than a line, but it is still "fixed shape, adjustable numbers".
+
+Here are eight real houses as dots. Some knob settings pass close to the dots and some miss badly. Watch the readout's "typical miss", the size of the average error in thousands. With $w = 2$ and $b = 35$ it is about 4. With the timeline sweeping away from that setting, it grows quickly, and at $w = 0.5$, $b = 0$ it is about 200: a very wrong model of the same shape.
+
+<ModelKnobs client:visible knobs={2} showData title="Which knob settings fit the eight houses?" />
+
+Press "Good fit" to jump to a setting that passes close to every dot.
+
+</Step>
+
+<Step title="Learning means choosing the knob values">
+
+The model family is fixed by whoever designs the model. **Learning** is the job of finding good values for the knobs. In this lesson you did that by eye: you moved the sliders until the line went through the dots.
+
+Two words separate the two phases:
+
+- **Training** is when the knobs are being turned, using examples where the right answer is known (here, the eight houses and their real prices).
+- **Prediction** (also called *inference*) is when the knobs are frozen and the model is given a new input, such as a house that is not in the data.
+
+The rest of Day 1 answers three questions. How do we describe examples as numbers? ([Data, features and labels](/learn/foundations/data-features-labels/).) How do we score a setting of the knobs with a single number? ([Loss functions](/learn/foundations/loss-functions/).) And how do we turn the knobs automatically instead of by eye? ([Linear regression](/learn/foundations/linear-regression/) and [gradient descent](/learn/foundations/gradient-descent/).)
+
+<details>
+<summary>Show the math</summary>
+
+A model with parameters $\theta$ is a function $f_\theta$ from inputs to outputs. Here $\theta = (w, b)$ and $f_\theta(x) = w x + b$. Training picks $\theta$ from the data; prediction evaluates $f_\theta$ at a new $x$ with $\theta$ held fixed. Everything in machine learning, from this line to a transformer, fits that description; only $f$ and the number of parameters change.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** a model stores the answers, like a lookup table. **Actually** it stores only its knob values. The eight houses are not inside the line; the line is a compact rule that gives an answer for *any* area, including ones never seen.
+- **You might think** the parameters and the inputs are the same kind of thing. **Actually** inputs come with each example and change every time; parameters belong to the model and change only during training.
+- **You might think** a bigger model must be a smarter idea. **Actually** more knobs only means a bigger family of functions. Whether a good member of the family exists, and whether we can find it, are separate questions that later lessons take on.
+- **You might think** "model" means a deep neural network. **Actually** a straight line with two knobs is a legitimate model, and the ideas you learn on it carry over unchanged.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>In $\hat y = 1.5x + 20$, what are the parameters and what is the input?</summary>
+
+The parameters are $w = 1.5$ and $b = 20$. The input is $x$.
+
+</details>
+
+<details>
+<summary>What does the model predict for $x = 80$ with $w = 1.5$, $b = 20$?</summary>
+
+$1.5 \times 80 + 20 = 140$.
+
+</details>
+
+<details>
+<summary>You turn $b$ up by 10 and leave $w$ alone. What happens to every prediction?</summary>
+
+Every prediction rises by exactly 10, so the whole line slides up without changing its tilt.
+
+</details>
+
+<details>
+<summary>Is a model being trained or used for prediction when its parameters are frozen and it is fed a new house?</summary>
+
+Prediction. Training is the phase in which the parameters are being changed.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Goodfellow, Bengio and Courville, [*Deep Learning*](https://www.deeplearningbook.org/), chapter 5 (machine learning basics): the standard textbook framing of models, parameters and learning.
+- 3Blue1Brown, [*But what is a neural network?*](https://www.youtube.com/watch?v=aircAruvnKk): the same idea with many more knobs.
+- Google's [Machine Learning Crash Course](https://developers.google.com/machine-learning/crash-course): a gentle, practical introduction to models and parameters.
+
+</Step>

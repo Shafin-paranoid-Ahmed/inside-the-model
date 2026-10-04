@@ -1,0 +1,264 @@
+---
+title: "Dropout and Other Regularizers"
+summary: "Use random subnetworks, weight penalties, early stopping, and label-preserving transformations to reduce overfitting."
+day: 6
+track: neural-networks
+order: 5
+level: core
+duration: 20
+prereqs: ["foundations/regularization", "neural-networks/mlp"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import DropoutLab from '../../../components/widgets/DropoutLab/DropoutLab.svelte';
+
+<details>
+<summary>Refresher</summary>
+
+An MLP passes its input through layers of weights and activations. Training adjusts the weights to lower a loss on the training examples.
+
+First: [regularization](/learn/foundations/regularization/) and [multi-layer perceptrons](/learn/neural-networks/mlp/).
+
+</details>
+
+A network with enough weights can memorise its training examples, noise included, and then do badly on examples it has not seen. That is **overfitting**. A **regularizer** is anything that pushes training away from memorising. This lesson covers four that you will find in almost every modern training script: dropout, weight decay, early stopping and data augmentation.
+
+<Step title="Dropout: switch off random units while training">
+
+**Dropout** is a strange-sounding idea that works. On every training example, each hidden unit is randomly switched off, with some fixed probability. A switched-off unit passes on zero, so for that example the network is thinner than usual. The next example gets a fresh random choice. The list of which units are on and which are off is called a **mask**, and the chance that a unit stays on is the **keep probability**.
+
+Why would this help? A unit can no longer count on any particular neighbour being there, so it has to be useful on its own. The network cannot build fragile features that only work when five specific units fire together.
+
+The figure is a tiny network: two inputs, four hidden units, one output. The output is just each unit's activation times its weight, added up. With keep probability 0.50, the first training example keeps h1 and h3 (mask 1010) and drops h2 and h4. Only two contributions reach the output, which comes out at 1.023. The full network, with every unit on, gives 0.413. Watch the next examples: each one draws a new mask and the output jumps around. At **Inference**, when the trained network is used for real, dropout is switched off and all four units come back.
+
+<DropoutLab client:visible mode="mask" title="Dropout on one training example" />
+
+<details>
+<summary>Show the math</summary>
+
+With keep probability $q$, each hidden unit gets its own coin flip $m_j\sim\operatorname{Bernoulli}(q)$: $m_j=1$ with probability $q$, otherwise $0$. The unit passes on $\tilde h_j=m_jh_j/q$ (the $1/q$ is explained in the next step), and the output is $\hat y=\sum_jv_j\tilde h_j$.
+
+Each coin is flipped independently, so keep probability 0.5 does not mean exactly two of the four units are kept every time. It can be all four, or none.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import torch
+
+q = 0.5                                     # keep probability
+mask = torch.bernoulli(torch.full_like(hidden, q))
+output = readout(hidden * mask / q)        # training
+output = readout(hidden)                   # inference: no mask, no scaling
+```
+
+PyTorch's `nn.Dropout(p)` takes the drop probability $p=1-q$ instead.
+
+</details>
+
+</Step>
+
+<Step title="Why kept units are scaled up">
+
+Switching units off has a side effect. If each unit is on only half the time, then on average the output during training is half of what it will be at inference. The layers after it would be trained on signals that are too small.
+
+The fix is to make kept units louder. Divide every kept activation by the keep probability. A unit kept half the time is doubled when it is kept, so its average stays where it was. This is called **inverted dropout**, and it is what every major framework does.
+
+The figure computes the output for all 16 ways to keep or drop four units. The grey dots simply zero the dropped units. Their average is 0.207, half the full network's 0.413. The teal dots also divide the kept units by 0.5. Their average is 0.413, exactly the full network. Lower the keep probability and the grey average sinks further, while the teal average stays put.
+
+<DropoutLab client:visible mode="scaling" title="Scaling kept units keeps the average" />
+
+<details>
+<summary>Show the math</summary>
+
+For one unit, $\mathbb E[m_jh_j/q]=q\cdot h_j/q+(1-q)\cdot0=h_j$. The output is a weighted sum of units, and the average of a sum is the sum of the averages, so
+
+$$\mathbb E\Big[\sum_jv_jm_jh_j/q\Big]=\sum_jv_jh_j.$$
+
+Without the $1/q$ the average is $q\sum_jv_jh_j$: $0.5\times0.413=0.207$ in the figure.
+
+</details>
+
+</Step>
+
+<Step title="Dropout trains many subnetworks at once">
+
+Each mask picks out a smaller network that shares its weights with all the others. With four hidden units there are $2^4=16$ of them. Training with dropout trains a different one of these subnetworks on each example. Then, at inference, the full network acts like an average of them all. Averaging many models (an **ensemble**) usually beats any one of them, and dropout gets something like that for the price of one network.
+
+The figure shows the 16 subnetworks' outputs. A bigger dot is a mask that gets picked more often. Weight each output by how often its mask is picked, add them up, and you get 0.413: the full network's output, exactly. That exact match needs a straight weighted sum at the end. Put a sigmoid on the output and the two drift apart slightly: the average of the 16 sigmoid outputs is 0.598, while the full network gives 0.602. In a real network, with nonlinear layers everywhere, the full network is a close approximation to the average, not an exact one.
+
+<DropoutLab client:visible mode="ensemble" title="Sixteen subnetworks and their average" />
+
+<details>
+<summary>Show the math</summary>
+
+Mask $m$ is picked with probability $q^{k}(1-q)^{4-k}$, where $k$ is how many units it keeps. These 16 probabilities add up to 1. The weighted mean of the outputs equals the full network because of the identity in the previous step.
+
+For a curved function $g$ such as the sigmoid, the average of $g$ is generally not $g$ of the average: $\mathbb E[g(Z)]\ne g(\mathbb E[Z])$. That is why the two sigmoid numbers differ.
+
+</details>
+
+</Step>
+
+<Step title="Weight decay: shrink the weights a little every step">
+
+Overfitted networks often have some very large weights, which let them bend sharply to fit individual examples. **Weight decay** pulls every weight a little toward zero on every update, so a weight only stays large if the data keeps pushing for it. The pull is set by a number $\lambda$ (lambda).
+
+There are two ways to build that pull. **L2 regularization** adds a penalty $\frac{\lambda}{2}\theta^2$ to the loss, which adds $\lambda\theta$ to the gradient. **Decoupled weight decay** leaves the gradient alone and shrinks the weight in a separate step. For plain SGD the two are the same thing. For Adam they are not, and that difference is the whole reason **AdamW** exists.
+
+The figure takes one weight, starting at 1.00, with a data gradient of 0.40, learning rate 0.10 and $\lambda=0.20$, and makes one update four ways. Plain SGD moves it to 0.960. SGD with L2 adds $0.2\times1.00$ to the gradient and moves it further, to 0.940. Now Adam. Adam divides the gradient by its own recent size, so its first step is always 0.10 long, whatever the gradient was. The L2 term is folded into that gradient and gets divided away: Adam with L2 lands on 0.900, the same as Adam with no decay at all. AdamW takes the Adam step and then shrinks the weight separately, by $0.1\times0.2\times1.00=0.02$, landing on 0.880.
+
+<DropoutLab client:visible mode="decay" title="One update with SGD, L2 and AdamW" />
+
+<details>
+<summary>Show the math</summary>
+
+With L2 the gradient becomes $g+\lambda\theta$, and SGD gives
+
+$$\theta-\eta(g+\lambda\theta)=(1-\eta\lambda)\theta-\eta g,$$
+
+which is "shrink by $\eta\lambda$, then take the data step": decoupled decay. For Adam, coupled L2 sends $g+\lambda\theta$ through the adaptive scaling $\hat m/(\sqrt{\hat v}+\epsilon)$. On the first step that ratio is $\pm1$, so the decay term has no effect. AdamW instead computes
+
+$$\theta\leftarrow\theta-\eta\frac{\hat m}{\sqrt{\hat v}+\epsilon}-\eta\lambda\theta.$$
+
+After many steps the coupled version does decay weights, but weights with large gradients are decayed less, which is usually not what you want.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import torch
+
+# L2 through the optimizer's weight_decay argument (coupled for Adam)
+opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=0.01)
+# Decoupled weight decay
+opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
+```
+
+</details>
+
+</Step>
+
+<Step title="Early stopping: keep the best checkpoint">
+
+Train long enough and the loss on the training examples keeps going down, even after the model has stopped getting better at anything else. To see when that happens, hold back some examples the model never trains on, the **validation set**, and measure the loss on them after every **epoch** (one pass through the training data).
+
+**Early stopping** saves a copy of the weights, a **checkpoint**, whenever validation loss reaches a new low. When it fails to improve for a few epochs in a row (the **patience**), training stops and the best checkpoint is restored.
+
+The figure shows a small one-weight model, so you can see every epoch, with patience 3. Validation loss is lowest at epoch 4: 0.045. After that, training loss keeps falling, from 1.510 at epoch 4 to 0.396 at epoch 7, while validation loss climbs back up to 0.490. Epochs 5, 6 and 7 bring no new best, so training stops at epoch 7 and the weights from epoch 4 are the ones you keep. The loss axis is logarithmic, so each gridline is ten times the one below.
+
+<DropoutLab client:visible mode="early-stop" title="Keep the checkpoint with the best validation loss" />
+
+The validation set has now helped pick the model, so its loss is a little optimistic. Report final accuracy on a separate **test set** that played no part in any choice.
+
+<details>
+<summary>Show the math</summary>
+
+The weight starts at $\theta=-1$ and takes gradient steps on the training loss $(\theta-2)^2$ with learning rate 0.1:
+
+$$\theta\leftarrow\theta-0.1\cdot2(\theta-2).$$
+
+The validation loss is $(\theta-0.7)^2+0.04$. Its best point is near $\theta=0.7$, which training passes at epoch 4 ($\theta=0.771$) on its way to $2$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+best, patience, waited = float("inf"), 3, 0
+for epoch in range(max_epochs):
+    train_one_epoch(model)
+    loss = validation_loss(model)
+    if loss < best:
+        best, waited = loss, 0
+        torch.save(model.state_dict(), "best.pt")
+    else:
+        waited += 1
+        if waited == patience:
+            break
+model.load_state_dict(torch.load("best.pt", weights_only=True))
+```
+
+</details>
+
+</Step>
+
+<Step title="Data augmentation: new examples, if the label still fits">
+
+More training data is the most reliable cure for overfitting. **Data augmentation** makes more from what you have: flip, crop, rotate or recolour each training image a little, and you get a new example for free. A photo of a cat flipped left to right is still a photo of a cat.
+
+The catch: the label has to stay true after the change. The figure has a 2×2 image with one bright pixel, top left. If the label rule is "is any pixel bright?", flipping it is safe: the flipped image still has a bright pixel. Switch the rule to **Left or right**. The bright pixel moves to the right, so the correct label changes to "bright pixel on right". Copying the old label, "on left", would teach the model the opposite of the truth. The same thing happens with real tasks: flipping a photo of a "6" or of a road sign with an arrow can change what it means.
+
+<DropoutLab client:visible mode="augment" title="Flip an image, then check the label" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think dropout removes the same number of units every time. Actually** each unit is switched off by its own coin flip. With keep probability 0.5 a mask can keep all four units, or none.
+
+**You might think dropout should stay on at inference. Actually** it is switched off, and the full network is used. Inverted dropout's scaling during training is what makes the full network's outputs the right size.
+
+**You might think L2 and weight decay are two names for one thing. Actually** they match only for plain SGD. With Adam, L2 is divided away along with the gradient, which is why AdamW applies decay separately.
+
+**You might think the best validation loss tells you how good the model is. Actually** you used it to choose the checkpoint, so it is slightly optimistic. Use a separate test set for the final number.
+
+**You might think any image transformation gives a valid extra example. Actually** it does only if the label is still true afterwards. A flip changes the answer to "left or right?".
+
+These tools work on different things, so they combine well: dropout changes the network during training, weight decay changes the update, early stopping changes when you stop, and augmentation changes the data.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. A layer has six hidden units and uses dropout. How many different masks are possible?</summary>
+
+Each unit is either kept or dropped, so there are $2^6=64$ masks, including all-off and all-on.
+
+</details>
+
+<details>
+<summary>2. With keep probability 0.8, what does inverted dropout do to a kept activation of 0.4?</summary>
+
+It divides it by 0.8, passing on 0.5. On average the unit gives $0.8\times0.5+0.2\times0=0.4$, the same as without dropout.
+
+</details>
+
+<details>
+<summary>3. Why does adding L2 to the loss barely affect Adam, while AdamW does decay the weights?</summary>
+
+Adam divides the whole gradient, including the L2 term $\lambda\theta$, by its recent size, so the extra term is largely normalized away. AdamW subtracts $\eta\lambda\theta$ after the Adam step, where nothing rescales it.
+
+</details>
+
+<details>
+<summary>4. Validation loss is lowest at epoch 12, and patience is 5. At which epoch does training stop, and which weights do you keep?</summary>
+
+If epochs 13 to 17 bring no new best, training stops at epoch 17, and you restore the checkpoint saved at epoch 12.
+
+</details>
+
+<details>
+<summary>5. You are training a model to read handwritten digits. Is a horizontal flip a good augmentation?</summary>
+
+No. A flipped "2" or "7" is no longer a correct example of that digit. A small shift or a slight rotation keeps the label true.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Nitish Srivastava, Geoffrey Hinton, Alex Krizhevsky, Ilya Sutskever and Ruslan Salakhutdinov, [“Dropout: A Simple Way to Prevent Neural Networks from Overfitting”](https://jmlr.org/papers/v15/srivastava14a.html), *Journal of Machine Learning Research* 15(56), 1929–1958 (2014).
+- Ilya Loshchilov and Frank Hutter, [“Decoupled Weight Decay Regularization”](https://arxiv.org/abs/1711.05101), ICLR 2019 (arXiv:1711.05101).
+- [Dive into Deep Learning: Dropout](https://d2l.ai/chapter_multilayer-perceptrons/dropout.html) and [Weight Decay](https://d2l.ai/chapter_linear-regression/weight-decay.html), for implementation-oriented walkthroughs.
+
+Next: [loss landscapes](/learn/neural-networks/loss-landscapes/) shows the surface all these methods are moving across.
+
+</Step>

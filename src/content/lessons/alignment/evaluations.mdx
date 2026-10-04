@@ -1,0 +1,150 @@
+---
+title: "Evaluations and Benchmarks (and Their Pitfalls)"
+summary: "How models are measured, and how measurements mislead."
+day: 12
+track: alignment
+order: 8
+level: core
+duration: 25
+prereqs: ["alignment/sft"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+A leaderboard number is only as trustworthy as the test behind it.
+
+<Step title="A benchmark is a sample of questions">
+
+A static benchmark is a fixed set of questions with known answers, and a model's score is the share it gets right, which is an estimate with its own uncertainty, not an exact property of the model.
+
+{/*
+IDEA: benchmark score as a sample estimate of skill. Simulator (EvalLab/sim.ts): 6 fictional models with a true skill each, items with difficulties, P(correct) = sigmoid(skill - difficulty) (item response theory), seeded. Name models neutrally (Model A to F), never real products.
+WIDGET: EvalLab mode="benchmark" models=6 items=200 seed=1. Left: a grid of 200 item cells per model filling with right/wrong marks. Right: score bars with 95% binomial intervals and a tick at each model's true expected score.
+MOTION over t: items get answered in order; scores and intervals shrink as items accumulate.
+TRY: find two models whose intervals still overlap at 200 items.
+NUMBERS: each score with its interval; which pairs overlap.
+SHOW THE MATH: standard error sqrt(p(1-p)/n).
+*/}
+
+</Step>
+
+<Step title="Human preference arenas">
+
+An arena asks people to compare two anonymous models' answers to the same prompt and turns the votes into ratings, which measures what users prefer rather than what is correct.
+
+{/*
+IDEA: pairwise votes, Bradley-Terry / Elo ratings with confidence intervals (link /learn/alignment/rlhf/). Votes have style bias (the length bias again).
+WIDGET: EvalLab mode="arena" models=6 votes=3000 seed=2. Vote particles stream between model pairs (Canvas if many); rating points with bootstrap or Fisher-information intervals converge; a toggle "voters favour longer answers" shifts the ratings of a verbose model.
+MOTION over t: votes accumulate; ratings move and intervals shrink.
+TRY: switch on the length preference and see which model climbs without getting more accurate.
+NUMBERS: ratings and intervals at 3000 votes; rank change of the verbose model with the toggle.
+*/}
+
+</Step>
+
+<Step title="Contamination">
+
+If benchmark questions leak into the training data, a model can score well by remembering answers, and the score stops measuring the skill it was meant to.
+
+{/*
+IDEA: contamination; detection by comparing with a fresh, equally hard set (GSM1k-style).
+WIDGET: EvalLab mode="contamination" leak slider 0 to 50% (default 20%) items=400 seed=3. A contaminated model answers leaked items correctly with high probability; panel: public-set score vs fresh-set score, gap highlighted.
+MOTION over t: the leak fraction sweeps 0 to 50% along the timeline (slider follows); leaked items light up in the grid; the gap grows.
+TRY: set the leak to 20% and read the gap.
+NUMBERS: public and fresh scores and the gap at 0% and 20% leak.
+*/}
+
+</Step>
+
+<Step title="Goodhart's law: overfitting to the benchmark">
+
+When a score becomes the target, choices made to raise it, such as picking the best of many tries on the same public test, inflate it without improving the model.
+
+{/*
+IDEA: Goodhart; adaptive overfitting of a public leaderboard by selecting the best of many submissions evaluated on the same test set; a held-out private set reveals it.
+WIDGET: EvalLab mode="goodhart" submissions=50 items=200 seed=4. Fifty variants with the same true skill, each scored on the public set; the running best public score climbs; the selected variant's private-set score stays flat.
+MOTION over t: submissions arrive one by one; the best-so-far line steps up; its private score dot stays near the true skill.
+TRY: read the best public score after 50 submissions against the private score.
+NUMBERS: true skill, best public score, its private score.
+*/}
+
+</Step>
+
+<Step title="Saturation">
+
+As models improve, scores pile up near the top of a benchmark, and the remaining differences become too small to separate from noise.
+
+{/*
+IDEA: saturation; discrimination collapses near 100%; label errors set a ceiling.
+WIDGET: EvalLab mode="saturation" generations=8 items=200 labelErrors=0.03 seed=5. Model skill rises over 8 generations; benchmark score approaches its ceiling (1 minus label errors); a harder benchmark beside it keeps separating them.
+MOTION over t: generations advance; scores climb; the gap between consecutive generations shrinks on the easy benchmark and stays visible on the hard one.
+TRY: find the generation after which the easy benchmark can no longer tell neighbours apart (overlapping intervals).
+NUMBERS: that generation; the ceiling score.
+*/}
+
+</Step>
+
+<Step title="Measuring more reliably">
+
+Error bars, held-out or freshly written test sets, and several different metrics turn a single number into evidence you can trust.
+
+{/*
+IDEA: good practice: report intervals; enough items; paired comparisons on the same items (lower variance); held-out tasks; multiple metrics.
+WIDGET: EvalLab mode="errorbars" items slider 25 to 2000 (log scale) models=2 skillGap small seed=6. Shows how often a 2-model comparison picks the wrong winner at each n, unpaired vs paired, over 500 simulated benchmark draws.
+MOTION over t: n sweeps along the timeline; the wrong-winner rate curve draws for both methods.
+TRY: find how many items you need for fewer than 5% wrong winners, paired vs unpaired.
+NUMBERS: those two item counts.
+SHOW THE MATH: paired difference standard error (Miller 2024).
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Common misreadings of benchmark results.
+
+{/*
+NO WIDGET. Misconceptions:
+1. "A higher score always means a better model." Not if the gap is inside the error bars or the test is contaminated.
+2. "Arena ratings measure correctness." They measure preference, including style.
+3. "A model that aces a benchmark has the skill it names." It may have memorised it.
+4. "More benchmarks fix everything." Shared contamination and Goodhart pressure apply to all of them.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Questions on evaluation.
+
+{/*
+NO WIDGET. Questions:
+1. A model scores 80% on 100 items. Roughly what is the 95% interval?
+2. How would you test whether a benchmark leaked into training?
+3. Why does picking the best of 50 runs on the test set inflate the score?
+4. Why do paired comparisons need fewer items?
+5. What does a saturated benchmark still tell you?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources on evaluating language models.
+
+{/*
+NO WIDGET. References:
+- Dan Hendrycks et al., "Measuring Massive Multitask Language Understanding", arXiv:2009.03300 (MMLU).
+- Percy Liang et al., "Holistic Evaluation of Language Models", arXiv:2211.09110 (HELM).
+- Wei-Lin Chiang et al., "Chatbot Arena: An Open Platform for Evaluating LLMs by Human Preference", arXiv:2403.04132.
+- Hugh Zhang et al., "A Careful Examination of Large Language Model Performance on Grade School Arithmetic", arXiv:2405.00332 (GSM1k, contamination).
+- Benjamin Recht et al., "Do ImageNet Classifiers Generalize to ImageNet?", arXiv:1902.10811.
+- Evan Miller, "Adding Error Bars to Evals: A Statistical Approach to Language Model Evaluations", arXiv:2411.00640.
+- Douwe Kiela et al., "Dynabench: Rethinking Benchmarking in NLP", arXiv:2104.14337.
+- Shivalika Singh et al., "The Leaderboard Illusion", arXiv:2504.20879 (VERIFY).
+- Cynthia Dwork et al., "The reusable holdout: Preserving validity in adaptive data analysis", Science 2015 (VERIFY).
+- Charles Goodhart 1975 and Marilyn Strathern 1997 for the common phrasing of Goodhart's law (VERIFY wording).
+Next: Day 13, /learn/graphs-generative/gnn/
+*/}
+
+</Step>

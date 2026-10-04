@@ -1,0 +1,230 @@
+---
+title: "LSTMs and GRUs: Gates as Valves"
+summary: "Gated cells control what to forget, write and read, giving gradients a stable path."
+day: 8
+track: sequences
+order: 6
+level: advanced
+duration: 40
+prereqs: ["sequences/vanishing-gradients-time"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+
+<Step title="A second state that is not squashed">
+
+The [last lesson](/learn/sequences/vanishing-gradients-time/) ended with a problem. In a plain RNN, the hidden state is rebuilt at every step: it is multiplied by $W_{hh}$ and pushed through a $\tanh$. Going backward, the gradient pays both prices at every step. Over ten steps the cost compounds until almost nothing is left.
+
+The **long short-term memory** cell (LSTM; Hochreiter and Schmidhuber, 1997) adds a second state, the **cell state** $\mathbf c_t$. Think of it as a conveyor belt running along the top of the chain. Nothing on the belt is multiplied by a weight matrix or squashed by a $\tanh$ as it moves from one step to the next. At each step the cell can only do two things to it: scale each entry down a little (forget), and add something new (write). A third operation reads a filtered view of the belt out into the usual hidden state $\mathbf h_t$.
+
+Watch the cell unroll, and then follow the belt: the four-cell strip marked **c** at each step is the cell state, and the strip marked **h** is what the cell shows to the rest of the network.
+
+<RNNUnroller client:visible cell="lstm" sequence="ab1 c2" showPanel={false} title="An LSTM cell: the cell state runs along the top like a conveyor" />
+
+</Step>
+
+<Step title="Gates are valves that open between 0 and 1">
+
+What decides how much to forget, write or read? Three **gates**. Each gate is a small layer with a sigmoid activation, so every entry lies between 0 (closed) and 1 (open). It reads the current input $\mathbf x_t$ and the previous hidden state $\mathbf h_{t-1}$, and is multiplied entry by entry into a stream, like a valve on a pipe:
+
+- the **forget gate** $\mathbf f_t$ scales the old cell state on the belt,
+- the **input gate** $\mathbf i_t$ scales the new content $\mathbf g_t$ before it is written (the **candidate**, a $\tanh$ layer proposing values between $-1$ and $1$),
+- the **output gate** $\mathbf o_t$ scales what is read out into $\mathbf h_t$.
+
+$$\mathbf c_t = \mathbf f_t \odot \mathbf c_{t-1} + \mathbf i_t \odot \mathbf g_t, \qquad \mathbf h_t = \mathbf o_t \odot \tanh(\mathbf c_t).$$
+
+In the figure each valve is drawn as a plate across a pipe. The darker the plate, the more of the pipe it blocks; the number beside it is the gate's average over the four units. The panel on the right is pinned to step 3, the digit "1". There the input gate is open (between $0.72$ and $0.90$) and so is the output gate ($0.75$ to $0.83$). On the letters "a" and "b", both stay below $0.27$. Click step 4, the space: now the forget gate drops to about $0.2$, and the belt is mostly wiped.
+
+The gate weights in this figure were set by hand so that digits open the input and output gates and a space closes the forget gate, which makes the valves easy to see. A trained LSTM learns its own wiring from data.
+
+<RNNUnroller client:visible cell="lstm" sequence="ab1 c2" folded={false} select={3} title="Step 3 pinned: a digit opens the input and output gates" />
+
+<details>
+<summary>Show the math</summary>
+
+With $\sigma$ the logistic sigmoid and one set of weights per gate,
+
+$$
+\begin{aligned}
+\mathbf f_t &= \sigma(W_{xf}\mathbf x_t + W_{hf}\mathbf h_{t-1} + \mathbf b_f), &
+\mathbf i_t &= \sigma(W_{xi}\mathbf x_t + W_{hi}\mathbf h_{t-1} + \mathbf b_i),\\
+\mathbf o_t &= \sigma(W_{xo}\mathbf x_t + W_{ho}\mathbf h_{t-1} + \mathbf b_o), &
+\mathbf g_t &= \tanh(W_{xg}\mathbf x_t + W_{hg}\mathbf h_{t-1} + \mathbf b_g),
+\end{aligned}
+$$
+
+then $\mathbf c_t = \mathbf f_t \odot \mathbf c_{t-1} + \mathbf i_t \odot \mathbf g_t$ and $\mathbf h_t = \mathbf o_t \odot \tanh(\mathbf c_t)$, where $\odot$ is entry-by-entry multiplication. Four weight sets instead of the plain RNN's one, so an LSTM with the same hidden size has four times the parameters.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+One LSTM step in NumPy, with the four gates stacked into one matrix multiply as libraries do:
+
+```python
+import numpy as np
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+def lstm_step(x, h_prev, c_prev, W, U, b):     # W: (4H, D), U: (4H, H), b: (4H,)
+    z = W @ x + U @ h_prev + b
+    f, i, o, g = np.split(z, 4)
+    f, i, o, g = sigmoid(f), sigmoid(i), sigmoid(o), np.tanh(g)
+    c = f * c_prev + i * g                     # forget some, write some
+    h = o * np.tanh(c)                         # read a filtered view
+    return h, c
+```
+
+In PyTorch the same cell is `torch.nn.LSTM(input_size=D, hidden_size=H)`.
+
+</details>
+
+</Step>
+
+<Step title="Watch the gates on a longer sequence">
+
+Because the gates are computed fresh at every step, the cell can behave differently on different inputs. It can keep the belt untouched for a while, then write, then clear it. That is the "decide what to remember" part of the idea.
+
+Here the sequence is "ab12 cd34". Watch the input valve open on each pair of digits, so new values are written onto the belt and its colours shift. Then at the space the forget valve closes, and the strip that comes out of step 5 is much paler: most of what was stored has been let go. Type your own sequence into the box: digits write, spaces reset, and letters mostly carry the belt along.
+
+<RNNUnroller client:visible cell="lstm" sequence="ab12 cd34" folded={false} maxLen={10} showPanel={false} title="Digits write, the space clears the belt" />
+
+</Step>
+
+<Step title="Why the gradient survives: the update is additive">
+
+Now the reason LSTMs fixed the training problem. Look at the belt update again: $\mathbf c_t = \mathbf f_t \odot \mathbf c_{t-1} + \mathbf i_t \odot \mathbf g_t$. To go from $\mathbf c_t$ back to $\mathbf c_{t-1}$, the chain rule only has to pass through one multiplication, by $\mathbf f_t$. No weight matrix, no $\tanh$ slope. Over many steps the gradient along the belt is multiplied by the forget gates and nothing else:
+
+$$\frac{\partial \mathbf c_T}{\partial \mathbf c_t} \;\approx\; \operatorname{diag}\Bigl(\prod_{k=t+1}^{T} \mathbf f_k\Bigr).$$
+
+Compare this with the plain RNN, whose factor per step depended on the singular values of $W_{hh}$ and on the $\tanh$ slopes. The figure runs an LSTM backward over "abcdefghijkl" with the same recurrent-weight slider as in the last lesson. On letters the forget gate here is about $0.81$, and the gradient shrinks by $\times 0.81$ per step. Now drag the slider from $0.5$ to $2$: the LSTM's factor barely moves, from $0.81$ to $0.82$. The plain RNN on the same twelve letters swings from $0.42$ to $0.98$ over the same range. The belt's gradient is set by the gates, not by $W_{hh}$.
+
+<RNNUnroller client:visible cell="lstm" mode="bptt" sequence="abcdefghijkl" folded={false} maxLen={12} loopPhase="backward" showScale showPanel={false} title="The gradient along the cell state ignores the recurrent weight scale" />
+
+<details>
+<summary>Show the math</summary>
+
+The full Jacobian has two parts. The direct path along the belt gives $\operatorname{diag}(\mathbf f_t)$. The gates and the candidate at step $t$ also depend on $\mathbf h_{t-1} = \mathbf o_{t-1}\odot\tanh(\mathbf c_{t-1})$, which adds indirect terms that do go through the recurrent matrices:
+
+$$\frac{\partial \mathbf c_t}{\partial \mathbf c_{t-1}} = \operatorname{diag}(\mathbf f_t) + \Bigl(\operatorname{diag}(\mathbf c_{t-1})\frac{\partial \mathbf f_t}{\partial \mathbf h_{t-1}} + \operatorname{diag}(\mathbf g_t)\frac{\partial \mathbf i_t}{\partial \mathbf h_{t-1}} + \operatorname{diag}(\mathbf i_t)\frac{\partial \mathbf g_t}{\partial \mathbf h_{t-1}}\Bigr)\frac{\partial \mathbf h_{t-1}}{\partial \mathbf c_{t-1}}.$$
+
+The indirect terms are what makes the LSTM's factor move slightly with $s$ (0.81 to 0.82). The diagonal term is the one that does not decay unless the network chooses $\mathbf f_t \lt 1$. The original LSTM had no forget gate at all, which amounts to $\mathbf f_t = 1$: Hochreiter and Schmidhuber called this path the **constant error carousel**.
+
+</details>
+
+</Step>
+
+<Step title="A forget gate near 1 is a gradient highway">
+
+If the gradient along the belt is a product of forget gates, the network controls its own memory span. A forget gate near 1 keeps both the stored values and the gradient almost intact over many steps. A gate near 0 resets the belt and also cuts the gradient: there is nothing to learn from the past if the past was erased.
+
+The slider sets the forget gate's bias, which decides how open it is on ordinary letters. Start at bias 1.5, where the gate is about $0.82$ on letters. On "hello world" the gradient reaching the first "h" is $3.3\%$ of the size at the last step, and the bars show a sharp drop at the space, where the forget gate closes to $0.23$. Now drag the bias to 4: the gate is about $0.98$ on letters, the drop at the space is mild, and the first step gets $61\%$.
+
+This is why practitioners initialise the forget-gate bias to 1 or more (Gers, Schmidhuber and Cummins, 2000; Jozefowicz, Zaremba and Sutskever, 2015): training starts with the highway open, and the network learns where to close it.
+
+<RNNUnroller client:visible cell="lstm" mode="bptt" sequence="hello world" folded={false} maxLen={12} loopPhase="backward" showForget showPanel={false} title="The forget-gate bias sets how far back the gradient reaches" />
+
+</Step>
+
+<Step title="The GRU: two gates, the same idea">
+
+The **gated recurrent unit** (GRU; Cho et al., 2014) gets the same effect with less machinery. It has no separate cell state. Instead it mixes the old hidden state with a new candidate $\mathbf n_t$, using a single **update gate** $\mathbf z_t$:
+
+$$\mathbf h_t = (1 - \mathbf z_t)\odot \mathbf h_{t-1} + \mathbf z_t \odot \mathbf n_t.$$
+
+One valve now does two jobs. When $\mathbf z_t$ is near 0 the old state passes through unchanged (keep); when it is near 1 the candidate replaces it (write). A second **reset gate** $\mathbf r_t$ decides how much of the old state the candidate may look at. With three weight sets instead of four, a GRU has about three quarters of an LSTM's parameters, and in comparisons on music and speech modelling the two performed similarly (Chung et al., 2014).
+
+The highway is the $(1-\mathbf z_t)$ path, and it works like the LSTM's belt. Here the update gate is about $0.18$ on letters, so the highway passes about $0.82$ per step. At the space the gate jumps to $0.84$, the old state is mostly replaced, and the gradient drops sharply there, just as it did at the LSTM's closed forget gate. The line under the figure reads out both gates at each step as the forward pass runs.
+
+<RNNUnroller client:visible cell="gru" mode="bptt" sequence="hello world" folded={false} maxLen={12} showPanel={false} title="A GRU on “hello world”: the update gate decides keep or write" />
+
+<details>
+<summary>Show the math</summary>
+
+$$
+\mathbf z_t = \sigma(W_{xz}\mathbf x_t + W_{hz}\mathbf h_{t-1} + \mathbf b_z),\quad
+\mathbf r_t = \sigma(W_{xr}\mathbf x_t + W_{hr}\mathbf h_{t-1} + \mathbf b_r),
+$$
+
+$$
+\mathbf n_t = \tanh\bigl(W_{xn}\mathbf x_t + \mathbf b_n + \mathbf r_t \odot (W_{hn}\mathbf h_{t-1})\bigr),\quad
+\mathbf h_t = (1 - \mathbf z_t)\odot \mathbf h_{t-1} + \mathbf z_t \odot \mathbf n_t.
+$$
+
+Papers and libraries disagree on which side gets $\mathbf z_t$ and which gets $1 - \mathbf z_t$. Cho et al. and PyTorch write $\mathbf h_t = \mathbf z_t\odot\mathbf h_{t-1} + (1-\mathbf z_t)\odot\mathbf n_t$, so their $\mathbf z$ means "keep". The mechanism is the same.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think the LSTM removes vanishing gradients completely. Actually** the gradient along the belt is the product of the forget gates, so it still shrinks whenever they are below 1. The difference is that the network controls that product and can hold it near 1, while a plain RNN's factor is set by its weight matrix and $\tanh$ slopes.
+
+**You might think the cell state and the hidden state are the same thing. Actually** $\mathbf c_t$ is the internal memory on the belt, and $\mathbf h_t = \mathbf o_t \odot \tanh(\mathbf c_t)$ is a gated, squashed view of it. The output gate can keep something on the belt for many steps without showing it to the rest of the network.
+
+**You might think a gate is a yes-or-no switch. Actually** it is a sigmoid, so every value between 0 and 1 is possible, and it is computed separately for every unit at every step. That smoothness is what lets gradient descent train the gates.
+
+**You might think "forget gate = 1" means the cell forgets everything. Actually** it is the opposite: the forget gate multiplies the old memory, so 1 keeps it completely and 0 erases it. The name describes what the gate controls, not what its value means.
+
+**You might think GRUs are always worse because they are smaller. Actually** empirical comparisons find them close (Chung et al., 2014), and which one wins depends on the task. Greff et al. (2017) found the forget gate and the output activation were the parts of the LSTM that mattered most.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. Why does the gradient along the cell state not pass through $W_{hh}$ or a $\tanh$ slope?</summary>
+
+Because the update $\mathbf c_t = \mathbf f_t \odot \mathbf c_{t-1} + \mathbf i_t \odot \mathbf g_t$ is additive: the old cell state is only multiplied entry by entry by $\mathbf f_t$. So the direct derivative $\partial \mathbf c_t/\partial \mathbf c_{t-1}$ is $\operatorname{diag}(\mathbf f_t)$.
+
+</details>
+
+<details>
+<summary>2. A forget gate stays at 0.9 for 20 steps. Roughly what fraction of the gradient survives along the belt? And at 0.99?</summary>
+
+$0.9^{20} \approx 0.12$, about 12%. At $0.99$ it is $0.99^{20} \approx 0.82$, about 82%. Small changes in the gate near 1 make a large difference over long spans.
+
+</details>
+
+<details>
+<summary>3. What do the input gate and the candidate each contribute to the new cell state?</summary>
+
+The candidate $\mathbf g_t$ (a $\tanh$ layer) proposes values to write, between $-1$ and $1$. The input gate $\mathbf i_t$ (a sigmoid) decides how much of each proposed value is actually written. Their product is added to the belt.
+
+</details>
+
+<details>
+<summary>4. In a GRU, which gate value keeps the old state unchanged, using this lesson's convention?</summary>
+
+An update gate $\mathbf z_t = 0$: then $\mathbf h_t = \mathbf h_{t-1}$. With $\mathbf z_t = 1$ the state is replaced by the candidate. (In PyTorch's convention the roles are swapped.)
+
+</details>
+
+<details>
+<summary>5. Why is the forget-gate bias usually initialised to 1 or more?</summary>
+
+So that $\mathbf f_t = \sigma(\cdots + b_f)$ starts close to 1. Early in training the belt then keeps its contents and passes gradient back over long spans, and the network can learn where to close the gate. A bias of 0 would start the gate near $0.5$ and halve the gradient at every step.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Sepp Hochreiter and Jürgen Schmidhuber, "Long Short-Term Memory", *Neural Computation* 9(8), 1735–1780 (1997). The original LSTM and the constant error carousel.
+- Felix Gers, Jürgen Schmidhuber and Fred Cummins, "Learning to Forget: Continual Prediction with LSTM", *Neural Computation* 12(10), 2451–2471 (2000). Adds the forget gate.
+- Kyunghyun Cho et al., "Learning Phrase Representations using RNN Encoder–Decoder for Statistical Machine Translation", EMNLP 2014 ([arXiv:1406.1078](https://arxiv.org/abs/1406.1078)). Introduces the GRU.
+- Junyoung Chung, Caglar Gulcehre, Kyunghyun Cho and Yoshua Bengio, "Empirical Evaluation of Gated Recurrent Neural Networks on Sequence Modeling" (2014, [arXiv:1412.3555](https://arxiv.org/abs/1412.3555)).
+- Rafal Jozefowicz, Wojciech Zaremba and Ilya Sutskever, "An Empirical Exploration of Recurrent Network Architectures", ICML 2015. Recommends a forget-gate bias of 1.
+- Klaus Greff et al., "LSTM: A Search Space Odyssey", *IEEE TNNLS* 28(10) (2017, [arXiv:1503.04069](https://arxiv.org/abs/1503.04069)). Which parts of the LSTM matter.
+- Christopher Olah, [Understanding LSTM Networks](https://colah.github.io/posts/2015-08-Understanding-LSTMs/) (2015). The classic illustrated walkthrough.
+
+Next: [seq2seq and the first attention mechanism](/learn/sequences/seq2seq-attention/).
+
+</Step>

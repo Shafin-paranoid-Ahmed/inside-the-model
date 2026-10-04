@@ -1,0 +1,51 @@
+---
+import Base from '../layouts/Base.astro';
+import { courseLd } from '../lib/seo';
+import { getPath, getMathPrimer, TRACKS } from '../lib/curriculum';
+
+const days = await getPath();
+const math = await getMathPrimer();
+const trackTitle = (id: string) => TRACKS.find((t) => t.id === id)?.title ?? id;
+const groups = [
+  ...(math.length ? [{ heading: 'Math primer (optional)', lessons: math }] : []),
+  ...days.map((d) => ({ heading: `Day ${d.day}: ${d.title}`, lessons: d.lessons })),
+];
+---
+<Base title="Path" description="The full 14-day curriculum: every day, track and lesson." jsonLd={courseLd(days.map((d) => ({ day: d.day, title: d.title, lessons: d.lessons.map((l) => ({ id: l.id, title: l.data.title })) })))}>
+  <div class="wrap page">
+    <h1>The path</h1>
+    <p class="lede">Fourteen days from “what is a model?” to the frontier. Each day is a few short lessons; each lesson is a few steps you can touch.</p>
+    {groups.map((g) => (
+      <section class="day">
+        <h2 id={g.heading.split(':')[0].toLowerCase().replace(/\W+/g, '-')}>{g.heading}</h2>
+        {g.lessons.length === 0 ? <p class="muted ui">No lessons yet.</p> : (
+          <ol>
+            {g.lessons.map((l) => (
+              <li>
+                <a href={`/learn/${l.id}`}>{l.data.title}</a>
+                <span class="meta ui">{trackTitle(l.data.track)} · {l.data.level} · {l.data.duration} min</span>
+                <span class={`status ui ${l.data.status}`}>{l.data.status === 'done' ? 'Done' : l.data.status === 'draft' ? 'Draft' : 'Stub'}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+    ))}
+  </div>
+</Base>
+<style>
+  .page { padding-block: var(--s-7) 0; }
+  h1 { font-size: var(--step-4); }
+  .lede { max-width: var(--measure); color: var(--text-muted); margin-bottom: var(--s-6); }
+  .day { padding-block: var(--s-4); border-top: 1px solid var(--rule); display: grid; gap: var(--s-3) var(--s-6); }
+  h2 { font-size: var(--step-1); }
+  ol { list-style: none; margin: 0; padding: 0; }
+  li { display: grid; grid-template-columns: 1fr auto; gap: 0 var(--s-4); padding-block: var(--s-2); }
+  li a { font: 500 var(--step--1) var(--font-ui); font-size: 1rem; text-decoration: none; }
+  li a:hover { text-decoration: underline; }
+  .meta { grid-column: 1; font-size: 0.8rem; color: var(--text-muted); }
+  .status { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 0.75rem; color: var(--text-muted); border: 1px solid var(--rule); border-radius: 99px; padding: 0.1em 0.7em; }
+  .status.done { color: var(--viz-forward); border-color: currentColor; }
+  .status.draft { color: var(--accent); }
+  @media (min-width: 52em) { .day { grid-template-columns: 16rem 1fr; } }
+</style>

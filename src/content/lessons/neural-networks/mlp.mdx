@@ -1,0 +1,175 @@
+---
+title: "Multi-Layer Perceptrons"
+summary: "Stack layers of neurons; each layer is a matrix multiply plus an activation."
+day: 4
+track: neural-networks
+order: 3
+level: core
+duration: 30
+prereqs: ["neural-networks/activation-functions","math/matrices"]
+status: draft
+---
+
+import Step from '../../../components/ui/Step.astro';
+import MLPForward from '../../../components/widgets/MLPForward/MLPForward.svelte';
+
+<details>
+<summary>Refresher</summary>
+
+A multi-layer perceptron (MLP) composes fully connected layers: every unit receives every output from the preceding layer. A hidden layer computes $\mathbf h = f(W\mathbf x + \mathbf b)$; its activations become the next layer's inputs. Width is units per hidden layer, depth is the number of hidden layers, and a layer with $m$ inputs and $n$ units has $mn+n$ parameters including biases.
+
+First: [activation functions](/learn/neural-networks/activation-functions/) and [matrices](/learn/math/matrices/).
+
+</details>
+
+<Step title="A whole layer is one matrix multiply">
+
+What changes when you put three neurons beside one another? Each sees the same inputs but uses a different row of weights. Their outputs form a new vector. That vector can feed another layer of neurons.
+
+Watch the three rows being computed. The input is $(1, 0.5)$. The first row multiplies by $(0.5, -0.6)$ and adds a bias of $0.1$, giving $z_1 = 0.30$. Applying $\tanh$ gives $h_1 \approx 0.29$. The other rows follow exactly the same recipe.
+
+<MLPForward client:visible mode="matmul" title="Three neurons are three rows of W" />
+
+<details>
+<summary>Show the math</summary>
+
+$$W = \begin{pmatrix}0.5 & -0.6 \\ -0.7 & 0.9 \\ 0.3 & 0.7\end{pmatrix},\quad \mathbf x = \begin{pmatrix}1\\0.5\end{pmatrix},\quad \mathbf b = \begin{pmatrix}0.1\\-0.2\\0.2\end{pmatrix}.$$
+
+$$\mathbf z=W\mathbf x+\mathbf b=\begin{pmatrix}0.30\\-0.45\\0.85\end{pmatrix},\qquad \mathbf h=\tanh(\mathbf z)\approx\begin{pmatrix}0.29\\-0.42\\0.69\end{pmatrix}.$$
+
+Here $W$ is $3\times2$: three outputs, two inputs. The activation acts separately on each entry. The animation orders the rows to make them readable; a real implementation can compute them together.
+
+</details>
+</Step>
+
+<Step title="One layer's outputs become the next layer's inputs">
+
+A **hidden layer** sits between the raw input and the prediction. It is hidden only in the sense that the dataset supplies no target value for each of its units. A **fully connected**, or dense, layer gives every unit a connection to every unit in the preceding layer.
+
+Follow the pulses through this $2\to2\to2\to1$ MLP. The first hidden layer transforms the inputs into two activations; the next layer combines those activations rather than returning to the raw inputs. Scrub backward and notice that later layers cannot finish until the earlier ones have produced their values.
+
+<MLPForward client:visible mode="forward" title="Composition: outputs feed the next layer" />
+
+<details>
+<summary>Show the math</summary>
+
+$$\mathbf h^{(1)}=\tanh(W^{(1)}\mathbf x+\mathbf b^{(1)}),\qquad \mathbf h^{(2)}=\tanh(W^{(2)}\mathbf h^{(1)}+\mathbf b^{(2)}).$$
+
+The whole network is a composition of functions. Without nonlinear hidden activations, repeated affine maps collapse to one affine map, as you saw in the previous lesson.
+
+</details>
+</Step>
+
+<Step title="The forward pass has real numbers at every layer">
+
+The **forward pass** evaluates the current network on one input. It produces a prediction without changing any weights. Here the first hidden layer ends at approximately $(0.29,-0.42)$. The next layer has pre-activations approximately $(0.64,-0.04)$, then activations approximately $(0.57,-0.04)$. The linear output finishes at about $0.64$.
+
+Replay the calculation below. A node shows $z$, its weighted sum plus bias, above $h$, its activation. In the output node the two numbers agree: this example uses a linear output for regression. Classification would use an appropriate output interpretation, such as a sigmoid probability or softmax probabilities.
+
+<MLPForward client:visible mode="forward" title="From x = (1, 0.5) to a prediction" />
+
+<details>
+<summary>Show the code</summary>
+
+This NumPy calculation uses the figure's weights. Keep full precision between layers; rounding is for display only.
+
+```python
+import numpy as np
+
+x = np.array([1.0, 0.5])
+W1 = np.array([[0.5, -0.6], [-0.7, 0.9]])
+b1 = np.array([0.1, -0.2])
+W2 = np.array([[0.8, -0.5], [0.4, 0.6]])
+b2 = np.array([0.2, 0.1])
+h1 = np.tanh(W1 @ x + b1)
+h2 = np.tanh(W2 @ h1 + b2)
+y_hat = np.array([1.0, -0.7]) @ h2 + 0.05
+print(y_hat)  # approximately 0.64
+```
+
+</details>
+</Step>
+
+<Step title="Count the knobs before making a network bigger">
+
+Every connection has a learned weight, and every receiving unit has a learned bias. Inputs themselves have no learned bias. A layer with two inputs and four units therefore has eight weights and four biases: twelve parameters.
+
+Watch the edges and bias squares fill. For $2\to4\to4\to1$, the layer totals are $12$, $20$ and $5$, adding to $37$. Change the sliders: adding width also increases the connections between hidden layers, so the cost grows faster than the number of units alone suggests.
+
+<MLPForward client:visible mode="params" hidden={2} width={4} title="Weights plus biases, counted once each" />
+
+<details>
+<summary>Show the math</summary>
+
+For layer sizes $n_0,n_1,\ldots,n_L$, including input and output,
+
+$$P=\sum_{\ell=1}^{L}(n_{\ell-1}n_\ell+n_\ell).$$
+
+This counts fully connected layers with biases. Parameter sharing, as in convolution, uses a different count.
+
+</details>
+</Step>
+
+<Step title="Width adds units; depth adds compositions">
+
+**Width** describes how many units a hidden layer contains. **Depth** describes how many hidden transformations we compose. Here we count hidden layers explicitly; some sources include the output layer when reporting depth.
+
+Watch three trained networks take turns: one hidden layer of eight units has $33$ parameters; two layers of four have $37$; three layers of three also have $37$. Each boundary is computed by that network on the same seeded two-moons dataset. The shaded regions show its predictions, and the points show the training labels.
+
+<MLPForward client:visible mode="depth-width" title="Similar parameter counts, different compositions" />
+
+All three can bend a boundary around these tiny data. This is a demonstration of different architectures, not evidence that one depth is best. The counts of correct points are training scores; there is no held-out evaluation here. The weights were trained offline with deterministic initialization and Adam, then stored so the figure starts quickly. The timeline cycles through finished networks rather than training them live.
+
+Depth can express successive transformations, while width gives a layer more features to combine. Which is useful depends on the task, data and training. Next, we will inspect what these hidden transformations do to the input space.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think adding layers is enough to make a nonlinear model. Actually** the hidden activations matter: affine layers alone collapse into a single affine transformation.
+
+**You might think a hidden unit needs its own label. Actually** its parameters are learned through the network's final objective. Day 5 will show how backpropagation computes those gradients.
+
+**You might think more parameters always improve predictions. Actually** they increase capacity, while useful generalization still depends on the data and how the model is trained and evaluated.
+
+**You might think the forward pass trains the model. Actually** it only evaluates the current weights; training additionally measures loss and updates parameters.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. What shape must W have to turn five inputs into three activations?</summary>
+
+$3\times5$, with one row per receiving unit. The bias vector has three entries.
+
+</details>
+<details>
+<summary>2. How many parameters does a 2 → 3 → 1 dense network have, including biases?</summary>
+
+$(2\cdot3+3)+(3\cdot1+1)=9+4=13$.
+
+</details>
+<details>
+<summary>3. Does a 2 → 4 → 4 → 1 network have two or three hidden layers?</summary>
+
+Two. The last single unit is the output layer. It has three layers of learned weights.
+
+</details>
+<details>
+<summary>4. If we remove both hidden tanh activations, can this network still bend a decision boundary?</summary>
+
+Its output becomes an affine function of the input. Thresholding that scalar produces a straight boundary, regardless of how many affine layers remain.
+
+</details>
+</Step>
+
+<Step title="Going deeper">
+
+- [Dive into Deep Learning: Multilayer Perceptrons](https://d2l.ai/chapter_multilayer-perceptrons/mlp.html) connects the layer equations to implementations.
+- [CS231n: Neural Networks](https://cs231n.github.io/neural-networks-1/) discusses dense layers, activations and architecture size.
+- Rumelhart, Hinton and Williams, [Learning representations by back-propagating errors](https://doi.org/10.1038/323533a0) (1986), explains how hidden representations can be learned through a final objective.
+
+Next: [what hidden layers learn](/learn/neural-networks/hidden-layers/), by watching the data change coordinates inside a network.
+
+</Step>

@@ -1,0 +1,345 @@
+---
+title: "Backpropagation Through an MLP"
+summary: "Run backpropagation by hand, one node at a time, on a 2-3-1 network with real numbers: forward pass, loss, the chain rule, and one gradient step."
+day: 5
+track: neural-networks
+order: 4
+level: advanced
+duration: 45
+prereqs: ["neural-networks/forward-backward-pass","neural-networks/mlp"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import BackpropViz from '../../../components/widgets/BackpropViz/BackpropViz.svelte';
+
+<Step title="Who is to blame?">
+
+A small network makes a prediction and gets it wrong. It predicted $\hat y = 0.59$; the target was $t = -0.5$. The network has nine weights. Some of them pushed the answer in the wrong direction, some barely mattered, and one or two did most of the damage.
+
+To fix the network we need to know, for each weight, one number: if I nudge this weight up a little, does the error grow or shrink, and how fast? That number is the **gradient** of the loss with respect to the weight.
+
+The figure below is the answer for this network. Edge color is the sign of a weight's gradient and edge width is its size. Nothing about it was guessed: it was computed by **backpropagation**, which finds all nine numbers in one sweep from the output back to the inputs.
+
+<BackpropViz client:visible title="Where the blame lands: one gradient per weight" loopPhase="backward" initialPhase="update" showPanel={false} />
+
+The rest of this lesson rebuilds that picture from nothing. You will need only one idea from calculus, the chain rule, applied over and over.
+
+</Step>
+
+<Step title="One expression, one graph">
+
+Forget networks for a moment. Take a plain expression:
+
+$$L = (a \cdot b + c)^2$$
+
+Evaluating it happens in small steps. First multiply, $m = a \cdot b$. Then add, $s = m + c$. Then square, $L = s^2$. Each step is one **node** with one job, and the arrows show which values feed which operation. This is a **computational graph**.
+
+Watch the forward pass run with $a = 2$, $b = -3$, $c = 10$: values fill in from left to right, then the loop repeats. Drag the timeline to scrub through it, or change $a$, $b$ or $c$ and watch it recompute.
+
+<BackpropViz client:visible mode="expr" loopPhase="forward" title="Evaluating (a·b + c)² one node at a time" />
+
+The graph matters because every node only needs to know its own operation. A multiply node knows how to multiply. It will turn out that this is all it needs to know to take part in backpropagation.
+
+</Step>
+
+<Step title="The chain rule, one edge at a time">
+
+We want $\partial L / \partial a$: how much does $L$ change per unit change of $a$? The value $a$ reaches $L$ through two intermediate steps, so the effect of $a$ is the product of three small effects.
+
+- Changing $m$ by 1 changes $s$ by 1, because $s = m + c$. The **local derivative** of the add node is $1$.
+- Changing $a$ by 1 changes $m$ by $b = -3$, because $m = a \cdot b$. The local derivative of the multiply node with respect to $a$ is the *other* input.
+- Changing $s$ by 1 changes $L$ by $2s = 8$, because $L = s^2$ and $s = 4$.
+
+Multiply them along the path: $\partial L/\partial a = (8)(1)(-3) = -24$.
+
+That is the whole algorithm. Going backward, each node holds an **upstream gradient**, the derivative of $L$ with respect to its own output. It multiplies by its **local derivative** and hands the result to its input. In one line:
+
+$$\text{gradient at an input} = \text{local derivative} \times \text{upstream gradient}$$
+
+Watch the backward sweep. A magenta wave travels from $L$ back along the edges, and each node gains a second number: its gradient. Then click node $a$, which pauses the loop, to see the same product with the real numbers.
+
+<BackpropViz client:visible mode="expr" loopPhase="backward" select="a" title="Gradients flow backward through the graph" />
+
+<details>
+<summary>Show the math</summary>
+
+For a function built by composing $L = f(s)$, $s = g(m)$, $m = h(a)$, the chain rule says
+
+$$\frac{\partial L}{\partial a} = \frac{\partial L}{\partial s}\,\frac{\partial s}{\partial m}\,\frac{\partial m}{\partial a}.$$
+
+Here $\partial L/\partial s = 2s = 8$, $\partial s/\partial m = 1$ and $\partial m/\partial a = b = -3$. For $b$ the last factor is $\partial m/\partial b = a = 2$, so $\partial L/\partial b = 8 \cdot 1 \cdot 2 = 16$. For $c$ there is no multiply: $\partial L/\partial c = 8 \cdot 1 = 8$.
+
+</details>
+
+</Step>
+
+<Step title="The network and its forward pass">
+
+Now the real thing. The network has two inputs, three hidden units and one output. Every hidden unit computes a weighted sum $z_j$ of the inputs and squashes it with $\tanh$:
+
+$$z_j = \sum_i w_{ji}\, x_i, \qquad h_j = \tanh(z_j), \qquad \hat y = \sum_j v_j\, h_j.$$
+
+The output is a plain weighted sum with no activation. The weights are fixed and seeded, and there are no biases: a bias behaves like a weight on a constant input of 1, so leaving them out changes nothing about the mechanism and keeps the picture readable.
+
+Watch the signal flow left to right. Each hidden card shows $z$ (the sum) and $h$ (after $\tanh$). With $x = (1.0, 0.5)$, the first unit computes $z_1 = 0.5 \cdot 1.0 + (-0.6)(0.5) = 0.2$ and $h_1 = \tanh(0.2) = 0.197$. Hover over or focus a weight to see its name.
+
+<BackpropViz client:visible loopPhase="forward" title="The forward pass" />
+
+<details>
+<summary>Show the math</summary>
+
+All three hidden units at once is a matrix product. With $W$ holding one row of weights per hidden unit,
+
+$$\mathbf z = W\mathbf x, \qquad \mathbf h = \tanh(\mathbf z), \qquad \hat y = \mathbf v^{\top}\mathbf h,$$
+
+and for this network
+
+$$W = \begin{pmatrix} 0.5 & -0.6 \\ -0.7 & 0.9 \\ 0.3 & 0.7 \end{pmatrix},\quad \mathbf x = \begin{pmatrix} 1.0 \\ 0.5 \end{pmatrix},\quad \mathbf z = \begin{pmatrix} 0.20 \\ -0.25 \\ 0.65 \end{pmatrix},\quad \mathbf v = \begin{pmatrix} 0.8 \\ -0.6 \\ 0.5 \end{pmatrix}.$$
+
+Then $\mathbf h \approx (0.197, -0.245, 0.572)$ and $\hat y = 0.8(0.197) - 0.6(-0.245) + 0.5(0.572) \approx 0.591$.
+
+</details>
+
+</Step>
+
+<Step title="The loss: blame as one number">
+
+The network said $0.591$ but the target is $t = -0.5$. We summarize the miss as one number, the squared error:
+
+$$L = (\hat y - t)^2 = (0.591 - (-0.5))^2 = 1.19.$$
+
+Backpropagation always starts from a single scalar like this. Everything that follows answers one question about it: how does $L$ respond to each quantity in the network?
+
+The first answer is cheap. $L$ is the square of $\hat y - t$, so $\partial L/\partial \hat y = 2(\hat y - t) = 2(1.091) = 2.18$. It is positive: if $\hat y$ were a little larger, $L$ would grow. To reduce the loss, $\hat y$ has to come down.
+
+Watch the loss card count up from the output, and note the target under it. You can change the inputs and the target below the figure.
+
+<BackpropViz client:visible loopPhase="loss" title="From output to loss" />
+
+</Step>
+
+<Step title="Backward, part one: the output layer">
+
+The output is $\hat y = v_1 h_1 + v_2 h_2 + v_3 h_3$. The loss node just handed us $\partial L/\partial\hat y = 2.18$, and the output node is an addition of products. Each product is a multiply node, so the local derivatives are the other factor:
+
+- $\partial L/\partial v_j = \dfrac{\partial L}{\partial \hat y}\, h_j$, so the weight $v_3$ gets $2.18 \times 0.572 = 1.25$.
+- $\partial L/\partial h_j = \dfrac{\partial L}{\partial \hat y}\, v_j$, so the unit $h_3$ gets $2.18 \times 0.5 = 1.09$.
+
+Each of these is the same recipe as before: local derivative times upstream gradient. The second one is the important one. It is the blame that flows *backward* into the hidden layer.
+
+Watch the gradient wave leave the loss node and cross the output weights; the wave shows which edge is being processed. Click $v_3$ to pause and see its chain rule.
+
+<BackpropViz client:visible loopPhase="backward" select="v3" title="The gradient wave, output layer first" />
+
+<details>
+<summary>Show the math</summary>
+
+Since $\hat y = \sum_j v_j h_j$, we have $\partial \hat y/\partial v_j = h_j$ and $\partial \hat y/\partial h_j = v_j$. With $\partial L/\partial\hat y = 2(\hat y - t)$:
+
+$$\frac{\partial L}{\partial v_j} = 2(\hat y - t)\,h_j, \qquad \frac{\partial L}{\partial h_j} = 2(\hat y - t)\,v_j.$$
+
+Numerically $\partial L/\partial \mathbf v = (0.431,\,-0.534,\,1.25)$ and $\partial L/\partial \mathbf h = (1.75,\,-1.31,\,1.09)$.
+
+</details>
+
+</Step>
+
+<Step title="Backward, part two: through tanh, into the hidden weights">
+
+The hidden unit $h_3$ now knows its upstream gradient, $1.09$. Two more local derivatives finish the job.
+
+First the activation. Since $h = \tanh(z)$, the local derivative is $1 - h^2$. For $h_3 = 0.572$ that is $1 - 0.327 = 0.673$, so $\partial L/\partial z_3 = 1.09 \times 0.673 = 0.734$.
+
+Then the weights feeding $z_3 = w_{31}x_1 + w_{32}x_2$. The local derivative with respect to a weight is the input it multiplies:
+
+- $\partial L/\partial w_{31} = 0.734 \times x_1 = 0.734 \times 1.0 = 0.734$
+- $\partial L/\partial w_{32} = 0.734 \times x_2 = 0.734 \times 0.5 = 0.367$
+
+Stacked up, this is the chain rule for a first-layer weight:
+
+$$\frac{\partial L}{\partial w_{31}} = \frac{\partial L}{\partial \hat y}\,\frac{\partial \hat y}{\partial h_3}\,\frac{\partial h_3}{\partial z_3}\,\frac{\partial z_3}{\partial w_{31}} = (2.18)(0.500)(0.673)(1.00) = 0.734.$$
+
+Notice what did **not** happen. We did not start over for each weight. Both $w_{31}$ and $w_{32}$ reuse the same $\partial L/\partial z_3$; the first three factors were already computed on the way here. Let the backward pass finish (or drag the timeline to its end), then click the hidden card $h_3$ or any weight, and see how the path from the loss lights up.
+
+<BackpropViz client:visible loopPhase="backward" select="w31" title="Through tanh and into the hidden weights" />
+
+<details>
+<summary>Show the math</summary>
+
+Define the gradient at each pre-activation, $\delta_j = \partial L/\partial z_j$. For $\tanh$, whose derivative is $1 - \tanh^2$,
+
+$$\delta_j = \frac{\partial L}{\partial h_j}\,\bigl(1 - h_j^2\bigr) = 2(\hat y - t)\, v_j\,\bigl(1 - h_j^2\bigr).$$
+
+Because $z_j = \sum_i w_{ji} x_i$, each weight gradient is a product of the gradient above it and the value below it:
+
+$$\frac{\partial L}{\partial w_{ji}} = \delta_j\, x_i.$$
+
+In matrix form this is an outer product, and the gradient reaching the inputs is a transposed matrix product:
+
+$$\nabla_W L = \boldsymbol\delta\,\mathbf x^{\top}, \qquad \nabla_{\mathbf x} L = W^{\top}\boldsymbol\delta.$$
+
+For this network $\boldsymbol\delta = (1.68,\,-1.23,\,0.734)$, so $\nabla_W L$ has rows $(1.68,\ 0.839)$, $(-1.23,\ -0.615)$ and $(0.734,\ 0.367)$. Each row is a hidden unit's $\delta_j$ times the input vector.
+
+</details>
+
+</Step>
+
+<Step title="Reading the gradients">
+
+The backward pass is done, and every weight now carries a number. Read them like a map of blame.
+
+- **Sign.** A positive gradient (blue) means raising that weight raises the loss, so it should be *lowered*. A negative gradient (orange) means the opposite.
+- **Size.** Wide edges are the weights whose small changes move the loss most. Here $w_{11}$ and $v_3$ are among the widest.
+- **Zero.** A weight can have gradient zero even when it is large. It just has no influence right now.
+
+Two things are worth trying. Click the input $x_1$: it feeds all three hidden units, so its gradient is a **sum over three paths**, one through each unit. Where paths meet, gradients add. And switch the activation to **ReLU** with the toggle below the figure, and the figure recomputes: the second hidden unit has $z_2 = -0.25$, so ReLU outputs exactly 0 and its local derivative is 0. Everything upstream of it, $w_{21}$ and $w_{22}$, receives exactly zero. That is a dead unit.
+
+<BackpropViz client:visible loopPhase="backward" initialPhase="update" select="x1" title="Reading the gradients" />
+
+<details>
+<summary>Show the math</summary>
+
+When a value feeds several nodes, the multivariable chain rule sums over the paths. Here $x_i$ reaches $L$ through each hidden unit, so
+
+$$\frac{\partial L}{\partial x_i} = \sum_{j=1}^{3} \frac{\partial L}{\partial z_j}\,\frac{\partial z_j}{\partial x_i} = \sum_{j=1}^{3} \delta_j\, w_{ji}.$$
+
+For $x_1$: $(1.68)(0.5) + (-1.23)(-0.7) + (0.734)(0.3) = 1.92$.
+
+For ReLU, $h = \max(0, z)$ has derivative $1$ for $z > 0$ and $0$ for $z < 0$. At exactly $z = 0$ the derivative is undefined, and implementations pick $0$ by convention.
+
+</details>
+
+</Step>
+
+<Step title="The update: one step downhill">
+
+Gradients say which way is uphill. To lower the loss we go the other way, by a small amount set by the **learning rate** $\eta$:
+
+$$w \leftarrow w - \eta\,\frac{\partial L}{\partial w}.$$
+
+With $\eta = 0.1$, the weight $w_{11}$ moves from $0.5$ to $0.5 - 0.1(1.68) = 0.332$. All nine weights move at once, each by its own share. The new loss is $0.541$, down from $1.19$, with a single step.
+
+Watch the update: every weight edge morphs to its new value at once, and the next cycle starts from the new weights. The little chart under the figure records the loss at the start of every cycle; with $\eta = 0.1$ it falls to about $0.002$ after ten cycles. Use the speed control, or drag the timeline to the Update marker to replay it.
+
+Drag the learning-rate slider to the right and let it train again. The gradient is only a local slope, so a large enough step overshoots. The expression graph from earlier makes this vivid: with $\eta$ near $0.1$ its loss goes up after an update instead of down.
+
+<BackpropViz client:visible select="w11" title="One full training cycle, repeated" />
+
+</Step>
+
+<Step title="Why this is efficient">
+
+There is a slower way to get gradients that needs no calculus at all: nudge one weight by a tiny $\varepsilon$, rerun the forward pass, and see how the loss changed. This is a **finite difference**:
+
+$$\frac{\partial L}{\partial w} \approx \frac{L(w + \varepsilon) - L(w)}{\varepsilon}.$$
+
+For $w_{11}$ with $\varepsilon = 10^{-5}$ it gives $1.6771$, matching backprop's $1.6771$. That makes it a good *check* on an implementation, which is exactly how the engine behind this widget is tested.
+
+But as a method it is expensive. It needs one extra forward pass **per weight**. This network has 9 weights, so 9 extra passes. A model with a billion weights would need a billion.
+
+Backpropagation needs one forward pass and one backward pass, whatever the number of weights, and the backward pass costs about as much as the forward pass. The saving comes from what you saw a few steps ago: $\partial L/\partial z_3$ was computed once and reused by every weight below it. Every intermediate gradient is computed once and shared by all the paths that need it.
+
+<table>
+<thead>
+<tr><th scope="col">Method</th><th scope="col">Passes for P weights</th><th scope="col">P = 9</th><th scope="col">P = 10⁹</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">Finite differences</th><td>P + 1 forward</td><td>10</td><td>about 10⁹</td></tr>
+<tr><th scope="row">Backpropagation</th><td>1 forward + 1 backward</td><td>2</td><td>2</td></tr>
+</tbody>
+</table>
+
+<details>
+<summary>Show the code</summary>
+
+The same network in PyTorch. Autograd builds the graph during the forward pass and runs the backward pass in `backward()`, and the numbers match the figure.
+
+```python
+import torch
+
+W = torch.tensor([[0.5, -0.6], [-0.7, 0.9], [0.3, 0.7]], requires_grad=True)
+v = torch.tensor([0.8, -0.6, 0.5], requires_grad=True)
+x = torch.tensor([1.0, 0.5])
+t = torch.tensor(-0.5)
+
+z = W @ x                    # [0.20, -0.25, 0.65]
+h = torch.tanh(z)            # [0.197, -0.245, 0.572]
+y_hat = v @ h                # 0.591
+loss = (y_hat - t) ** 2      # 1.19
+
+loss.backward()              # the whole backward pass
+print(W.grad)                # [[ 1.677,  0.839], [-1.230, -0.615], [ 0.734,  0.367]]
+print(v.grad)                # [ 0.431, -0.534,  1.247]
+
+with torch.no_grad():        # one SGD step, eta = 0.1
+    for p in (W, v):
+        p -= 0.1 * p.grad
+```
+
+</details>
+
+</Step>
+
+<Step title="A teaser: vanishing gradients">
+
+Look again at the chain rule for a weight and count the factors. Every layer between the loss and the weight contributes one activation derivative, and $\tanh'(z) = 1 - \tanh^2(z)$ is at most $1$. In this network the factor for $h_3$ is $0.673$. Multiply many numbers below one and the product collapses. If each of ten layers contributed a factor near $0.67$, the gradient that reaches the first layer would be scaled by about $0.67^{10} \approx 0.018$, before even counting the weights.
+
+That is the **vanishing gradient problem**. The layers near the input learn far more slowly than the layers near the output, because their share of the blame arrives almost silenced. A ReLU unit in its active region contributes a factor of exactly 1, which is one reason ReLU networks train deeper. It also contributes exactly 0 when inactive, which is the dead unit you saw earlier.
+
+Our network has only one hidden layer, so nothing vanishes here. The lesson on vanishing and exploding gradients picks this up, along with the remedies: better activations, careful weight initialization, normalization and residual connections. Try the ReLU toggle once more and watch which gradients survive.
+
+<BackpropViz client:visible loopPhase="backward" initialPhase="update" select="w11" title="Which gradients survive" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think backprop is how the network learns. Actually** it only computes gradients. Learning is the update rule that uses them: plain SGD in this lesson, and Adam and friends elsewhere. You can run backprop and never update anything.
+
+**You might think it sends the "error" backward. Actually** what travels backward is a set of derivatives of one scalar, the loss, with respect to each intermediate value. Those are sensitivities, not corrections. A hidden unit does not learn what its output *should have been*.
+
+**You might think each weight needs its own separate derivation. Actually** the gradients share almost all of their work. $\partial L/\partial z_3$ is computed once and serves both $w_{31}$ and $w_{32}$, and the same reuse repeats at every layer. That sharing is why the cost stays at about one extra forward pass.
+
+**You might think it needs symbolic calculus or approximations. Actually** it is neither. Each node applies its local derivative at the numbers from the forward pass, and the results are exact up to floating-point rounding. That is also why the forward values must be kept in memory until the backward pass is done.
+
+**You might think a big gradient means an important weight. Actually** a gradient only says how sensitive the loss is to that weight *at the current point and input*. A large weight can have zero gradient, as the dead ReLU unit showed, and the same weight can have a very different gradient on the next example.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. In the expression graph with a = 2, b = −3 and c = 10, what is the gradient of L with respect to b?</summary>
+
+**16.** The upstream gradient at $s$ is $\partial L/\partial s = 2s = 8$. The add node passes it to $m$ unchanged, since its local derivative is 1. The multiply node gives $b$ the *other* input times that gradient: $\partial m/\partial b = a = 2$. So $\partial L/\partial b = 8 \cdot 1 \cdot 2 = 16$.
+
+</details>
+
+<details>
+<summary>2. With the ReLU toggle on, the second hidden unit has z₂ = −0.25. What are ∂L/∂w₂₁ and ∂L/∂w₂₂, and why?</summary>
+
+Both are **exactly 0**. ReLU outputs $\max(0, -0.25) = 0$ and its local derivative is 0 for negative $z$, so $\partial L/\partial z_2 = 0$. Every weight below $z_2$ multiplies that zero: $\partial L/\partial w_{2i} = \delta_2 x_i = 0$. Note that $\partial L/\partial h_2 = 2(\hat y - t)\,v_2$ is *not* zero. The blame reaches the unit and is then blocked at the activation.
+
+</details>
+
+<details>
+<summary>3. A model has one million weights. Roughly how many forward passes does a finite-difference gradient need, and how many passes does backprop need?</summary>
+
+Finite differences need about **one million extra forward passes**, one per weight (two million with the more accurate two-sided version). Backpropagation needs **one forward pass and one backward pass**, and the backward pass costs about as much as the forward pass. The difference is that backprop computes each intermediate gradient once and shares it among every weight that needs it.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Rumelhart, Hinton and Williams, "Learning representations by back-propagating errors", *Nature* 323, 533-536 (1986). The paper that made backprop the standard way to train multilayer networks. Reverse-mode differentiation itself is older; see Linnainmaa (1970) and Werbos (1974).
+- Andrej Karpathy, [micrograd](https://github.com/karpathy/micrograd), and his video "The spelled-out intro to neural networks and backpropagation: building micrograd". About a hundred lines of Python for the same scalar engine this widget runs on.
+- [CS231n: Backpropagation, Intuitions](https://cs231n.github.io/optimization-2/). Clear treatment of local gradients, gates and how gradients branch and merge.
+- Christopher Olah, [Calculus on Computational Graphs: Backpropagation](https://colah.github.io/posts/2015-08-Backprop/). The best explanation of why going backward beats going forward when there are many inputs and one output.
+
+Next: automatic differentiation generalizes what you just did by hand to any program built from differentiable operations.
+
+</Step>

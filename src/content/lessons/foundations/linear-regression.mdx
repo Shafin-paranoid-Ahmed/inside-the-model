@@ -1,0 +1,152 @@
+---
+title: "Linear Regression"
+summary: "Fit a line to data by adjusting slope and intercept until the loss is smallest."
+day: 1
+track: foundations
+order: 4
+level: intro
+duration: 25
+prereqs: ["foundations/loss-functions"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import LineFit from '../../../components/widgets/LineFit/LineFit.svelte';
+
+<Step title="Find the best line">
+
+You have twelve points and a model, $y = wx + b$. Which line is best? The previous lesson gave us a way to say: the best line is the one with the smallest mean squared error.
+
+**Linear regression** is the name for fitting that line. "Regression" means the thing we predict is a number, and "linear" means the model is a straight line (or, with more inputs, a flat plane).
+
+The left panel shows the points, the current line in teal and a square for each residual. The right panel is new, and it is the picture of this whole lesson: a map of the loss for *every possible line*. Watch the timeline. The line starts as a poor guess, then improves, and as it does a dot slides across the map toward its centre. We will explain the map next.
+
+<LineFit client:visible title="A line and its place on the loss map" />
+
+</Step>
+
+<Step title="One line is one point on the map">
+
+Every choice of slope $w$ and intercept $b$ is a line, and every line has a single MSE. So we can draw a map with $w$ on the horizontal axis, $b$ on the vertical axis, and the MSE as the height. The contour lines join points of equal MSE, like the height lines on a hiking map.
+
+The dot on the map and the line in the data panel are the same object seen two ways. Try it: click or drag anywhere on the contour map, or use the two sliders. The line jumps to match. Points near the diamond give lines that fit well; points far from it give lines that miss badly. Starting at $w = -1.4$, $b = -2.2$ the MSE is 28.7.
+
+<LineFit client:visible squares title="Drag on the map: every point is a different line" />
+
+</Step>
+
+<Step title="The loss is a bowl">
+
+Notice that the contours are nested ellipses around a single lowest point. For linear regression with squared error the loss surface over $(w, b)$ is a smooth bowl: it has exactly one bottom and no other dips. That is a special property of this model, and it is what makes the problem easy. Whatever line you start from, going downhill leads to the same place.
+
+The dashed line in the data panel and the diamond on the map mark the answer: $w = 0.97$, $b = 0.56$, with an MSE of 0.200. (The twelve points were generated around the line $y = 0.9x + 0.6$ with random noise added, so the fit lands near, but not exactly on, those numbers.) The MSE cannot reach zero because the points do not lie on any line.
+
+</Step>
+
+<Step title="Closed form: jump straight to the bottom">
+
+Because the bowl has such a simple shape, the bottom can be written as a formula. This is the **least-squares** solution, first published by Legendre in 1805 and justified by Gauss. For one input:
+
+$$w = \frac{\operatorname{cov}(x, y)}{\operatorname{var}(x)}, \qquad b = \bar y - w\,\bar x.$$
+
+Take the average $x$ and average $y$; the slope is how much $x$ and $y$ vary *together* divided by how much $x$ varies alone; and the intercept makes the line pass through the point of averages. No searching is needed.
+
+Watch the timeline: the line starts at the same poor guess and then glides straight to the answer in one motion. There are no small steps.
+
+<LineFit client:visible mode="closed" title="Closed form: straight to the bottom of the bowl" />
+
+<details>
+<summary>Show the math</summary>
+
+The MSE is $L(w, b) = \frac{1}{n}\sum_i (w x_i + b - y_i)^2$. At the minimum both partial derivatives are zero:
+
+$$\frac{\partial L}{\partial b} = \frac{2}{n}\sum_i (w x_i + b - y_i) = 0, \qquad \frac{\partial L}{\partial w} = \frac{2}{n}\sum_i (w x_i + b - y_i)\,x_i = 0.$$
+
+The first equation says $b = \bar y - w \bar x$. Substituting it into the second and simplifying gives $w = \sum_i (x_i - \bar x)(y_i - \bar y) \big/ \sum_i (x_i - \bar x)^2$, which is the covariance over the variance. For many inputs the same steps give the **normal equations** $X^\top X\,\mathbf{w} = X^\top \mathbf{y}$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def fit(x, y):
+    w = np.cov(x, y, bias=True)[0, 1] / np.var(x)
+    b = y.mean() - w * x.mean()
+    return w, b
+```
+
+</details>
+
+</Step>
+
+<Step title="Iterative search: walk downhill">
+
+The formula works for a line. For a neural network there is no formula; the loss surface is not a clean bowl and has millions of dimensions. What still works is the patient method: from where you stand, work out which direction goes downhill, take a small step that way, and repeat.
+
+The direction comes from the slope of the loss with respect to each knob. At the starting line, $\partial L/\partial w = -17.5$ and $\partial L/\partial b = -5.59$. Both are negative: increasing either knob would lower the loss. With a step size of $0.08$ the first update is $w \leftarrow -1.4 - 0.08(-17.5) = 0.0002$ and $b \leftarrow -2.2 - 0.08(-5.59) = -1.753$, and the MSE drops from 28.7 to 9.1 in one step.
+
+Watch the magenta path on the map: dot by dot it walks down the bowl. The MSE is 0.43 after 10 steps and 0.200 after 40, where it agrees with the closed-form answer to three decimals. Meanwhile the line in the left panel rotates and slides into place. This procedure is called **gradient descent**, and the next lesson is entirely about it.
+
+<LineFit client:visible title="Iterative search: gradient descent finds the same line" />
+
+Press "Descend from here" after placing the dot anywhere on the map, and it walks to the same bottom from your starting point.
+
+</Step>
+
+<Step title="Which one to use?">
+
+For linear regression with a modest number of inputs, use the formula. It is exact and instant. Iterative search matters when the formula does not exist (nearly every interesting model) or is too expensive (the normal equations need a matrix inverse that grows painfully with the number of features). Linear regression is therefore the rare case where both methods work, which makes it the ideal place to see that iterating really does arrive at the right answer.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** "linear" means the data has to be in a straight line. **Actually** it means the *model* is a line. Real data is noisy and the line is only the best summary; the MSE at the minimum here is 0.200, not zero.
+- **You might think** the best line passes through as many points as possible. **Actually** it minimizes the average squared miss, which usually passes through none of them.
+- **You might think** gradient descent finds an approximation and the formula finds the truth. **Actually** for this bowl both reach the same minimum; descent simply gets there in many steps instead of one.
+- **You might think** linear models are too simple to matter. **Actually** they are widely used, and the final layer of a neural network is itself a linear model.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>What do the two axes of the contour map represent?</summary>
+
+The slope $w$ and the intercept $b$. Each point on the map is one line, and the height is that line's MSE.
+
+</details>
+
+<details>
+<summary>Why is there only one minimum for linear regression with squared error?</summary>
+
+The MSE is a sum of squares of quantities that are linear in $(w, b)$, which makes the loss surface a smooth bowl with a single bottom.
+
+</details>
+
+<details>
+<summary>If the gradient with respect to $w$ is negative, should $w$ go up or down?</summary>
+
+Up. A negative gradient means the loss falls as $w$ increases, and gradient descent moves opposite the gradient.
+
+</details>
+
+<details>
+<summary>The points lie exactly on the line $y = 2x + 1$. What are the closed-form $w$ and $b$, and what is the minimum MSE?</summary>
+
+$w = 2$, $b = 1$, MSE $= 0$.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Legendre (1805), *Nouvelles méthodes pour la détermination des orbites des comètes*, appendix: the first publication of least squares. Gauss (1809), *Theoria motus corporum coelestium*, gives the probabilistic justification. Stigler, ["Gauss and the Invention of Least Squares"](https://doi.org/10.1214/aos/1176345451), Annals of Statistics 1981.
+- Goodfellow, Bengio and Courville, [*Deep Learning*](https://www.deeplearningbook.org/), section 5.1.4 (linear regression).
+- Google's [Machine Learning Crash Course: Linear regression](https://developers.google.com/machine-learning/crash-course/linear-regression).
+- Next: [Gradient descent](/learn/foundations/gradient-descent/).
+
+</Step>

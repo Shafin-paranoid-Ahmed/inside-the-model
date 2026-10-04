@@ -1,0 +1,132 @@
+---
+title: "DPO and Preference Optimization"
+summary: "Optimise directly on preference pairs with a classification-style loss, without a separate reward model or RL loop."
+day: 12
+track: alignment
+order: 5
+level: advanced
+duration: 30
+prereqs: ["alignment/rlhf"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+It turns out the reward model and the RL loop can be folded into one simple loss.
+
+<Step title="The policy RLHF is aiming for">
+
+The RLHF objective, maximise reward while paying a KL penalty, has an exact best answer: the reference policy reweighted by the exponential of the reward divided by the penalty strength.
+
+{/*
+IDEA: pi*(y|x) = pi_ref(y|x) exp(r(x,y)/beta) / Z(x). In the day's log-linear policy this is exactly theta* = theta_ref + w_RM/beta (src/lib/align/optimal.ts).
+WIDGET: PreferenceLab mode="optimal" beta slider (0.02 to 1, log scale), default 0.1, rewardModel from the rlhf lesson's run. Bars: pi_ref (ghost), pi* (solid) for one prompt; the PPO beta=0.1 end state as tick marks.
+MOTION over t: beta sweeps from large to small; pi* bars move from pi_ref toward the RM's favourite; at beta = 0.1 the PPO ticks line up with the bars.
+TRY: drag beta to 0.02 and see which candidate takes over.
+NUMBERS: max difference between PPO's final probabilities and pi* at beta 0.1 (should be small; quote the sim); Z(x) for the shown prompt.
+SHOW THE MATH: derivation of pi* via the Gibbs inequality, 5 lines.
+*/}
+
+</Step>
+
+<Step title="The DPO loss on one pair">
+
+Solving that formula for the reward and putting it into the Bradley-Terry model gives a loss that uses only the policy's own log-probabilities on the chosen and rejected responses.
+
+{/*
+IDEA: L = -log sigma(beta [ (log pi(y_w) - log pi_ref(y_w)) - (log pi(y_l) - log pi_ref(y_l)) ]); Z cancels. Gradient weight sigma(-margin): pairs the model already gets right count less.
+WIDGET: PreferenceLab mode="dpo-pair" pair=0 beta=0.1 steps=40. One preference pair card; four log-prob readouts; margin on a number line; sigma curve with the current point; gradient arrows on chosen (up) and rejected (down) bars.
+MOTION over t: repeated gradient steps on this single pair; the point climbs the sigma curve; the gradient weight shrinks.
+TRY: watch the gradient weight fall as the margin grows.
+NUMBERS: loss and margin at step 0 and 40; gradient weight at both.
+SHOW THE MATH: from pi* to the DPO loss in 4 lines. SHOW THE CODE: DPO loss in PyTorch (about 8 lines).
+*/}
+
+</Step>
+
+<Step title="Training on the whole preference set">
+
+Trained on all the comparisons, DPO moves the policy much as RLHF did, with a single supervised-style loop and no sampling.
+
+{/*
+IDEA: offline, no reward model, no generation during training.
+WIDGET: PreferenceLab mode="dpo-train" labels="human" pairs=200 beta=0.1 steps=300. Theta feature bars; loss curve; gold reward and KL curves (same axes as the rlhf ppo mode for comparison).
+MOTION over t: per step the bars and probabilities tween, curves draw.
+TRY: compare the final KL and gold reward with the PPO beta 0.1 run from /learn/alignment/rlhf/.
+NUMBERS: final loss, gold, KL; preference accuracy on held-out pairs.
+*/}
+
+</Step>
+
+<Step title="The implicit reward">
+
+The trained policy carries its own reward model: beta times the log-ratio of its probability to the reference probability scores every response.
+
+{/*
+IDEA: r_hat(y) = beta (log pi(y) - log pi_ref(y)); here equal to beta (theta - theta_ref) . phi up to a per-prompt constant; compare with the separately trained RM.
+WIDGET: PreferenceLab mode="implicit" beta=0.1. Scatter of implicit reward vs RM score over all candidates; and the two weight-vector bar charts side by side.
+MOTION over t: points move from the origin to their final positions as the DPO run progresses; the correlation readout updates.
+TRY: find which feature weight differs most between the two.
+NUMBERS: correlation between implicit reward and RM score at the end; the largest weight difference.
+*/}
+
+</Step>
+
+<Step title="DPO against PPO">
+
+DPO is simpler and stable, but it can only learn from the pairs it was given, while PPO samples new responses and gets them scored as it goes.
+
+{/*
+IDEA: trade-offs: offline vs online data; no RM to inspect; can drive both chosen and rejected likelihoods down and shift mass to responses absent from the data; strongly overfits deterministic preferences as beta shrinks (IPO motivation).
+WIDGET: PreferenceLab mode="compare" betas="0.1,0.02" steps=300. Panels: (a) gold vs KL paths for PPO and DPO; (b) chosen and rejected log-prob over DPO training at beta 0.02.
+MOTION over t: paths trace together; log-prob curves draw.
+TRY: check whether the chosen responses' probability actually rises during DPO.
+NUMBERS: final gold and KL for each method and beta; change in mean chosen log-prob. PROBE FIRST: only claim "chosen likelihood falls" if the sim shows it.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Common misreadings of DPO.
+
+{/*
+NO WIDGET. Misconceptions:
+1. "DPO has no reward model." It has an implicit one, defined by the policy itself.
+2. "DPO is the same as SFT on chosen answers." It also pushes rejected answers down, weighted by how wrong the model is.
+3. "DPO always raises the chosen response's probability." Only the margin is guaranteed to grow.
+4. "DPO and PPO give the same model." Same optimum in theory, different data and optimisation in practice.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Questions on direct preference optimisation.
+
+{/*
+NO WIDGET. Questions:
+1. Why does the partition function Z(x) disappear from the DPO loss?
+2. Margin is 0: what is the loss, and the gradient weight?
+3. What happens to pi* as beta goes to 0?
+4. Name one thing PPO can do that DPO cannot.
+5. Given log-ratios +0.5 (chosen) and -0.3 (rejected) and beta 0.1, compute the DPO loss.
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers on direct preference optimisation and its variants.
+
+{/*
+NO WIDGET. References:
+- Rafael Rafailov et al., "Direct Preference Optimization: Your Language Model is Secretly a Reward Model", arXiv:2305.18290.
+- Mohammad Gheshlaghi Azar et al., "A General Theoretical Paradigm to Understand Learning from Human Preferences" (IPO), arXiv:2310.12036.
+- Kawin Ethayarajh et al., "KTO: Model Alignment as Prospect Theoretic Optimization", arXiv:2402.01306 (VERIFY).
+- Shusheng Xu et al., "Is DPO Superior to PPO for LLM Alignment? A Comprehensive Study", arXiv:2404.10719 (VERIFY).
+- Noam Razin et al., on likelihood displacement in DPO, 2024 (VERIFY title and arXiv id before citing).
+- Jan Peters and Stefan Schaal, "Reinforcement learning by reward-weighted regression", ICML 2007 (closed-form KL-regularised policy lineage; VERIFY).
+Next: /learn/alignment/constitutional-ai/
+*/}
+
+</Step>

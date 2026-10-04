@@ -1,0 +1,193 @@
+---
+title: "Causal Masking"
+summary: "Prevent each token from attending to the future so the model can be trained to predict the next token."
+day: 9
+track: transformers
+order: 7
+level: core
+duration: 20
+prereqs: ["transformers/self-attention"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import CausalMask from '../../../components/widgets/CausalMask/CausalMask.svelte';
+
+To predict the next word honestly, a model must not peek at it.
+
+<Step title="A model that can see the answer learns nothing useful">
+
+A language model is trained on one task: read the words so far and guess the next word. In [self-attention](/learn/transformers/self-attention/) every word could look at every other word. That is a problem when "every other word" includes the word to be guessed.
+
+We trained two copies of TinyLM, our 34-word model, on the same sentences with the same settings for 6,000 updates. The only difference is that one copy was forbidden to look at later words, which is what a **causal mask** does (the next steps explain it), and the other was not. Real models read BPE tokens, not whole words ([tokenization](/learn/transformers/tokenization/)); TinyLM uses words to stay small.
+
+The left plot is the **loss**, the model's average surprise at the correct next word, so lower is better. Both start near 3.5, the loss of guessing among 34 words at random. The masked model's loss drops and then stalls near 1.7. That is not a failure: the sentences are random, so after `[start] these small` about nine different words are equally correct, and no model can do better than guess among them. The model without the mask goes far lower. At update 6,000 its loss is 0.000123, against 1.651 for the masked model. It has not learned grammar. The correct word sits one position to its right, and attention copies it.
+
+Now both models write from `[start] these big birds`. The masked model writes `chase a sheep.`, a complete sentence. The other model writes `apples.`: a noun where a verb must go, and then it stops. When writing, there are no later words to copy, so the shortcut it learned has nothing to read.
+
+<CausalMask client:visible mode="leak" title="Trained with and without the mask" />
+
+</Step>
+
+<Step title="The lower-triangular mask">
+
+Inside an attention layer, each word has a row of **attention weights** that say how much it draws on every word, itself included. Stack the rows and you get a grid: the row is the word that is looking, the column is the word being looked at.
+
+The causal mask forbids every cell whose column comes after its row. It is called causal because each word may be influenced only by what came before it, as in cause and effect in time. What remains is the lower triangle: row $i$ may use columns $j \le i$.
+
+Our sentence has 8 tokens, `[start]` and seven words, so the grid has 64 cells and the mask keeps 36 of them, $1+2+\dots+8$. Watch the row sweep: `[start]` may look at 1 cell, `sheep` at 4 (`[start]`, `these`, `small`, `sheep`), and `fox`, the last token, at all 8. The later words are still in the input; they are only made unreachable.
+
+<CausalMask client:visible mode="mask" title="Which words each word may look at" />
+
+</Step>
+
+<Step title="Minus infinity before the softmax">
+
+How do you forbid a cell? Attention turns each row of scores into weights with the **softmax**, which makes every weight positive and the row sum 1. Setting the forbidden weights to 0 *after* the softmax would leave a row that no longer sums to 1. So the mask goes in *before* it: each forbidden score is replaced by minus infinity. Since $e^{-\infty} = 0$, those words get exactly zero weight, and the softmax shares the full 1 among the words that remain.
+
+The figure uses a real row of TinyLM: layer 1, head 1 (each of its two layers has two heads, which are separate attention patterns; see [multi-head attention](/learn/transformers/multi-head-attention/)), with `sheep` looking at all eight words. First the raw scores, including the four words that come later. Then those four fall to minus infinity. Then the softmax turns the rest into weights, and the dashed outlines show what the weights would have been without the mask.
+
+Without the mask, the four later words would take 71.2% of this row's weight, `fox` alone 0.51. With the mask, `[start]` gets 0.53 instead of 0.15. In the last phase the future is zeroed after the softmax instead, and the row sums to only 0.288.
+
+<CausalMask client:visible mode="neginf" layer={1} head={1} query={3} title="Masking the scores of “sheep”" />
+
+<details>
+<summary>Show the math</summary>
+
+With queries $Q$, keys $K$ of width $d_k$, and a mask matrix $M$,
+
+$$
+A = \operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}} + M\right), \qquad
+M_{ij} = \begin{cases} 0 & j \le i \\ -\infty & j > i \end{cases}
+$$
+
+Adding 0 changes nothing, and adding $-\infty$ gives a weight $e^{-\infty}/\sum = 0$. The sum in the denominator only runs over the allowed words, so every row of $A$ still sums to 1.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import math, torch
+
+def causal_attention(q, k, v):                         # each (T, d_k)
+    T = q.shape[0]
+    scores = q @ k.T / math.sqrt(q.shape[-1])          # (T, T)
+    allowed = torch.tril(torch.ones(T, T, dtype=torch.bool))
+    scores = scores.masked_fill(~allowed, float('-inf'))
+    weights = torch.softmax(scores, dim=-1)            # rows sum to 1
+    return weights @ v
+```
+
+</details>
+
+</Step>
+
+<Step title="Training every position in parallel">
+
+Because a position cannot see its own answer, the model can read a whole sentence once and make a prediction at every position at the same time. The answers are already in the text, shifted by one: the input `[start] these small sheep chase a red fox` has the targets `these small sheep chase a red fox .`. One pass therefore gives 8 training examples. The **loss** of a position is the surprise at its target, $-\ln p$ of the right word, and the sentence loss is their average.
+
+In the first segment all 8 predictions appear together from one forward pass. Look for the hardest position. `small` → `sheep` has the highest loss, 2.202: the model gives `sheep` a probability of 0.111, and `small`, `red` and `big` are each close to 0.12, because about nine words are equally legal there. The easiest is the last: after `fox` the sentence always ends, so `fox` → `.` costs 0.000. The average over the 8 positions is 1.697.
+
+Writing has no such shortcut. The second segment does the same job one word per pass, because each new word must exist before it can be fed back in: 8 words take 8 passes, against 1 for training. Real systems reduce the cost of writing with a cache of earlier work ([inference and the KV cache](/learn/llms/inference-kv-cache/)).
+
+<CausalMask client:visible mode="parallel" title="One pass for training, one pass per word for writing" />
+
+</Step>
+
+<Step title="Changing the future cannot change the past">
+
+You can test a mask instead of trusting it. A position's prediction depends only on the words up to it, so if you change one word, no earlier position can notice.
+
+Each row below is a real forward pass of the masked TinyLM, showing a position's top guess for the next word. **Change** is the largest difference, over all 34 words, between a probability now and in the original sentence. The timeline replaces `chase` with `see` and then `like`. The four rows before it, `[start]` to `sheep`, show a change of exactly 0: the same numbers, not just similar ones. The rows from the edited word on can read the new word and do move, by as much as 0.080.
+
+Compare the line under the figure: in the model trained without the mask, the same edit changes the row *before* the edited word by 1.000. That row's job is to predict the edited word, and that model simply reads it from the right.
+
+To see a bigger effect, open the dropdown and pick `these`. The replacement `the` shifts the next rows by 0.086, 0.089 and 0.148, while the row for `[start]`, before the edit, stays at exactly 0.
+
+<CausalMask client:visible mode="edit" editAt={4} title="Change one word, see which predictions move" />
+
+</Step>
+
+<Step title="Encoders and decoders">
+
+Masking is a choice about who may look at whom, and different models make different choices. An **encoder** lets every word see the whole input, both sides. That suits understanding a fixed text, and such models are trained by hiding some words and filling them in (BERT hides about 15%). A **decoder** masks the future and is trained to predict the next word, which suits writing text one word at a time; GPT-style models and TinyLM are decoders. **Encoder-decoder** models, such as the original 2017 transformer for translation and T5, use both: an encoder reads the source, and a masked decoder writes the output while also looking back at the encoder's states, the same idea as in [seq2seq attention](/learn/sequences/seq2seq-attention/).
+
+The figure puts the two grids side by side. Take `sheep`: the encoder lets it see 8 of 8 tokens, the decoder 4 of 8. The sweep shows the same gap for every row, except the last one, where the two agree.
+
+<CausalMask client:visible mode="encdec" title="Encoder grid and decoder grid" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+You might think **the mask removes the future words from the input**. Actually they are in the input, and the model computes scores for them; the mask only forces their attention weights to zero.
+
+You might think **masking happens after the softmax**. Actually it is applied to the scores before it, so each row still sums to 1.
+
+You might think **a decoder is trained one word at a time**. Actually all positions train in one parallel pass. Only writing is sequential.
+
+You might think **causal models cannot be used for understanding tasks**. Actually large decoder-only models handle them by being asked in the prompt.
+
+You might think **the mask is learned**. Actually it is fixed; nothing about it is trained.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. For T = 4, write the mask matrix.</summary>
+
+Allowed cells are 0 and forbidden cells are minus infinity, so the matrix has 0 on and below the diagonal and $-\infty$ above it:
+
+```
+  0  -inf  -inf  -inf
+  0     0  -inf  -inf
+  0     0     0  -inf
+  0     0     0     0
+```
+
+</details>
+
+<details>
+<summary>2. Scores are (2, 1, 5) for query position 2, and the third score belongs to a later word. What are the weights?</summary>
+
+The 5 is replaced by minus infinity, so only 2 and 1 compete: $e^2/(e^2+e^1) \approx 0.73$ and $e^1/(e^2+e^1) \approx 0.27$, and the weight on the third word is 0.
+
+</details>
+
+<details>
+<summary>3. Why does one pass over a 1,000-word document give 1,000 training examples?</summary>
+
+Every position predicts the word after it, using only the words before it. With the mask, none of those predictions can see its own answer, so all 1,000 can be trained from the same pass.
+
+</details>
+
+<details>
+<summary>4. A colleague masks with -1 instead of minus infinity. What goes wrong?</summary>
+
+The forbidden words get $e^{-1} \approx 0.37$ times the weight of a word with score 0, not zero weight. Information still leaks from later words, and the model can learn to use it. Only minus infinity, or a number so negative that its exponential rounds to 0, removes the word completely.
+
+</details>
+
+<details>
+<summary>5. Why would a BERT-style encoder be awkward for writing text?</summary>
+
+It is trained with words on both sides of a hidden one. When writing, there is nothing yet to the right, so you would have to guess a length and keep re-filling blanks, and the model never practised the left-to-right situation.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Vaswani et al., [Attention Is All You Need](https://arxiv.org/abs/1706.03762) (2017), section 3.2.3: the mask in the decoder's self-attention.
+- Radford et al., [Improving Language Understanding by Generative Pre-Training](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf) (OpenAI, 2018): the first GPT, a decoder trained to predict the next word.
+- Devlin et al., [BERT](https://arxiv.org/abs/1810.04805) (NAACL 2019): an encoder trained by filling in hidden words.
+- Raffel et al., [Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer](https://arxiv.org/abs/1910.10683) (JMLR 2020): T5, an encoder-decoder.
+- Williams and Zipser, "A Learning Algorithm for Continually Running Fully Recurrent Neural Networks" (Neural Computation, 1989): the source of teacher forcing, feeding the true previous word during training.
+- Andrej Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT): a short, readable causal self-attention in `model.py`.
+
+Next: Day 10 starts with [pretraining](/learn/llms/pretraining/).
+
+</Step>

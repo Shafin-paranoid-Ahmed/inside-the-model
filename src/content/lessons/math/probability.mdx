@@ -1,0 +1,234 @@
+---
+title: "Probability Basics"
+summary: "Random variables, distributions, expectation and conditional probability."
+day: null
+track: math
+order: 6
+level: intro
+duration: 25
+prereqs: []
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ProbabilityLab from '../../../components/widgets/ProbabilityLab/ProbabilityLab.svelte';
+
+<Step title="One flip tells you nothing, a thousand tell you a lot">
+
+Machine learning models are, at heart, machines for reasoning under uncertainty. A language model does not know the next word; it holds a *spread of beliefs* over thousands of possible words. To read those beliefs you need a little probability, and the good news is that most of it can be seen.
+
+Start with a fair coin. Each flip is unpredictable: you cannot say whether the next one is heads. Yet the pattern over many flips is very predictable. Watch the figure. Each indigo dot is one flip falling into its bar, and the bars show the fraction of flips that were tails and heads. The first few flips make the bars lurch about. Give it time and both bars settle near one half.
+
+That gap between "the next flip is a mystery" and "the long run is steady" is what probability describes.
+
+<ProbabilityLab client:visible p={0.5} title="A fair coin: noisy at first, steady in the long run" />
+
+</Step>
+
+<Step title="Events, probabilities and distributions">
+
+An **event** is something that either happens or does not: "the coin lands heads", "the die shows an even number". The **probability** of an event is a number between 0 (never) and 1 (always) that says how likely it is. Roughly, it is the fraction of times the event happens if you repeat the experiment many times, which is exactly what the figure is doing.
+
+A **random variable** is a number produced by a random process. Write $X = 1$ for heads and $X = 0$ for tails. The list of all possible values with their probabilities is the **distribution** of $X$. Two rules always hold: every probability is between 0 and 1, and all of them add up to 1, because something has to happen.
+
+$$P(X=1) + P(X=0) = 1.$$
+
+Here the coin is biased. Drag the slider for $p = P(\text{heads})$. The dashed black lines mark the true probabilities, $p$ for heads and $1-p$ for tails. The bars are what we *observe*, and they chase the dashed lines as samples arrive. A distribution over two outcomes like this one is called a **Bernoulli** distribution.
+
+<ProbabilityLab client:visible p={0.3} title="A biased coin: the bars chase the true probabilities" />
+
+In real models the outcomes are rarely two. A classifier outputs one probability per class, and they add up to 1. That is what [softmax](/learn/foundations/softmax-cross-entropy/) produces.
+
+</Step>
+
+<Step title="Expectation: where the samples balance">
+
+The **expectation** (or mean) of a random variable is the value the average of many samples settles on. It is the balance point of the distribution: if the bars were weights on a seesaw, it is where the pivot goes.
+
+In the figure the indigo vertical line is the running mean of the samples so far, and the dashed black line is the true expectation. The small chart on the right plots the running mean against the number of samples $n$. Early on it swings wildly; the shaded funnel shows how far it is *expected* to stray, and that funnel narrows as $n$ grows. This is the **law of large numbers**: averages of many samples converge to the expectation.
+
+For the coin with $p = 0.3$ the expectation is $0.3$. Notice that the expectation of a single flip is never a value a single flip can take. It describes the long run, not any one outcome.
+
+<ProbabilityLab client:visible p={0.3} title="The running mean settles on the expectation" />
+
+<details>
+<summary>Show the math</summary>
+
+For a discrete random variable, weight each value by its probability:
+
+$$\mathbb{E}[X] = \sum_x x \, P(X = x).$$
+
+For the coin, $\mathbb{E}[X] = 1\cdot p + 0\cdot(1-p) = p$. The empirical mean of $n$ samples is $\bar x_n = \frac{1}{n}\sum_{i=1}^n x_i$, and the law of large numbers says $\bar x_n \to \mathbb{E}[X]$ as $n \to \infty$. Its typical error is about $\sigma/\sqrt{n}$, which is the funnel in the small chart.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+rng = np.random.default_rng(0)
+x = (rng.random(400) < 0.3).astype(float)   # 400 flips of a coin with p = 0.3
+running_mean = np.cumsum(x) / np.arange(1, 401)
+print(running_mean[[9, 99, 399]])           # drifts toward 0.3
+```
+
+</details>
+
+</Step>
+
+<Step title="Variance: how spread out are the samples?">
+
+Two random variables can have the same expectation and behave very differently. A coin with $p = 0.5$ and a thermostat that reads $0.5$ plus or minus a hair both average $0.5$, but one jumps between 0 and 1 while the other barely moves. The **variance** measures the spread: the average squared distance from the mean.
+
+The indigo bracket along the bottom of the figure is the running mean plus and minus one **standard deviation** (the square root of the variance). Its width is the spread of the samples. The readout under the figure compares the variance computed from the samples so far with the true variance, which for a coin is $p(1-p) = 0.21$ when $p = 0.3$.
+
+Now the coin is replaced by the **Gaussian** (bell curve). Instead of two outcomes, a sample can be any real number, and the histogram bars show how *densely* samples land near each value. The black curve is the true density. Try the two sliders. The mean $\mu$ slides the bell left and right. The spread $\sigma$ makes it wide or narrow, and the indigo bracket follows it.
+
+<ProbabilityLab client:visible mode="gaussian" mu={0.5} sigma={1.2} title="A Gaussian: the histogram fills in the bell curve" />
+
+<details>
+<summary>Show the math</summary>
+
+$$\operatorname{Var}(X) = \mathbb{E}\big[(X - \mathbb{E}[X])^2\big] = \mathbb{E}[X^2] - \mathbb{E}[X]^2, \qquad \sigma = \sqrt{\operatorname{Var}(X)}.$$
+
+For the coin, $\operatorname{Var}(X) = p(1-p)$. The Gaussian with mean $\mu$ and standard deviation $\sigma$ has density
+
+$$p(x) = \frac{1}{\sigma\sqrt{2\pi}}\exp\!\Big(-\frac{(x-\mu)^2}{2\sigma^2}\Big),$$
+
+and its expectation and variance are exactly $\mu$ and $\sigma^2$. About 68% of samples fall within one standard deviation of the mean, and about 95% within two.
+
+A density is not a probability. For a continuous variable the probability of landing in a range is the *area* under the curve over that range, and the total area is 1.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+x = np.random.default_rng(0).normal(loc=0.5, scale=1.2, size=400)
+print(x.mean(), x.var())        # close to 0.5 and 1.44
+```
+
+</details>
+
+Why Gaussians? Add up many small independent random effects and the total tends to look Gaussian. That is why the bell curve shows up in noise, in weight initialization and in [diffusion models](/learn/graphs-generative/diffusion/).
+
+</Step>
+
+<Step title="Conditional probability: change the question, change the answer">
+
+Probabilities depend on what you already know. The chance that a random person is sick is small. The chance that a person is sick *given that their test came back positive* is a different number. We write the second as $P(A \mid B)$, read "the probability of $A$ given $B$".
+
+The easiest way to compute it is to picture a crowd. The figure shows a thousand people. A few are sick (indigo). Everyone takes a test that catches 90% of sick people (its **sensitivity**) but also wrongly flags 9% of healthy people (its **false positive rate**). Watch what happens. Rings mark the positives, the negatives leave, and the positives regroup so you can count them.
+
+Then ask: among the people who tested positive, what fraction are actually sick? That fraction *is* the conditional probability. With these settings, 10 people are sick and 9 of them test positive. Of the 990 healthy people, 89 also test positive. So 9 of the 98 positives are truly sick, which is 9.2%.
+
+<ProbabilityLab client:visible mode="bayes" prevalence={0.01} sensitivity={0.9} fpr={0.09} title="Among everyone who tests positive, how many are really sick?" />
+
+That is a surprise: a test that is right 90% of the time gives a positive result that is *wrong* more than nine times out of ten. Conditioning shrinks the crowd to the people who satisfy the condition, and then you count within it.
+
+</Step>
+
+<Step title="Bayes' rule: rare conditions and false alarms">
+
+The number in the previous step depends heavily on how rare the sickness is, called the **prevalence** or the **prior**. Most positives are false alarms because there are so many more healthy people to make mistakes. Drag the prevalence slider up and watch the indigo share of the positives grow. At 10% prevalence the same test gives 100 sick people, 90 true positives, and 81 false positives among the 900 healthy, so 90 of 171 positives are sick, about 52.6%.
+
+Bayes' rule writes the crowd-counting as a formula. The true positives are (prevalence) times (sensitivity). All positives are the true positives plus (healthy share) times (false positive rate):
+
+$$P(\text{sick} \mid +) = \frac{P(+ \mid \text{sick})\,P(\text{sick})}{P(+ \mid \text{sick})\,P(\text{sick}) + P(+ \mid \text{healthy})\,P(\text{healthy})}.$$
+
+<ProbabilityLab client:visible mode="bayes" prevalence={0.1} sensitivity={0.9} fpr={0.09} title="Raise the prevalence and the same test becomes far more convincing" />
+
+The general form is $P(A \mid B) = \dfrac{P(B \mid A)\,P(A)}{P(B)}$. It turns "how likely is this evidence if the hypothesis is true" into "how likely is the hypothesis given this evidence". Machine learning uses the same move whenever it updates beliefs from data.
+
+<details>
+<summary>Show the math</summary>
+
+With prevalence $0.01$, sensitivity $0.9$ and false positive rate $0.09$:
+
+$$P(\text{sick} \mid +) = \frac{0.9 \times 0.01}{0.9 \times 0.01 + 0.09 \times 0.99} = \frac{0.009}{0.0981} \approx 0.092.$$
+
+The figure rounds to whole people (10 sick, 9 true positives, 89 false positives), so its fraction 9/98 agrees to within rounding.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def posterior(prevalence, sensitivity, fpr):
+    tp = sensitivity * prevalence
+    fp = fpr * (1 - prevalence)
+    return tp / (tp + fp)
+
+print(posterior(0.01, 0.9, 0.09))   # 0.0917
+print(posterior(0.10, 0.9, 0.09))   # 0.5263
+```
+
+</details>
+
+</Step>
+
+<Step title="Where this shows up in machine learning">
+
+- A classifier's output is a **distribution** over labels. [Softmax](/learn/foundations/softmax-cross-entropy/) turns raw scores into probabilities that add up to 1.
+- A **loss** such as cross-entropy asks "how surprised was the model by the true label?", which is the negative log of the probability it assigned. See [loss functions](/learn/foundations/loss-functions/).
+- Data are treated as **samples** from an unknown distribution. Training on a finite sample and hoping it generalizes is the law of large numbers with a caveat: the more samples, the closer the average gets to the truth.
+- **Gaussian noise** is everywhere: in weight initialization, in measurement error and as the starting point of generative models.
+
+In real models the distributions have thousands of dimensions and no neat formula, but the vocabulary from this lesson (samples, expectation, variance, conditioning) carries over unchanged.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** that after five heads in a row, tails is "due". **Actually** flips are independent: the coin has no memory, so the next flip is still 50/50. The long-run fraction settles because new flips *dilute* the early streak, not because the coin compensates.
+- **You might think** that a 90%-accurate test means a positive result is 90% likely to be right. **Actually** $P(+ \mid \text{sick})$ and $P(\text{sick} \mid +)$ are different questions, and the second depends on the prevalence. Swapping them is one of the most common mistakes in reasoning about evidence.
+- **You might think** the expectation is the most likely value. **Actually** it is the balance point. For the coin with $p = 0.3$ the expectation is 0.3, a value that never occurs.
+- **You might think** a density value like 0.4 is a probability. **Actually** for a continuous variable a density can even exceed 1; only areas under the curve are probabilities.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>A coin has $P(\text{heads}) = 0.8$. What are its expectation and variance?</summary>
+
+$\mathbb{E}[X] = 0.8$ and $\operatorname{Var}(X) = 0.8 \times 0.2 = 0.16$.
+
+</details>
+
+<details>
+<summary>In the figure, why does the funnel around the running mean narrow?</summary>
+
+The typical error of an average of $n$ samples is $\sigma/\sqrt{n}$, which shrinks as $n$ grows. Quadrupling the samples halves the error.
+
+</details>
+
+<details>
+<summary>A disease affects 1 in 100 people. A test finds 90% of sick people and falsely flags 9% of healthy ones. Out of 1000 people, roughly how many test positive, and how many of those are sick?</summary>
+
+About 10 are sick and 9 of them test positive. About 990 are healthy and 89 of them test positive. That is 98 positives, of which 9 are sick, so about 9%.
+
+</details>
+
+<details>
+<summary>What happens to $P(\text{sick} \mid +)$ if the disease becomes more common but the test stays the same?</summary>
+
+It goes up. More of the crowd is sick, so true positives grow while false positives shrink in proportion.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- [Seeing Theory](https://seeing-theory.brown.edu/), a visual introduction to probability and statistics from Brown University.
+- 3Blue1Brown, [Bayes' theorem, the geometry of changing beliefs](https://www.youtube.com/watch?v=HZGCoVF3YvM).
+- Goodfellow, Bengio and Courville, [Deep Learning, chapter 3: Probability and Information Theory](https://www.deeplearningbook.org/contents/prob.html).
+- Next in this course: [loss functions](/learn/foundations/loss-functions/) and [softmax and cross-entropy](/learn/foundations/softmax-cross-entropy/).
+
+</Step>

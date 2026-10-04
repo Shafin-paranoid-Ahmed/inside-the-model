@@ -1,0 +1,288 @@
+---
+title: "Graph Neural Networks"
+summary: "Nodes update their features by passing and aggregating messages along edges: message passing, GCN, GAT and readout."
+day: 13
+track: graphs-generative
+order: 1
+level: advanced
+duration: 50
+prereqs: ["neural-networks/backprop-mlp","math/matrices"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import GNNMessagePassing from '../../../components/widgets/GNNMessagePassing/GNNMessagePassing.svelte';
+
+<Step title="Data with no grid">
+
+A molecule is atoms joined by bonds. A social network is people joined by friendships. A road map, a protein, a circuit: all of them are **graphs**, a set of things (**nodes**) and the links between them (**edges**). An image is a grid, a sentence is a line, but a graph has no fixed shape. One molecule has 9 atoms, the next has 40. No atom is "first".
+
+That breaks the networks you know. An MLP needs a fixed-length input vector in a fixed order. A convolution needs a regular grid to slide over. A graph neural network (GNN) needs a different idea, and it is a simple one: **let each node learn from its neighbors**.
+
+Below is a small graph with seven nodes. Each node carries three numbers (its **features**), drawn as three little bars: blue up for positive, orange down for negative. Watch. Colored dots travel along the edges, each node combines what arrived, and its bars change. Then it repeats one more time, and finally the whole graph is squeezed into one vector on the right. The rest of this lesson takes that loop apart.
+
+<GNNMessagePassing client:visible title="Two rounds of message passing, then a readout" layers={2} editable={false} showControls={false} showPanel={false} />
+
+</Step>
+
+<Step title="What a graph is, in numbers">
+
+To compute on a graph we need it as numbers. Three things describe it.
+
+- A feature vector $\mathbf{h}_i$ for each node $i$. Here it has three entries. For an atom it might be its element, charge and number of bonds.
+- The edges. Store them as an **adjacency matrix** $A$ with $A_{ij} = 1$ if nodes $i$ and $j$ are connected and $0$ otherwise. For undirected edges $A$ is symmetric.
+- Optionally, features on the edges too (bond type). We skip those.
+
+For the three-node path $A - B - C$ the adjacency matrix is
+
+<table>
+<thead><tr><th scope="col"></th><th scope="col">A</th><th scope="col">B</th><th scope="col">C</th></tr></thead>
+<tbody>
+<tr><th scope="row">A</th><td>0</td><td>1</td><td>0</td></tr>
+<tr><th scope="row">B</th><td>1</td><td>0</td><td>1</td></tr>
+<tr><th scope="row">C</th><td>0</td><td>1</td><td>0</td></tr>
+</tbody>
+</table>
+
+Row $i$ lists the neighbors of node $i$. The number of ones in a row is the node's **degree**.
+
+Notice what is *not* in this description: where the nodes sit on the page. The drawing is only for your eyes. Drag any node in the figure and nothing about the computation changes, because the neighbor relation is the same. Try it, and use **Toggle edges** to add or remove an edge: that changes the numbers, because it changes who talks to whom. (Keyboard: focus a node and use the arrow keys to move it.)
+
+<GNNMessagePassing client:visible title="Drag nodes: layout is irrelevant. Change edges: everything changes." layers={1} readout={false} showControls={false} showPanel={false} />
+
+</Step>
+
+<Step title="Message passing: send, aggregate, update">
+
+Nearly every GNN is one repeated recipe, named **message passing** by Gilmer et al. (2017). One round, called a **layer**, has three moves.
+
+1. **Send.** Node $j$ builds a message for each neighbor. In the simplest case the message is its own features multiplied by a learned matrix $W$.
+2. **Aggregate.** Node $i$ combines all the messages it received into one vector.
+3. **Update.** Node $i$ turns that combined vector into its new features, here with a nonlinearity ($\tanh$).
+
+In the figure, each node also sends a message to *itself* (a **self-loop**), so it does not forget who it was. Watch one layer. Node C is selected; the panel on the right lists exactly what C received, from whom, and how it combined them. Here the aggregate is a plain sum, so C's new features are the sum of four messages passed through $\tanh$.
+
+<GNNMessagePassing client:visible title="One layer of message passing, with a plain sum" layers={1} agg="sum" readout={false} select={2} showControls={false} />
+
+The weights $W$ are the only learned part. They are shared by every node, which is why the same network runs on a graph of any size, exactly as a convolution filter is shared across every position of an image. (In this figure $W$ is random and fixed. A real GNN trains it with backpropagation like any other layer.)
+
+<details>
+<summary>Show the math</summary>
+
+Gilmer et al. write one layer $t$ for node $v$ as
+
+$$\mathbf m_v^{t+1} = \sum_{w \in \mathcal N(v)} M_t\bigl(\mathbf h_v^t,\ \mathbf h_w^t,\ \mathbf e_{vw}\bigr), \qquad \mathbf h_v^{t+1} = U_t\bigl(\mathbf h_v^t,\ \mathbf m_v^{t+1}\bigr).$$
+
+$\mathcal N(v)$ is the set of neighbors, $\mathbf e_{vw}$ an optional edge feature, $M_t$ the message function and $U_t$ the update function. Everything else in this lesson is a choice of $M$, $U$ and the way the sum is weighted.
+
+In this widget $M(\mathbf h_v, \mathbf h_w) = \mathbf h_w W$ (a row vector times a $3\times 3$ matrix), the sum runs over $\mathcal N(v) \cup \{v\}$, and $U$ is $\tanh$ of the aggregate.
+
+</details>
+
+</Step>
+
+<Step title="The aggregator must not care about order">
+
+A node's neighbors have no order. If you swap which neighbor you list first, the answer for the node must not change. So the aggregator must be **permutation invariant**: sum, mean and max all qualify; "concatenate the neighbors in the order I found them" does not.
+
+Which of the three you choose matters, and the choice is a real design decision.
+
+- **Sum** keeps the count. A node with ten neighbors receives a bigger vector than one with two, so degree leaks into the features, and values can grow with depth.
+- **Mean** divides by the count, so it sees only the *typical* neighbor. It cannot tell one neighbor from ten identical ones.
+- **Max** keeps only the strongest signal in each feature, so it detects "does any neighbor have this property" and ignores everything else.
+
+Use the aggregate menu in the figure and watch how the new features of node C (the four-message node) change while the graph stays the same. The bars are the same size scale in every case, so you can compare sum, mean and max directly.
+
+<GNNMessagePassing client:visible title="Same graph, three ways to combine messages" layers={1} agg="max" readout={false} select={2} showPanel={true} />
+
+</Step>
+
+<Step title="GCN: an average that respects hubs">
+
+The graph convolutional network of Kipf and Welling (2017) picks a specific weighting so that a node with many neighbors does not simply dominate. Each message from $j$ to $i$ is scaled by
+
+$$c_{ij} = \frac{1}{\sqrt{\tilde d_i\,\tilde d_j}}, \qquad \tilde d_i = \text{degree}(i) + 1.$$
+
+The $+1$ counts the self-loop. Take node D in the figure. It has one neighbor, C, so $\tilde d_D = 2$, while C has three neighbors and $\tilde d_C = 4$. D listens to itself with $c_{DD} = 1/2$ and to C with $c_{DC} = 1/\sqrt{2\cdot 4} = 0.35$. Select node D in the figure, or click it, to see these numbers in the panel.
+
+The square roots make the weighting symmetric: a message between a hub and a leaf is scaled down from *both* ends, so hubs neither shout nor get drowned out. The whole layer for all nodes at once is one matrix product:
+
+$$H' = \sigma\bigl(\hat D^{-1/2}\hat A\,\hat D^{-1/2}\, H\, W\bigr), \qquad \hat A = A + I.$$
+
+Row $i$ of $H$ is the feature vector of node $i$, and $\hat D$ is the diagonal degree matrix of $\hat A$. The widget computes exactly this, with $\sigma = \tanh$ so signed features stay visible. The unit tests compare it against the dense matrix formula.
+
+<GNNMessagePassing client:visible title="GCN: each message is scaled by 1 / sqrt(d_i d_j)" layers={1} agg="gcn" readout={false} select={3} showControls={false} />
+
+<details>
+<summary>Show the math</summary>
+
+With $\hat A = A + I$ and $\hat D_{ii} = \sum_j \hat A_{ij}$, the normalized matrix is $\tilde A = \hat D^{-1/2}\hat A\,\hat D^{-1/2}$, so $\tilde A_{ij} = \hat A_{ij}/\sqrt{\hat D_{ii}\hat D_{jj}}$. For the path $A - B - C$ the degrees with self-loops are $(2, 3, 2)$, giving $\tilde A_{AB} = 1/\sqrt 6 \approx 0.408$, $\tilde A_{AA} = 1/2$, $\tilde A_{BB} = 1/3$.
+
+Kipf and Welling motivate this as a first-order approximation of a spectral graph convolution, which is where the name comes from. The renormalization trick (adding $I$ before normalizing) keeps the eigenvalues of $\tilde A$ in $(-1, 1]$, which stops repeated layers from blowing features up or shrinking them to zero on their own.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+The layer as dense NumPy. Real libraries use sparse edge lists, but the math is the same.
+
+```python
+import numpy as np
+
+def gcn_layer(A, H, W):
+    A_hat = A + np.eye(len(A))                  # add self-loops
+    d = A_hat.sum(axis=1)                       # degree + 1
+    A_norm = A_hat / np.sqrt(np.outer(d, d))    # D^-1/2 A_hat D^-1/2
+    return np.tanh(A_norm @ H @ W)              # aggregate, transform, update
+```
+
+In PyTorch Geometric this is `GCNConv(in_channels, out_channels)`.
+
+</details>
+
+</Step>
+
+<Step title="Stack layers: each node sees further">
+
+One layer only lets a node hear from its direct neighbors. But the neighbors' features already contain *their* neighbors' news from the previous layer. So after $k$ layers a node's features depend on every node within $k$ hops: its **receptive field**, the same idea as in a CNN.
+
+In the figure the selected node is D and the shaded halo marks the nodes that have reached it. D is a leaf hanging off C. After one layer it hears from C. After two, from A and B (two hops away). After three, from E. The last two nodes, F and G, are four hops away, so D needs four layers to see them. Use the layers slider and drag the timeline: the halo grows exactly when the update phase finishes.
+
+This is a hard limit and a design lever. If the answer for a node depends on something five hops away, a three-layer GNN can never see it.
+
+<GNNMessagePassing client:visible title="D sees 1, 2, 3, then 4 hops as layers are added" layers={4} readout={false} select={3} showControls={true} showPanel={false} />
+
+</Step>
+
+<Step title="GAT: let the network choose whom to listen to">
+
+The GCN weights $c_{ij}$ come only from the graph's degrees. A **graph attention network** (Veličković et al., 2018) learns them from the features instead. For node $i$ and each neighbor $j$ (including itself) it computes a score, then normalizes the scores with a softmax, the same softmax you met in attention and classification:
+
+$$e_{ij} = \text{LeakyReLU}\bigl(\mathbf a^{\top}[\,W\mathbf h_i \,\Vert\, W\mathbf h_j\,]\bigr), \qquad \alpha_{ij} = \frac{\exp(e_{ij})}{\sum_{k \in \mathcal N(i)\cup\{i\}} \exp(e_{ik})}.$$
+
+The new features are then $\mathbf h_i' = \sigma\bigl(\sum_j \alpha_{ij} W\mathbf h_j\bigr)$. Because of the softmax, the coefficients into any node sum to 1, so it is a *weighted average* whose weights depend on the data.
+
+In the figure each edge has two lanes, one per direction. Lane color and width show $\alpha$ in the same purple scale used for attention elsewhere on this site, and the numbers on the edges into node C are its attention weights. With these random weights, C gives $\alpha = 0.55$ to its own message and only $0.14$ to A, $0.17$ to B and $0.15$ to D. In general $\alpha_{ij} \ne \alpha_{ji}$: attention is not symmetric.
+
+In this figure the vector $\mathbf a$ is random. A trained GAT would learn $\mathbf a$ and $W$ so that the weights help with the task, for example to trust neighbors of the same class.
+
+<GNNMessagePassing client:visible mode="gat" title="GAT: the coefficients are a softmax over each neighborhood" layers={1} readout={false} select={2} showControls={true} />
+
+<details>
+<summary>Show the math</summary>
+
+The concatenation form splits into two dot products, $\mathbf a^{\top}[W\mathbf h_i \Vert W\mathbf h_j] = \mathbf a_L^{\top} W\mathbf h_i + \mathbf a_R^{\top} W\mathbf h_j$. The first term is the same for every neighbor of $i$, so it shifts all scores equally *before* the LeakyReLU, but not after it, which is why the ranking of neighbors depends on both ends. Softmax is unchanged by adding a constant to all scores, which the unit tests check.
+
+Veličković et al. use several attention heads and concatenate or average their outputs, as in a Transformer. The widget shows one head. Note also the relation to the Transformer: self-attention is a GAT on a complete graph, where every token is connected to every other.
+
+</details>
+
+</Step>
+
+<Step title="Readout: from nodes to a whole graph">
+
+Sometimes you want one answer for the whole graph: is this molecule toxic, is this network fraudulent. After the last layer we have one feature vector per node. A **readout** pools them into a single vector, and, like the aggregator, it must not depend on node order.
+
+$$\mathbf h_{\text{graph}} = \frac{1}{n}\sum_{v} \mathbf h_v^{T}.$$
+
+This vector goes into an ordinary MLP that predicts the label. Watch the end of the timeline: the seven feature vectors flow into the box on the right, and its bars are their average. Try adding or removing a node: the readout is still a vector of length three, which is what lets one network handle graphs of any size.
+
+Mean is the simplest readout. Sum keeps the graph's size, which matters when counting matters (the number of atoms of some type), and max detects a feature present anywhere.
+
+<GNNMessagePassing client:visible title="Message passing, then a mean readout" layers={2} select={3} showControls={true} />
+
+</Step>
+
+<Step title="Limits: over-smoothing and more">
+
+Stack many layers and something goes wrong. Each GCN layer replaces a node's features with a weighted average of its neighborhood. Averaging over and over pushes every node toward the same vector, and the differences that make nodes distinguishable wash out. This is **over-smoothing** (Li, Han and Wu, 2018), and it is a big reason most GNNs are shallow, two to four layers, unlike CNNs with dozens.
+
+The readout line under the figure measures it: the *feature spread* is the standard deviation of the features across nodes, averaged over the three features. On this graph it starts at 0.53 and, with six GCN layers, ends at 0.03. It does not shrink at every single layer, since the random weights $W$ also stretch and rotate features, but the trend is clear. Try the other aggregators: with these random weights they also end small (0.03 for sum, 0.06 for max), because $\tanh$ saturation and the shared weights shrink differences too. The cleanest picture of over-smoothing is the normalized average alone: repeatedly applying $\tilde A$ converges toward a vector that depends only on node degrees.
+
+Other known limits:
+
+- **Over-squashing.** Information from many distant nodes must be squeezed through a few edges into a fixed-size vector (Alon and Yahav, 2021).
+- **Expressiveness.** A message-passing GNN cannot tell apart some graphs that a classic algorithm, the Weisfeiler-Leman test, cannot separate either. Sum aggregation is the most expressive of the three (Xu et al., 2019).
+- **Cost.** Neighborhoods can explode in size on large graphs, which is why big systems sample neighbors.
+
+<GNNMessagePassing client:visible title="Six layers: watch the feature spread collapse" layers={6} readout={false} select={3} showPanel={false} />
+
+</Step>
+
+<Step title="Build your own">
+
+Everything is editable now. Drag nodes, switch to **Toggle edges** and connect two nodes, add or remove nodes, change GCN to GAT, change the aggregator and the number of layers. Some experiments worth trying:
+
+- Cut the graph into two pieces. Nodes in one piece never learn anything about the other, whatever the number of layers.
+- Turn one node into a hub connected to everyone. Compare sum and GCN normalization at the hub.
+- Add a long chain and count how many layers a node needs to hear from its far end.
+
+<GNNMessagePassing client:visible title="Your graph" layers={2} select={0} />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think a GNN needs the nodes in a special order or layout. Actually** it does not. Message passing only uses who is connected to whom, so relabeling or moving nodes changes nothing (this is called permutation equivariance for the node features, and invariance for a graph-level readout).
+
+**You might think the edges are learned. Actually** in GCN and GAT the graph is given as input. Only the transformation $W$ (and, in GAT, the attention vector $\mathbf a$) is learned. GAT learns how much to listen to each *existing* edge, not which edges exist.
+
+**You might think more layers always help, as in a CNN. Actually** more layers widen the receptive field but also average nodes together, so deep plain GCNs often get worse. Skip connections, normalization and different architectures are ways to go deeper.
+
+**You might think a GNN sees the whole graph at once. Actually** each node only sees its $k$-hop neighborhood after $k$ layers. Long-range information takes many layers to arrive, which is exactly where over-squashing bites.
+
+**You might think attention weights explain the prediction. Actually** they only say how a layer averaged its inputs. They are a useful picture, not a proof of importance.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. Node D in the figure has one neighbor, C, and C has three neighbors. What weight does D give to the message from C in a GCN layer?</summary>
+
+$\tilde d_D = 1 + 1 = 2$ and $\tilde d_C = 3 + 1 = 4$, so $c_{DC} = 1/\sqrt{2 \cdot 4} = 0.35$. D's own self-message gets $1/\sqrt{2\cdot 2} = 0.5$.
+
+</details>
+
+<details>
+<summary>2. After 3 layers, which nodes can influence node D? Why is F not one of them?</summary>
+
+The nodes within three hops: D itself, C (1 hop), A and B (2 hops) and E (3 hops). F and G are four hops away, because the shortest path is D, C, B, E, F. Each layer moves information across exactly one edge.
+
+</details>
+
+<details>
+<summary>3. Why must an aggregator be permutation invariant? Give one that is and one that is not.</summary>
+
+Neighbors have no natural order, so the result must be the same for every ordering of the incoming messages, otherwise the output would depend on how the graph happened to be stored. Sum, mean and max are invariant. Concatenating the neighbors' vectors in list order is not.
+
+</details>
+
+<details>
+<summary>4. In GAT, what does the softmax guarantee about the attention coefficients into one node?</summary>
+
+They are positive and sum to 1 over the node's neighborhood (including itself), so the aggregation is a weighted average whose weights are computed from the features. Adding a constant to all scores does not change them.
+
+</details>
+
+<details>
+<summary>5. You add ten more GCN layers to a working two-layer model and accuracy drops. What is a likely cause?</summary>
+
+Over-smoothing: repeated neighborhood averaging makes node features nearly identical, so the classifier can no longer tell nodes apart. Over-squashing and harder optimization can contribute.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Kipf and Welling, "Semi-Supervised Classification with Graph Convolutional Networks", ICLR 2017 ([arXiv:1609.02907](https://arxiv.org/abs/1609.02907)). The GCN layer used in this lesson.
+- Veličković et al., "Graph Attention Networks", ICLR 2018 ([arXiv:1710.10903](https://arxiv.org/abs/1710.10903)).
+- Gilmer et al., "Neural Message Passing for Quantum Chemistry", ICML 2017 ([arXiv:1704.01212](https://arxiv.org/abs/1704.01212)). The message-passing framework.
+- Sanchez-Lengeling et al., [A Gentle Introduction to Graph Neural Networks](https://distill.pub/2021/gnn-intro/), Distill 2021. Interactive, and a good second pass.
+- Xu et al., "How Powerful are Graph Neural Networks?", ICLR 2019 ([arXiv:1810.00826](https://arxiv.org/abs/1810.00826)). Why sum aggregation is the most expressive.
+- Li, Han and Wu, "Deeper Insights into Graph Convolutional Networks", AAAI 2018 ([arXiv:1801.07606](https://arxiv.org/abs/1801.07606)), on over-smoothing; and Alon and Yahav, "On the Bottleneck of Graph Neural Networks and its Practical Implications", ICLR 2021 ([arXiv:2006.05205](https://arxiv.org/abs/2006.05205)), on over-squashing.
+
+Next: [Autoencoders](/learn/graphs-generative/autoencoders/), where a network learns a compact code for its input.
+
+</Step>

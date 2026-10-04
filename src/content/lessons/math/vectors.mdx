@@ -1,0 +1,206 @@
+---
+title: "Vectors"
+summary: "Lists of numbers as arrows and points, with addition, scaling and length."
+day: null
+track: math
+order: 1
+level: intro
+duration: 15
+prereqs: []
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import VectorPlane from '../../../components/widgets/VectorPlane/VectorPlane.svelte';
+
+<Step title="An arrow, a point, a list of numbers">
+
+A **vector** is an ordered list of numbers. That is the whole definition. The list $[3, 1]$ is a vector with two entries, and the reason it earns a name is that the same list can be read three ways:
+
+- as a **point** on a plane: 3 steps right, 1 step up;
+- as an **arrow** from the origin (the point $[0, 0]$) to that point;
+- as plain **data**: two measurements about something.
+
+The picture below shows two arrows, $\mathbf{a} = [3, 1]$ and $\mathbf{b} = [1, 2.5]$, and on the right the same two vectors written as lists. Drag the round handle at the tip of an arrow, or use the sliders. The numbers on the right follow your hand: the arrow and the list are one object. The timeline plays a small animation that we take apart in the next step.
+
+<VectorPlane client:visible title="Two vectors: the arrow and the list are the same thing" />
+
+The number of entries is the vector's **dimension**. Two entries live on a flat sheet, three fill a room, and the last step of this lesson shows why AI happily uses vectors with hundreds or thousands of entries that we cannot draw at all.
+
+</Step>
+
+<Step title="Adding vectors: tip to tail">
+
+To add two arrows, slide a copy of $\mathbf{b}$ (without turning or stretching it) until its tail sits on the tip of $\mathbf{a}$. The arrow from the origin to the new tip is $\mathbf{a} + \mathbf{b}$. It is what you get by walking along $\mathbf{a}$ and then along $\mathbf{b}$.
+
+Watch the timeline: the copy of $\mathbf{b}$ glides to the tip of $\mathbf{a}$, and then the dark sum arrow grows from the origin. The dashed lines complete a parallelogram, showing that the order does not matter: sliding $\mathbf{a}$ onto $\mathbf{b}$ ends at the same place. Now look at the numbers. With $\mathbf{a} = [3, 1]$ and $\mathbf{b} = [1, 2.5]$ the sum is $[4, 3.5]$. Each entry is just the sum of the matching entries: $3 + 1 = 4$ and $1 + 2.5 = 3.5$.
+
+<VectorPlane client:visible scene="add" title="a + b: slide b to the tip of a" />
+
+<details>
+<summary>Show the math</summary>
+
+For vectors with $n$ entries, addition works entry by entry:
+
+$$\mathbf{a} + \mathbf{b} = [a_1 + b_1,\; a_2 + b_2,\; \dots,\; a_n + b_n].$$
+
+Both vectors must have the same number of entries. Subtraction is the same idea: $\mathbf{a} - \mathbf{b}$ is $\mathbf{a} + (-1)\mathbf{b}$, the arrow that goes from the tip of $\mathbf{b}$ to the tip of $\mathbf{a}$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+a = np.array([3.0, 1.0])
+b = np.array([1.0, 2.5])
+print(a + b)   # [4.  3.5]
+```
+
+</details>
+
+</Step>
+
+<Step title="Scaling: stretch, shrink, flip">
+
+Multiplying a vector by a single number $c$ (a **scalar**) multiplies every entry by $c$. On the plane this keeps the arrow on the same line through the origin and changes only its length and, if $c$ is negative, its direction.
+
+Watch $c$ move on the timeline. At $c = 1$ nothing changes. As $c$ rises to 2 the arrow stretches to $[6, 2]$. Then $c$ falls to 0, and the arrow shrinks all the way to the origin. Finally $c$ goes negative and the arrow flips through the origin to point the opposite way: at $c = -1.5$ we get $[-4.5, -1.5]$. The colour marks the sign of $c$. Drag the tip of $\mathbf{a}$ to try other arrows: the faint copy is the original, and $c \cdot \mathbf{a}$ always stays on the dashed line through it.
+
+<VectorPlane client:visible scene="scale" title="c·a: multiply every entry by c" />
+
+<details>
+<summary>Show the math</summary>
+
+$$c\,\mathbf{a} = [c\,a_1,\; c\,a_2,\; \dots,\; c\,a_n].$$
+
+Adding and scaling together give **linear combinations** such as $2\mathbf{a} - \mathbf{b}$. Nearly every layer of a neural network computes something of this form.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+a = np.array([3.0, 1.0])
+print(2 * a)      # [6. 2.]
+print(-1.5 * a)   # [-4.5 -1.5]
+```
+
+</details>
+
+</Step>
+
+<Step title="Length: Pythagoras in disguise">
+
+How long is the arrow $\mathbf{a}$? Walk along $x$ by 3, then along $y$ by 1. That path and the arrow form a right triangle, and the arrow is its longest side. Pythagoras says its length is the square root of the two squares added:
+
+$$\lVert \mathbf{a} \rVert = \sqrt{3^2 + 1^2} = \sqrt{10} \approx 3.16.$$
+
+The double bars mean "length", and it is also called the **norm**. Watch the timeline: the dashed legs are drawn along $x$ and then $y$, and the readout for $|a|$ counts up to 3.16. Drag $\mathbf{a}$ to $[3, 3]$ or use the sliders to try other lengths.
+
+<VectorPlane client:visible scene="length" title="Length of a: two steps and a diagonal" />
+
+<details>
+<summary>Show the math</summary>
+
+The same formula works for any number of entries:
+
+$$\lVert \mathbf{a} \rVert = \sqrt{a_1^2 + a_2^2 + \dots + a_n^2}.$$
+
+Scaling scales the length by the size of the factor: $\lVert c\,\mathbf{a} \rVert = |c|\,\lVert \mathbf{a} \rVert$. That is why $c = -1.5$ gives an arrow 1.5 times as long, pointing backwards.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+np.linalg.norm(a)   # 3.1622...
+```
+
+</details>
+
+</Step>
+
+<Step title="Distance between two vectors">
+
+Now look at both arrows. How far apart are the points $\mathbf{a}$ and $\mathbf{b}$? The dashed segment from the tip of $\mathbf{a}$ to the tip of $\mathbf{b}$ is itself an arrow, namely $\mathbf{b} - \mathbf{a}$, so its length is the norm of the difference:
+
+$$\operatorname{dist}(\mathbf{a}, \mathbf{b}) = \lVert \mathbf{a} - \mathbf{b} \rVert = \sqrt{(3 - 1)^2 + (1 - 2.5)^2} = \sqrt{6.25} = 2.5.$$
+
+Watch the second half of the timeline: the segment grows and the readout for $|a - b|$ counts up to 2.5. Drag the two tips together and the distance shrinks to 0; drag them apart and it grows. Distance is how AI measures "how different are these two things": two photos, two words or two customers are close if their vectors are close.
+
+<VectorPlane client:visible scene="length" title="Distance: the length of the difference" />
+
+</Step>
+
+<Step title="More than two numbers: a row of features">
+
+Suppose we describe a house by its size, the number of rooms, its age, its distance from the centre, the number of floors and whether it has a garden: $[120, 4, 25, 2.4, 2, 1]$. That is a vector with six entries, one **feature** per entry.
+
+Watch the timeline. First only size and rooms: a point on a plane, at $[3, 4]$ when size is measured in units of 40 m². Then the two coordinates are read off the axes and drop into a list, and four more features join it one at a time. We cannot draw a sixth axis, but nothing else changes. The house is one point in a 6-dimensional space, the sum and the scaling work entry by entry as before, and the norm is the same square root with more terms. For the 2D house it is $\sqrt{3^2 + 4^2} = 5$.
+
+<VectorPlane client:visible scene="features" title="A house as a point, then as a row of six numbers" />
+
+In real models the numbers are usually rescaled first, so that size in square metres does not drown out the number of rooms. A word in a language model is a vector with hundreds or thousands of entries, and a grey-scale photo of 28 by 28 pixels is a vector with 784 entries. Comparing two words or two photos means finding the distance between two points in that huge space. The [dot product](/learn/math/dot-product/) is the next tool for that.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** a vector is an arrow, full stop. **Actually** the arrow is one picture of it. A vector is a list of numbers, and the arrow view works only up to three entries.
+- **You might think** adding vectors means adding their lengths. **Actually** you add entry by entry, and the length of the sum is at most the sum of the lengths. Here $\lVert \mathbf{a} \rVert = 3.16$ and $\lVert \mathbf{b} \rVert = 2.69$, but $\lVert \mathbf{a} + \mathbf{b} \rVert = 5.32$, less than $5.86$. They are equal only when the arrows point the same way.
+- **You might think** a negative scalar makes a vector shorter. **Actually** it flips the direction; the length changes by the factor $|c|$, so $c = -2$ makes it twice as long.
+- **You might think** high-dimensional vectors need new maths. **Actually** the formulas are identical; only the drawing stops working.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>What is $[2, -1] + [0, 5]$?</summary>
+
+$[2, 4]$. Add the entries in matching positions.
+
+</details>
+
+<details>
+<summary>What is $3 \cdot [1, -2, 0.5]$?</summary>
+
+$[3, -6, 1.5]$. Multiply every entry by 3.
+
+</details>
+
+<details>
+<summary>What is the length of $[6, 8]$?</summary>
+
+$\sqrt{36 + 64} = 10$.
+
+</details>
+
+<details>
+<summary>What is the distance between $[1, 1]$ and $[4, 5]$?</summary>
+
+The difference is $[3, 4]$, whose length is 5.
+
+</details>
+
+<details>
+<summary>A dataset has 1000 houses, each with 6 features. What does one house correspond to?</summary>
+
+One vector with 6 entries, that is, one point in a 6-dimensional space. The whole dataset is 1000 such points.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- 3Blue1Brown, [*Essence of linear algebra*](https://www.3blue1brown.com/topics/linear-algebra), chapters 1 and 2: vectors, linear combinations, span. The best animated version of this lesson.
+- Deisenroth, Faisal and Ong, [*Mathematics for Machine Learning*](https://mml-book.com/), chapter 2 (linear algebra) and section 3.1 (norms).
+- Khan Academy, [Vectors and spaces](https://www.khanacademy.org/math/linear-algebra/vectors-and-spaces).
+- Next: [The dot product](/learn/math/dot-product/).
+
+</Step>

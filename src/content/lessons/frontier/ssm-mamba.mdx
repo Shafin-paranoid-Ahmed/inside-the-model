@@ -1,0 +1,195 @@
+---
+title: "State-Space Models (Mamba) and Hybrids"
+summary: "Recurrent-style sequence models with selective state updates and linear-time scaling, often mixed with attention."
+day: 15
+track: frontier
+order: 3
+level: frontier
+duration: 35
+prereqs: ["sequences/rnn-cell","transformers/self-attention"]
+status: stub
+lastReviewed: 2026-09-29
+---
+
+Attention costs grow quadratically with length; state-space models offer another way.
+
+import Step from '../../../components/ui/Step.astro';
+
+{/*
+LESSON BRIEF (skeleton, 2026-10-03). Widget: SelectiveScan (plan: plans/day-15.md). Cost numbers from the shared core src/lib/frontier/seqcost.ts (counted operations, never milliseconds).
+Model: one channel, diagonal state of size N (default 8), real negative A, zero-order-hold discretisation.
+LTI version: fixed delta, B, C. Selective version: delta_t, B_t, C_t are linear functions of the input token (softplus for delta), trained in a worker on a selective-copying toy task (copy the 4 marked tokens out of a 32-token stream of fillers). If training is unreliable, hand-set the selection weights and say so in one sentence.
+Recall experiment: an outer-product (linear) memory with state N x d storing key-value pairs vs exact softmax attention over the stored pairs.
+
+(a) TEXTBOOK-STABLE MECHANISMS:
+- Continuous SSM h' = A h + B x, y = C h; ZOH discretisation A_bar = exp(delta A), B_bar approx delta B.
+- LTI SSMs equal a convolution with kernel K_j = C A_bar^j B_bar, so they train in parallel (S4).
+- Selection: input-dependent delta, B, C break time invariance; large delta resets/writes, small delta keeps state (Mamba). Close cousin of an LSTM forget gate.
+- Recurrent inference: constant memory and constant work per token; attention: KV cache grows with length, work per token grows with length.
+- A fixed-size state has finite recall capacity; attention can look up any past token exactly.
+- Hybrids interleave a few attention layers with many SSM layers.
+
+(b) RESEARCH LIST:
+R1 Mamba's selection mechanism, discretisation and hardware-aware scan: Gu and Dao arXiv 2312.00752 (confirmed 2026-10-03), section 3.
+R2 Structured state-space duality and Mamba-2 state size: Dao and Gu arXiv 2405.21060 (confirmed 2026-10-03).
+R3 S4 convolution view: Gu et al. arXiv 2111.00396 (VERIFY).
+R4 Hybrid ratios and why: Jamba arXiv 2403.19887 (confirmed 2026-10-03); Griffin arXiv 2402.19427 (VERIFY). Do not state ratios from memory.
+R5 Recall limits of fixed-state models: query "associative recall state space models limitations paper"; candidate: Arora et al. "Zoology" arXiv 2312.04927 (VERIFY); Jelassi et al. "Repeat after me" arXiv 2402.01032 (VERIFY).
+R6 Which current production or open-weight models are hybrids (official model cards, dated). Query: "hybrid mamba transformer model card 2026".
+*/}
+
+<Step title="A recurrence with a fixed-size state">
+
+A state-space model reads a sequence one step at a time and keeps a fixed-size state, which it decays and adds the new input to at every step.
+
+{/*
+IDEA: linear recurrence h_t = A_bar h_(t-1) + B_bar x_t, y_t = C h_t; diagonal A means each state dimension is a leaky memory with its own decay rate. Link /learn/sequences/rnn-cell/.
+WIDGET: SelectiveScan mode="lti" N=8. Input row (a few impulses), 8 state bars with decay rates labelled, output row.
+T: t steps through 32 tokens; each impulse kicks the state bars, which then decay at their own rates; output traces out.
+TRY: watch the slow-decaying bars hold the first impulse long after the fast ones forget it.
+QUOTE: the decay per step of the fastest and slowest state dimension; state value 10 steps after the first impulse for both.
+MATH: continuous form and ZOH discretisation.
+RESEARCH: R1, R3.
+*/}
+
+</Step>
+
+<Step title="The same recurrence as a convolution">
+
+When the recurrence uses the same numbers at every step, its output is a convolution of the input with a fixed kernel, so a whole sequence can be computed at once during training.
+
+{/*
+IDEA: LTI equals convolution with K_j = C A_bar^j B_bar.
+WIDGET: SelectiveScan mode="conv" N=8. Kernel K drawn as a stem plot; the kernel slides along the input; output from the scan (dots) and from the convolution (line) coincide.
+T: t slides the kernel along the 32-token input, building the output point by point.
+TRY: compare the scan dot and the convolution line at any position: they agree.
+QUOTE: max absolute difference between the two outputs (should be about 1e-15); the first three kernel values.
+MATH: unroll the recurrence to show the sum. CODE: numpy scan vs np.convolve.
+RESEARCH: R3.
+*/}
+
+</Step>
+
+<Step title="A fixed recurrence cannot choose what to keep">
+
+If every input is treated the same way, the state cannot keep an important token while ignoring unimportant ones in between.
+
+{/*
+IDEA: selective copying failure for LTI. Marked tokens arrive at random positions among fillers; the LTI model decays everything uniformly.
+WIDGET: SelectiveScan mode="copy" variant="lti". The 32-token stream with 4 marked tokens; state heatmap over time; recovered tokens vs targets at the end (wrong ones outlined in --viz-neg).
+T: t streams the input; the state picture smears as fillers keep arriving.
+TRY: look at which marked tokens are recovered: the late ones survive, the early ones are lost.
+QUOTE: LTI accuracy on the selective-copy test set (fixed seed).
+MATH: none.
+RESEARCH: R1 (selective copying task definition).
+*/}
+
+</Step>
+
+<Step title="Selection: let each token set its own step size">
+
+Mamba makes the step size and the read and write vectors depend on the current token, so the model can hold its state through filler and overwrite it when something important arrives.
+
+{/*
+IDEA: input-dependent delta_t, B_t, C_t. Large delta = forget old state and write the new token; small delta = skip the token. Compare an LSTM forget gate (/learn/sequences/lstm-gru/).
+WIDGET: SelectiveScan mode="copy" variant="selective". Same stream as step 3, plus a delta_t bar under each token (tall on marked tokens, near zero on fillers).
+T: t streams the input; state holds steady through fillers and jumps on marked tokens.
+TRY: compare the delta bar under a marked token with one under a filler.
+QUOTE: selective accuracy on the same test set as step 3; mean delta on marked vs filler tokens.
+MATH: delta_t = softplus(w x_t + b), A_bar_t = exp(delta_t A). No convolution view any more: say why.
+RESEARCH: R1.
+*/}
+
+</Step>
+
+<Step title="Cost: one pass with a fixed state versus attention">
+
+A state-space model does the same amount of work for every new token and keeps a fixed-size state, while attention's work and memory grow with every token already seen.
+
+{/*
+IDEA: efficiency. Generation: SSM work per token constant, memory constant; attention work per token proportional to L, KV cache proportional to L. Training: scan O(L) vs attention O(L^2).
+WIDGET: SelectiveScan mode="cost". Two log-log panels: work per generated token vs position, memory vs position, for attention and SSM (from seqcost.ts with labelled toy sizes: d = 512, N = 16).
+T: t sweeps L from 1e2 to 1e6 (log); a cursor rides both curves, readouts count up.
+TRY: read the ratio of attention to SSM memory at L = 1e5.
+QUOTE: both counts at L = 1e3 and 1e6 for the stated toy sizes.
+MATH: counted FLOPs/bytes formulas (same functions as long-context).
+RESEARCH: R1 (throughput claims are the paper's, quote with conditions), R2.
+*/}
+
+</Step>
+
+<Step title="What a fixed-size state forgets">
+
+A fixed-size state can only hold so much, so when asked to recall one of many stored facts it starts to mix them up, while attention can look any of them up exactly.
+
+{/*
+IDEA: recall capacity. Store P key-value pairs in an outer-product memory of size N x d; query a key; error grows once P exceeds about N. Attention over the same pairs retrieves exactly.
+WIDGET: SelectiveScan mode="recall" N=8. Recall accuracy vs number of stored pairs for N = 4, 8, 16 and for attention; the current query's retrieved vector vs the true value.
+T: t increases the number of stored pairs from 1 to 64; curves draw; the retrieved value blurs as P passes N.
+TRY: find the number of pairs where N = 8 drops below 50 percent.
+QUOTE: accuracy at P = 4, 16, 64 for each N; attention accuracy (1.0).
+MATH: memory S = sum v_i k_i^T, readout S q; crosstalk term.
+RESEARCH: R5.
+*/}
+
+</Step>
+
+<Step title="Hybrids: mostly recurrent layers, a few attention layers">
+
+Hybrid models stack many state-space layers with an occasional attention layer, keeping most of the speed while regaining exact recall.
+
+{/*
+IDEA: hybrid architectures as a trade-off between cost and recall.
+WIDGET: SelectiveScan mode="hybrid" ratio=4 (slider: one attention layer every 1 to 16 layers; 32-layer toy stack). Layer stack drawn as coloured strips; readouts: KV memory at L = 1e5 (only attention layers keep a cache), work per token, and recall accuracy at P = 32 (attention present ? exact : SSM curve).
+T: t sweeps the ratio from 1 (all attention) to 32 (no attention); memory falls, recall holds until no attention is left.
+TRY: find the sparsest ratio that still recalls perfectly.
+QUOTE: memory and recall at ratio 1, 8 and 32.
+MATH: memory = (attention layers) x per-layer KV + (SSM layers) x state size.
+RESEARCH: R4, R6 (cite real hybrid designs with dates; no ratios from memory).
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Several claims about state-space models are oversimplified.
+
+{/*
+NO WIDGET. Misconceptions:
+1. Mamba is just an RNN. It is recurrent at inference, but the selective scan is computed in parallel during training (R1).
+2. Linear time means strictly better than attention. Fixed state limits recall (step 6, R5).
+3. SSMs cannot be trained in parallel once selective. They use a parallel scan, not a convolution (R1).
+4. Hybrids are a stopgap. Cite what R4/R6 sources argue.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Answer these to check the key ideas.
+
+{/*
+NO WIDGET. Questions:
+1. Why does an LTI SSM have a convolution form but a selective SSM does not?
+2. What does a large delta_t do to the state?
+3. At 100,000 tokens, which grows: an SSM's state or a transformer's KV cache?
+4. Why does adding one attention layer fix recall in the hybrid figure?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+These are the primary papers for state-space models and hybrids.
+
+{/*
+NO WIDGET. Sources (confirmed 2026-10-03 unless marked):
+- Gu et al. 2021, S4, https://arxiv.org/abs/2111.00396 (VERIFY)
+- Gu and Dao 2023, Mamba, https://arxiv.org/abs/2312.00752
+- Dao and Gu 2024, Transformers are SSMs (Mamba-2), https://arxiv.org/abs/2405.21060
+- Lieber et al. 2024, Jamba, https://arxiv.org/abs/2403.19887
+- De et al. 2024, Griffin, https://arxiv.org/abs/2402.19427 (VERIFY)
+- Arora et al. 2023, Zoology, https://arxiv.org/abs/2312.04927 (VERIFY)
+*/}
+
+</Step>

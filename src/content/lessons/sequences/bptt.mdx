@@ -1,0 +1,217 @@
+---
+title: "Backpropagation Through Time"
+summary: "Backprop on the unrolled graph, summing weight gradients across all time steps."
+day: 8
+track: sequences
+order: 4
+level: advanced
+duration: 40
+prereqs: ["sequences/unrolling","neural-networks/backprop-mlp"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+
+<Step title="The loss is at the end, the blame is everywhere">
+
+Feed "hello" to the recurrent cell from the last two lessons and read out one number after the last letter: $\hat y_5 = -0.32$. Suppose the target was $y_5 = -0.75$. The network is wrong by $0.44$, and we want to fix its weights.
+
+The weights $W_{xh}$, $W_{hh}$ and $\mathbf b$ took part in all five steps. The last hidden state $\mathbf h_5$ came from $\mathbf h_4$, which came from $\mathbf h_3$, and so on back to the first letter. So a change to $W_{hh}$ at step 1 could have changed the answer at step 5, by going through every step in between. To assign blame correctly, the gradient of the loss has to travel **backward through time**, along the same chain the forward pass used.
+
+That is **backpropagation through time (BPTT)**. Watch the forward pass run left to right, and then the magenta gradient run back from the last step to the first. The bars at the bottom show the size of the gradient $\lVert \partial L/\partial \mathbf h_t \rVert$ at each step, on a log scale.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello" scale={1} folded={false} maxLen={12} title="Forward in time, then the gradient backward through time" />
+
+The lesson from [backpropagation through an MLP](/learn/neural-networks/backprop-mlp/) carries over unchanged: it is the chain rule, applied once per node of the unrolled graph. Unrolling turned the loop into an ordinary graph, so we can reuse everything we know.
+
+</Step>
+
+<Step title="A loss over a whole sequence">
+
+We need a single number to differentiate. In this widget each step has a readout $\hat y_t = \mathbf v^\top \mathbf h_t$ and a squared error against a fixed target $y_t$. The loss can sit at the last step only, as in a sentiment classifier that reads a whole review and then answers, or at every step, as in a tagger or a language model that predicts the next character everywhere:
+
+$$L = \sum_{t \in \text{loss steps}} L_t, \qquad L_t = \tfrac12(\hat y_t - y_t)^2.$$
+
+For "hello", a loss at the last step alone is $L = 0.095$. With a loss at every step it is $L = 1.777$, because the earlier readouts are also far from their targets. Tick the box below to switch, and watch the bars change: with a loss at every step, every position receives gradient directly as well as through the chain.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello" scale={1} folded={false} showLossToggle showPanel={false} title="Loss at the last step, or at every step" />
+
+</Step>
+
+<Step title="Backward through the unrolled graph">
+
+Go back to the recipe from the backprop lesson: each node multiplies its local derivative by the gradient arriving from above. In the unrolled graph the state $\mathbf h_t$ has two places it feeds into. It goes to its own readout, and it goes into the next step to help compute $\mathbf h_{t+1}$. When a value feeds two places, the gradients **add**. So
+
+$$\mathbf g_t \;=\; \underbrace{(\hat y_t - y_t)\,\mathbf v}_{\text{from its own loss}} \;+\; \underbrace{W_{hh}^{\top}\bigl(\mathbf g_{t+1} \odot (1 - \mathbf h_{t+1}^{2})\bigr)}_{\text{from the future}}, \qquad \mathbf g_t \equiv \frac{\partial L}{\partial \mathbf h_t}.$$
+
+The second term is the backward pass through one copy of the cell. The gradient at step $t+1$ first goes through the $\tanh$ (multiplied by its local derivative $1 - \mathbf h_{t+1}^2$), then through the matrix $W_{hh}$ (multiplied by its transpose), and arrives at step $t$. For a loss at the last step only, the first term vanishes at every step except the last, and the gradient is the second term applied over and over.
+
+In the figure, the gradient starts at step 5: $\mathbf g_5 = (\hat y_5 - y_5)\,\mathbf v = (0.019,\,-0.243,\,0.155,\,0.133)$, with norm $0.32$. By step 1 it has been multiplied backward through four copies of the cell and has norm $0.12$. Click a time step to see the gradient vector $\partial L/\partial \mathbf h_t$ in the panel.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello" scale={1} folded={false} loopPhase="backward" select={4} title="The gradient rides the recurrent edge backward" />
+
+<details>
+<summary>Show the math</summary>
+
+Write the step as $\mathbf z_t = W_{xh}\mathbf x_t + W_{hh}\mathbf h_{t-1} + \mathbf b$ and $\mathbf h_t = \tanh(\mathbf z_t)$. The Jacobian of one step with respect to the previous state is
+
+$$\frac{\partial \mathbf h_{t+1}}{\partial \mathbf h_t} = \operatorname{diag}\bigl(1 - \mathbf h_{t+1}^2\bigr)\,W_{hh}.$$
+
+The chain rule sends the gradient through the transpose of this matrix: $\mathbf g_t \mathrel{+}= \bigl(\partial \mathbf h_{t+1}/\partial \mathbf h_t\bigr)^{\top}\mathbf g_{t+1}$, which is the second term above. The gradient with respect to the pre-activation is $\boldsymbol\delta_t = \mathbf g_t \odot (1 - \mathbf h_t^2)$, the vector that every weight gradient below will use.
+
+The recursion starts at $\mathbf g_T = \partial L_T/\partial\mathbf h_T$ and runs for $t = T-1, \dots, 1$. It costs about one forward pass, and needs every $\mathbf h_t$ from the forward pass, so those must be stored.
+
+</details>
+
+</Step>
+
+<Step title="One weight, many steps: the gradient is a sum over time">
+
+The recursion gave a gradient at every hidden state. The weights are what we actually want. The matrix $W_{hh}$ is used at **every** step, so a small change to it changes every step's computation at once. The multivariable chain rule says: when one parameter enters the loss through several paths, add the gradients of each path. The path through step $t$ contributes $\boldsymbol\delta_t\,\mathbf h_{t-1}^\top$, the same "gradient above times input below" as the weight rule in an MLP. Adding over all steps:
+
+$$\frac{\partial L}{\partial W_{hh}} = \sum_{t=1}^{T} \boldsymbol\delta_t\,\mathbf h_{t-1}^{\top}, \qquad \frac{\partial L}{\partial W_{xh}} = \sum_{t=1}^{T} \boldsymbol\delta_t\,\mathbf x_t^{\top}, \qquad \frac{\partial L}{\partial \mathbf b} = \sum_{t=1}^{T} \boldsymbol\delta_t.$$
+
+This is the one thing that is new in BPTT compared with an MLP: because the weights are **tied**, their gradient is the sum of one contribution per time step. The single update then changes the shared weight once.
+
+For "hello" with the loss at the last step, the contributions to $\partial L/\partial W_{hh}$ have norms $0.000,\ 0.085,\ 0.148,\ 0.197,\ 0.198$ for steps 1 to 5. Step 1 contributes exactly zero because $\mathbf h_0 = \mathbf 0$, so $\boldsymbol\delta_1\mathbf h_0^\top = 0$. The norm of the sum is $0.400$, less than the sum of the norms ($0.629$), because the contributions point in different directions and partly cancel. Pin any step in the panel to see its contribution.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello" scale={1} folded={false} loopPhase="backward" select={3} title="Each step adds its own piece to the gradient of the shared weight" />
+
+<details>
+<summary>Show the code</summary>
+
+The same computation in PyTorch. `loss.backward()` walks the unrolled graph in reverse and accumulates into `W_hh.grad` once per time step, which is exactly the sum above.
+
+```python
+import torch
+
+H, D = 4, 4
+W_xh = torch.randn(H, D, requires_grad=True)
+W_hh = torch.randn(H, H, requires_grad=True)
+b = torch.zeros(H, requires_grad=True)
+v = torch.randn(H)
+
+xs = torch.randn(5, D)              # five time steps
+y_last = torch.tensor(-0.75)
+
+h = torch.zeros(H)
+for x in xs:                        # forward: builds the unrolled graph
+    h = torch.tanh(W_xh @ x + W_hh @ h + b)
+
+loss = 0.5 * (v @ h - y_last) ** 2  # loss at the last step
+loss.backward()                     # BPTT
+print(W_hh.grad)                    # sum over all 5 steps of delta_t h_{t-1}^T
+```
+
+</details>
+
+</Step>
+
+<Step title="Watch the gradient shrink or grow">
+
+Every step of the backward pass multiplies the gradient by $W_{hh}^\top$ and by the $\tanh$ slope. So after $k$ steps back the gradient has been multiplied about $k$ times by something of a fixed size, and the result is very sensitive to how big that something is.
+
+The slider sets the **recurrent weight scale** $s$: every singular value of $W_{hh}$ equals $s$, so $s$ is exactly how much $W_{hh}$ stretches a vector. Drag it and watch the bars. With $s = 0.8$ on "hello world", the gradient falls by about $\times 0.70$ per step going backward, and step 1 receives only $2.8\%$ of the gradient at step 11. Push $s$ up to $1.5$ and it *grows* by about $\times 1.08$ per step, so step 1 gets more than twice as much as step 11. At $s = 0.5$ the fall is $\times 0.45$ per step and the first step gets $0.03\%$.
+
+This is the whole story of vanishing and exploding gradients in recurrent networks, and the next lesson explains it precisely. The picture to keep: **a gradient that must cross many steps is multiplied by the same kind of factor many times.**
+
+<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={0.8} folded={false} maxLen={12} loopPhase="backward" showScale showPanel={false} title="Drag the recurrent weight scale: the gradient per step" />
+
+</Step>
+
+<Step title="Truncated BPTT: cut the chain">
+
+Full BPTT needs to store every state and to backpropagate through the entire sequence. For a document of 100,000 characters that is impractical, and the earliest gradients would be tiny or huge anyway. The standard remedy is **truncated BPTT**: split the sequence into chunks of $k$ steps, run the forward pass through everything (carrying the hidden state across chunk boundaries), but let gradients flow backward only within a chunk.
+
+In the figure, each dashed line marks where the gradient stops. The forward values are unchanged; only the backward flow is cut. With a loss at every step (the default here), each chunk still learns from its own losses. Switch the loss to the last step only and the earlier chunks receive nothing at all, which is the price of truncation: the network cannot learn a dependency longer than the chunk, because the gradient never connects the two ends.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={1} folded={false} maxLen={12} lossAt="all" truncate={4} loopPhase="backward" showTruncate showLossToggle showPanel={false} title="Truncated BPTT: gradients stop at each dashed line" />
+
+<details>
+<summary>Show the code</summary>
+
+In PyTorch the cut is `detach()`: it keeps the hidden state's value but removes its history, so `backward()` stops there.
+
+```python
+h = torch.zeros(H)
+for chunk in chunks:                        # e.g. 4 characters per chunk
+    h = h.detach()                          # carry the value, drop the graph
+    loss = 0
+    for x, y in chunk:
+        h = torch.tanh(W_xh @ x + W_hh @ h + b)
+        loss = loss + 0.5 * (v @ h - y) ** 2
+    opt.zero_grad()
+    loss.backward()                         # flows back at most one chunk
+    opt.step()
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think BPTT is a different algorithm from backprop. Actually** it is ordinary backpropagation applied to the unrolled graph. The only new idea is that tied weights collect one gradient contribution per time step, and those add up.
+
+**You might think each time step updates the weights separately. Actually** there is a single update per backward pass, using the summed gradient. The weights do not change between steps of the forward pass.
+
+**You might think the gradient of step $t$ is just about step $t$. Actually** $\partial L/\partial \mathbf h_t$ collects the effect of $\mathbf h_t$ on every later loss, through all the steps in between. That is why it needs the recursion from the future.
+
+**You might think truncated BPTT truncates the forward pass. Actually** the forward pass still runs through the whole sequence and carries the state across chunks. Only the gradient is cut, which limits how far back the network can learn to connect cause and effect.
+
+**You might think the size of the gradient at early steps says the early inputs do not matter. Actually** it says the *learning signal* that reaches them is small. The next lesson shows this is a property of the multiplication, not of the data.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. In BPTT, why does the gradient at $\mathbf h_t$ have two terms (when there is a loss at every step)?</summary>
+
+Because $\mathbf h_t$ feeds into two places: its own readout and loss $L_t$, and the next step's computation of $\mathbf h_{t+1}$. When a value feeds several nodes, the gradients from each path add: $\mathbf g_t = (\hat y_t - y_t)\mathbf v + W_{hh}^\top(\mathbf g_{t+1}\odot(1-\mathbf h_{t+1}^2))$.
+
+</details>
+
+<details>
+<summary>2. Why is $\partial L/\partial W_{hh}$ a sum over time steps?</summary>
+
+$W_{hh}$ is one matrix used at every step. It reaches the loss through $T$ paths, one through each step's $\mathbf z_t$. By the multivariable chain rule the gradients of the paths add, giving $\sum_t \boldsymbol\delta_t \mathbf h_{t-1}^\top$.
+
+</details>
+
+<details>
+<summary>3. Step 1 of the sequence has $\mathbf h_0 = \mathbf 0$. What does it contribute to $\partial L/\partial W_{hh}$, and to $\partial L/\partial W_{xh}$?</summary>
+
+Nothing to $W_{hh}$: its contribution is $\boldsymbol\delta_1\mathbf h_0^\top = \mathbf 0$, since $\mathbf h_0 = \mathbf 0$. It does contribute to $W_{xh}$, with $\boldsymbol\delta_1\mathbf x_1^\top$, which is generally non-zero.
+
+</details>
+
+<details>
+<summary>4. A sequence has 1,000 steps and the loss is only at the last step. You train with truncated BPTT of length 50. Can the model learn that step 10 matters for step 1,000?</summary>
+
+Not through the gradient. The last 50 steps see the loss, but the gradient never crosses a chunk boundary, so nothing tells the weights that what happened at step 10 helped or hurt. The hidden state may still *carry* that information forward, but training gives no signal to make it do so.
+
+</details>
+
+<details>
+<summary>5. You double the recurrent scale $s$ from 0.8 to 1.6. What happens to the size of the gradient that reaches step 1, and why?</summary>
+
+It increases, by a large factor. Each backward step multiplies the gradient by roughly $s$ times a $\tanh$ slope below 1. At $s = 0.8$ that product is about $0.70$ and at $s = 1.6$ it is above $1$, so over 10 steps the gradient goes from being multiplied by about $0.03$ to being multiplied by more than $1$.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Paul Werbos, "Backpropagation through time: what it does and how to do it", *Proceedings of the IEEE* 78(10), 1550-1560 (1990). The classic description of the algorithm.
+- Rumelhart, Hinton and Williams, "Learning internal representations by error propagation", in *Parallel Distributed Processing*, vol. 1 (1986). Backpropagation for recurrent nets by unrolling.
+- Ronald Williams and Jing Peng, "An efficient gradient-based algorithm for on-line training of recurrent network trajectories", *Neural Computation* 2(4), 490-501 (1990). The truncated variant, and the trade-off between memory and how far back learning reaches.
+- Goodfellow, Bengio and Courville, [Deep Learning, section 10.2.2: Computing the Gradient in a Recurrent Neural Network](https://www.deeplearningbook.org/contents/rnn.html). The derivation with the same tied-weight sum.
+- Ilya Sutskever, [Training Recurrent Neural Networks](https://www.cs.utoronto.ca/~ilya/pubs/ilya_sutskever_phd_thesis.pdf), PhD thesis (2013). A careful discussion of why recurrent networks are hard to train.
+
+Next: [Why vanilla RNNs forget](/learn/sequences/vanishing-gradients-time/).
+
+</Step>

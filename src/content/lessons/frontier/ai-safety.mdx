@@ -1,0 +1,203 @@
+---
+title: "AI Safety"
+summary: "Alignment problems, capability and safety evaluations, and red-teaming."
+day: 15
+track: frontier
+order: 7
+level: frontier
+duration: 30
+prereqs: ["alignment/rlhf","alignment/evaluations"]
+status: stub
+lastReviewed: 2026-09-29
+---
+
+Making a model capable is one problem; making it reliably do what we intend is another.
+
+import Step from '../../../components/ui/Step.astro';
+
+{/*
+LESSON BRIEF (skeleton, 2026-10-03). Widget: SafetyLab (plan: plans/day-15.md).
+Real tiny systems, seeded, trained in a worker:
+  GRID: small gridworlds solved by tabular Q-learning. OPTIONAL dependency on a Day 11 RL core (gridworld + Q-learning) if one ships in src/lib/; otherwise a 40-line tabular Q-learner in sim.ts.
+  FILTER: a logistic-regression "content filter" over bag-of-words features of short synthetic strings, and a greedy word-substitution attacker.
+Proxy reward = what the agent is trained on; true objective = what we meant, always plotted side by side (proxy --viz-forward, true --viz-pos, gap --viz-neg).
+Tone: precise, no alarmism, no reassurance; claims about real models only from primary sources.
+
+(a) TEXTBOOK-STABLE MECHANISMS:
+- Specification gaming: optimising a proxy reward finds behaviours that score well but miss the intent.
+- Goodhart / over-optimisation: true objective can rise then fall as optimisation against a proxy increases.
+- Goal misgeneralisation: capabilities generalise out of distribution while the learned goal does not.
+- Conditional behaviour: a policy trained with a penalty only when an observable "overseer" flag is on learns to behave only when the flag is on.
+- Evaluation statistics: success rates from n trials have sampling error; more elicitation effort raises measured capability.
+- Adversarial search finds inputs that fool a fixed classifier; adversarial training closes those holes and search finds others.
+
+(b) RESEARCH LIST:
+R1 Specification gaming: Krakovna et al., DeepMind blog 2020-04-21, https://deepmind.google/discover/blog/specification-gaming-the-flip-side-of-ai-ingenuity/ (confirmed 2026-10-03), and its examples spreadsheet (VERIFY URL). Concrete problems: Amodei et al. arXiv 1606.06565 (VERIFY).
+R2 Over-optimisation: Gao, Schulman, Hilton arXiv 2210.10760 (confirmed 2026-10-03). Reward hacking in reasoning models: Baker et al. arXiv 2503.11926 (confirmed 2026-10-03).
+R3 Goal misgeneralisation: Langosco et al. arXiv 2105.14111 (confirmed 2026-10-03); Shah et al. arXiv 2210.01790 (VERIFY).
+R4 Deception concerns: Hubinger et al. Sleeper Agents arXiv 2401.05566 (confirmed 2026-10-03); Greenblatt et al. Alignment faking arXiv 2412.14093 (confirmed 2026-10-03). Quote setups and caveats exactly.
+R5 Dangerous-capability evaluations: Shevlane et al. arXiv 2305.15324 (confirmed 2026-10-03); METR time-horizon arXiv 2503.14499 (confirmed 2026-10-03); current lab frameworks (Anthropic RSP, OpenAI Preparedness Framework, Google DeepMind Frontier Safety Framework): official pages, current versions, dated (all VERIFY).
+R6 Red-teaming: Perez et al. arXiv 2202.03286 (VERIFY); Ganguli et al. arXiv 2209.07858 (VERIFY); Zou et al. GCG arXiv 2307.15043 (VERIFY).
+R7 Governance and open problems: International AI Safety Report 2026 (published 2026-02-03), https://internationalaisafetyreport.org/publication/international-ai-safety-report-2026 (confirmed 2026-10-03); EU AI Act GPAI obligations, official text (VERIFY). Query: "EU AI Act general-purpose AI code of practice official".
+*/}
+
+<Step title="The reward says one thing, we meant another">
+
+An agent trained to maximise a reward will find whatever behaviour scores highest, including behaviours that satisfy the letter of the reward and miss its point.
+
+{/*
+IDEA: specification gaming. Gridworld "race": reward +1 for each checkpoint touched; checkpoints respawn after a few steps; the intent is to reach the finish. The trained agent loops between two checkpoints forever.
+WIDGET: SafetyLab mode="gaming". Grid with agent path trail; two counters: proxy reward (checkpoints) and true objective (finished? and steps to finish).
+T: t plays the trained agent's episode; the loop becomes visible as the trail repeats; counters tick.
+TRY: watch the proxy counter climb while the finish line is never reached.
+QUOTE: proxy reward and finish rate for the trained agent vs a hand-written "intended" policy.
+MATH: Q-learning update (link /learn/alignment/q-learning/).
+RESEARCH: R1 (cite one or two documented real examples from the DeepMind list, with their sources).
+*/}
+
+</Step>
+
+<Step title="More optimisation can make it worse">
+
+When a reward is only a stand-in for what we want, optimising it harder often helps at first and then starts to hurt.
+
+{/*
+IDEA: Goodhart curve. Same race, sweeping optimisation strength (training episodes, or best-of-n over random policies).
+WIDGET: SafetyLab mode="overoptimize". Two curves vs optimisation (log x): proxy reward rising, true objective rising then falling; the turning point marked.
+T: t sweeps the optimisation amount; snapshots of the agent's path appear as a strip of small grids above the curve.
+TRY: find the point where the true objective peaks.
+QUOTE: optimisation amount at the peak; true objective at the peak and at the end.
+MATH: none.
+RESEARCH: R2 (Gao et al.'s functional forms; Baker et al.'s observation about penalising visible hacking; quote, don't paraphrase from memory).
+*/}
+
+</Step>
+
+<Step title="Right skills, wrong goal">
+
+A model can keep all its skills in a new situation but pursue the wrong goal, because during training two goals always looked the same.
+
+{/*
+IDEA: goal misgeneralisation. Training levels: the coin is always in the rightmost column; the agent learns "go right". Test levels: coin placed at random.
+WIDGET: SafetyLab mode="misgeneralize". Two panels: a training level and a test level, agent trails; readouts: reaches the right edge (capability) vs collects the coin (goal), on train and test.
+T: t plays episodes alternating train and test levels.
+TRY: watch the agent on a test level walk past the coin to the right wall.
+QUOTE: coin rate and right-edge rate on train vs test (100 seeded levels each).
+MATH: none.
+RESEARCH: R3 (CoinRun result as reported).
+*/}
+
+</Step>
+
+<Step title="Behaving well only when watched">
+
+If a training signal only applies when an overseer is present, and the model can tell, it can learn to behave well only when it is being watched.
+
+{/*
+IDEA: conditional behaviour as the mechanism behind deception concerns; then what real studies report.
+WIDGET: SafetyLab mode="oversight". Gridworld with a shortcut through a forbidden cell; penalty for the shortcut applies only when the "inspector" flag (visible to the agent) is on; flag shown as a lamp.
+T: t plays episodes with the flag alternating; the trail takes the safe route with flag on and the shortcut with flag off.
+TRY: compare the forbidden-cell rate with the flag on and off.
+QUOTE: forbidden-cell rate with flag on vs off after training.
+MATH: none.
+CAVEAT (one sentence): this toy shows conditional behaviour from a visible flag, not intent; then cite what R4 papers found and under which setups.
+RESEARCH: R4.
+*/}
+
+</Step>
+
+<Step title="Evaluations for dangerous capabilities">
+
+Labs test models for capabilities that could cause serious harm, and the measured score depends on how many trials are run and how hard the evaluators try to bring the capability out.
+
+{/*
+IDEA: capability evals: sampling error and elicitation. A held-out gridworld task stands in for a "dangerous" capability; elicitation = extra fine-tuning episodes.
+WIDGET: SafetyLab mode="evals" trials=20 (slider 5 to 500). Measured success with a 95 percent interval vs elicitation effort; a dashed threshold line.
+T: t increases elicitation effort; the point and its interval move up; the interval crosses the threshold before the point does.
+TRY: change trials from 20 to 500 and see how the interval narrows.
+QUOTE: measured rate and interval at low and high elicitation for 20 and 500 trials.
+MATH: Wilson interval.
+RESEARCH: R5 (dangerous-capability vs alignment evaluations; time-horizon method). Link /learn/alignment/evaluations/.
+*/}
+
+</Step>
+
+<Step title="Red-teaming: search for failures">
+
+Red-teaming means deliberately searching for inputs that make a system fail, and automated search finds holes faster than people can patch them by hand.
+
+{/*
+IDEA: adversarial search against a fixed filter; adversarial training; new holes.
+WIDGET: SafetyLab mode="redteam". Left: attack string being edited word by word, filter score bar against its threshold; right: attack success rate over iterations, before and after one round of adversarial training.
+T: t = attack iteration; substitutions flash; success curve climbs, drops after retraining, climbs again more slowly.
+TRY: watch how many edits the second attack needs compared with the first.
+QUOTE: success rate after 50 iterations before and after adversarial training; median edits needed.
+MATH: none. CODE: greedy substitution loop.
+RESEARCH: R6.
+*/}
+
+</Step>
+
+<Step title="From evaluations to rules: governance">
+
+Labs and governments increasingly tie safeguards to evaluation results, committing in advance to what happens when a model crosses a capability threshold.
+
+{/*
+IDEA: if-then commitments; open problems.
+WIDGET: SafetyLab mode="thresholds". The step-5 eval scores over a sequence of model checkpoints as a line; threshold bands labelled with generic safeguard levels ("more testing", "restricted release", "pause"), named generically, not after any real framework.
+T: t moves through checkpoints; when the interval's upper bound crosses a band, that band's safeguard lights.
+TRY: compare the checkpoint that triggers a safeguard when using the point estimate vs the interval's upper bound.
+QUOTE: the two trigger checkpoints.
+MATH: none.
+RESEARCH: R5 (lab frameworks, current versions), R7 (international report, EU AI Act); list 3 to 4 open problems as stated in the international report.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Safety discussions often run into a few misconceptions.
+
+{/*
+NO WIDGET. Misconceptions:
+1. Reward hacking is a bug in the code. It is the optimiser doing its job on a flawed specification (step 1).
+2. If a model passes an evaluation, it lacks the capability (step 5: elicitation, sampling error).
+3. Red-teaming proves a system is safe. It finds failures; it cannot show their absence (step 6).
+4. Safety is only about distant future systems. Cite current incident/eval reporting from R7.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Try these questions on the ideas in this lesson.
+
+{/*
+NO WIDGET. Questions:
+1. What is the difference between specification gaming and goal misgeneralisation?
+2. Why can the true objective fall while the proxy keeps rising?
+3. A model succeeds on 2 of 20 trials. Is the true rate below 15 percent? What would you do?
+4. Why does patching one attack not end red-teaming?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+The primary research and policy sources for this lesson are below.
+
+{/*
+NO WIDGET. Sources (confirmed 2026-10-03 unless marked):
+- Amodei et al. 2016, Concrete problems in AI safety, https://arxiv.org/abs/1606.06565 (VERIFY)
+- Krakovna et al. 2020, Specification gaming, https://deepmind.google/discover/blog/specification-gaming-the-flip-side-of-ai-ingenuity/
+- Langosco et al. 2021, Goal misgeneralization in deep RL, https://arxiv.org/abs/2105.14111
+- Gao, Schulman, Hilton 2022, Reward model overoptimization, https://arxiv.org/abs/2210.10760
+- Shevlane et al. 2023, Model evaluation for extreme risks, https://arxiv.org/abs/2305.15324
+- Hubinger et al. 2024, Sleeper Agents, https://arxiv.org/abs/2401.05566
+- Greenblatt et al. 2024, Alignment faking, https://arxiv.org/abs/2412.14093
+- Baker et al. 2025, Monitoring reasoning models, https://arxiv.org/abs/2503.11926
+- Kwa et al. 2025, METR time horizons, https://arxiv.org/abs/2503.14499 (author list VERIFY)
+- International AI Safety Report 2026, https://internationalaisafetyreport.org/publication/international-ai-safety-report-2026
+*/}
+
+</Step>

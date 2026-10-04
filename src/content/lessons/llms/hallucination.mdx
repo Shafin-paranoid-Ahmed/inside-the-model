@@ -1,0 +1,175 @@
+---
+title: "Hallucination: Why It Happens"
+summary: "Models are trained to produce plausible text, not to verify truth, so they can state falsehoods fluently."
+day: 10
+track: llms
+order: 6
+level: core
+duration: 25
+prereqs: ["llms/sampling"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import HallucinationLab from '../../../components/widgets/HallucinationLab/HallucinationLab.svelte';
+
+A fluent answer is not the same thing as a true one. To see why, we use a model small enough to study completely.
+
+<Step title="A confident answer about someone who does not exist">
+
+A **hallucination** is a fluent statement from a language model that is not true or not supported by anything it was given. To watch one happen under controlled conditions, we trained a tiny model on sentences like `mira tolven was born in may.` about 200 invented people. Some people appear in many training lines, some in a single line, and 50 never appear at all. (Real models read BPE tokens, not characters; see [tokenization](/learn/transformers/tokenization/). Here each month is a single token.)
+
+Watch the two questions. The first person appeared in 20 training lines and the model is 97% sure of `august`, which is right. The second, `pikun budel`, never appeared: nobody ever told the model anything about this name. It still answers `august` with 90% probability, in exactly the same format. Nothing in the answer says "I have never heard of this person". This is one of the most confident answers among the 50 unseen people; on average the model is 35% sure about them, still far above the 8% (1 in 12) it would give if it knew nothing.
+
+<HallucinationLab client:visible mode="hook" title="The same fluent answer, with and without training data" />
+
+Try your own name in the box. Whatever you type, you get a month.
+
+</Step>
+
+<Step title="The objective rewards plausibility">
+
+Training a language model means lowering **cross-entropy**, a score that is small when the model gives high probability to the text that really follows (see [pretraining](/learn/llms/pretraining/)). Every training line here ends with a month. No line ever ends with the word "unknown". So the training signal never rewards saying "I don't know", and the model learns to put its probability on months.
+
+The bars below feed the 50 unseen people to the model one by one and average their answers. The probability it gives to the `unknown` token (which exists in its vocabulary but never appeared in a training line) is **0.05%**. All the rest goes to months. The model does not simply copy the overall month frequencies of the training data either: the two sets of bars stay about **0.17** apart (the total variation distance, the share of probability that would have to move to make them equal). Its guess for an unseen name comes from whatever the letters of the name resemble.
+
+<HallucinationLab client:visible mode="objective" title="Unseen people always get a month, almost never 'unknown'" />
+
+Pick one unseen person below the figure and compare their dots with the average bars. A single answer is far more peaked than the average, because each name pulls the model toward its own month.
+
+</Step>
+
+<Step title="Rare facts are the ones it gets wrong">
+
+Where would a model get a fact right? Only if it learned it, and learning depends on how often it saw it. The figure checks all 200 people and groups them by how many lines about them were in the training text.
+
+Facts seen 5, 10 or 20 times are answered right every time. Facts seen twice are right **72.5%** of the time (29 of 40). Facts seen once are right only **34%** of the time (17 of 50). Facts never seen are right **6%** of the time (3 of 50), about what guessing among 12 months gives. Note that 50 of the 150 people who appear in training appear exactly once, one third of them.
+
+That third matters. Kalai and Vempala (2024) prove that a model whose probabilities are calibrated (the next step explains the word) must hallucinate at about the rate at which facts appear exactly once in its training data. Kandpal et al. (2023) measured a related pattern in real large models: question-answering accuracy rises with the number of pre-training documents related to the question, and answering rare questions would take many orders of magnitude more scale. Our model repeats the lesson in miniature.
+
+<HallucinationLab client:visible mode="frequency" title="Accuracy depends on how often a fact was seen" />
+
+Click the counts under the figure to see who sits in each group and what the model said about them.
+
+</Step>
+
+<Step title="Calibration: does confidence mean anything?">
+
+A model is **calibrated** if, among the answers where it says "70% sure", about 70% are right. This matters because a calibrated confidence is a signal you can act on. The **reliability diagram** sorts answers into ten confidence bins (0 to 10%, 10 to 20%, and so on) and plots how often each bin was actually right. A perfectly calibrated model lies on the dashed diagonal.
+
+Our model is fairly calibrated overall: the **expected calibration error (ECE)** is **0.073**, an average gap of about 7 points. Kadavath et al. (2022) found that large pretrained models are also well calibrated on multiple-choice questions when the question is posed in the right format. But the average hides a split. Switch to "only people never seen in training": the model is **35%** confident on average while being right **6%** of the time, a gap of about 29 points. For people it did train on, the dots sit above the diagonal: it is right more often than it says.
+
+<HallucinationLab client:visible mode="calibration" title="Is the model's confidence trustworthy?" />
+
+<details>
+<summary>Show the math</summary>
+
+Split the $n$ answers into bins $B_1,\dots,B_{10}$ by confidence. In each bin let $\mathrm{acc}(B)$ be the share of answers that were right and $\mathrm{conf}(B)$ the average confidence. Then
+
+$$\mathrm{ECE}=\sum_{b=1}^{10}\frac{|B_b|}{n}\,\bigl|\mathrm{acc}(B_b)-\mathrm{conf}(B_b)\bigr|.$$
+
+It is a weighted average of the vertical distances between the dots and the diagonal.
+
+</details>
+
+</Step>
+
+<Step title="Mitigation: knowing when to abstain">
+
+If confidence carries information, a system can **abstain**: answer only when confidence reaches a **threshold** and otherwise say "I don't know". It trades fewer answers for fewer mistakes. This facts model was never trained to say "unknown", so here abstaining is a rule applied outside the model, as it is in many deployed systems.
+
+Each dot is one of the 200 people, ordered from most to least confident; blue dots are right answers and orange dots are wrong ones. At threshold 0 it answers all 200 and **45.5%** are wrong. At **0.5** it answers 80 questions (40%) and **12.5%** of them are wrong (10 of 80). At **0.9** it answers only 12 questions (6%) and none is wrong. To get the error below 5% you have to raise the threshold to **0.72**: it then answers 43 questions and 2 are wrong. Drag the threshold slider below the figure to find that point yourself.
+
+<HallucinationLab client:visible mode="abstain" title="Answer only when sure" />
+
+Training a model to abstain is harder and is done with fine-tuning and reward signals (see [RLHF](/learn/alignment/rlhf/)). Kalai et al. (2025) argue that many benchmarks score a wrong guess and "I don't know" the same, so models that guess are rewarded over models that abstain.
+
+</Step>
+
+<Step title="Mitigation: give it the fact">
+
+The most direct fix is to put the fact in the prompt. That is what **retrieval** does: a search step finds a relevant passage and pastes it above the question, and tool use does the same with the result of a call (see [RAG](/learn/applied/rag/) and [tool use](/learn/applied/tool-use/)). Lewis et al. (2020) introduced this "retrieval-augmented generation". Our model saw 30% of its training lines in the form `x was born in m. x was born in m.`, so it learned to copy a month from earlier in the text.
+
+Look at `nulis masov`, a person the model never saw. With no fact it says `may` (34%). With `july` written in the prompt it says `july` (96%). Over all 50 unseen people, the share answered right goes from **6%** to **100%**. Then the line about the same person is changed to a wrong month (five months after the true one). The model copies that too: it gives the wrong month for **100%** of the 50 people, so accuracy falls to **0%**. The model trusts the prompt, whether or not the prompt is true. Retrieval helps only as much as what is retrieved.
+
+<HallucinationLab client:visible mode="retrieval" title="A fact in the prompt is copied, true or not" />
+
+Use the month menu below the figure to write any month into the third prompt and watch the answer follow it.
+
+</Step>
+
+<Step title="Mitigation: check by asking again">
+
+A third idea needs no access to the probabilities. Ask the same question several times at temperature 1 (see [sampling](/learn/llms/sampling/)) and compare the answers. If the model knows the fact, the samples repeat it; if it is guessing, they scatter. Manakul et al. (2023) call this SelfCheckGPT and use it on text from models that only return text. Here the **agreement** is the share of samples that repeat the model's most likely answer.
+
+Each person is sampled 10 times. Flag an answer as suspicious when fewer than half of its samples repeat it. That flags 109 of the 200 answers, and 71 of those are wrong; the 91 answers that pass include 71 right ones. The rule classifies 142 of 200 answers correctly (71%), against 54.5% for assuming every answer is right. It is a rough signal, not a guarantee: `pikun budel`, the unseen person from the first step, gets the same wrong answer in all 10 samples, so the check passes it. A model can be consistently wrong.
+
+<HallucinationLab client:visible mode="verify" title="Do repeated answers agree?" />
+
+Change the number of samples below the figure to 3 and agreement can only take four values, so the picture becomes coarse. Here we could read the probability directly, so the check adds nothing new; its value is that it works when you can see only the text.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **"Hallucinations are bugs that will be patched."** They follow from the training objective and from facts that are rare or absent in the data. In this model no line ever says "unknown", so an unseen name always gets a month.
+- **"A model that sounds confident knows the answer."** The format is equally fluent either way. Only calibrated probabilities carry the signal, and even those are fooled by a consistently wrong answer.
+- **"Retrieval eliminates hallucination."** The model copied the wrong fact from the prompt just as readily as the right one, and real retrieval can also fail to find the passage.
+- **"Bigger models never hallucinate."** Larger models know more facts, but the long tail of rare facts remains (Kandpal et al. 2023).
+- **"Lower temperature fixes hallucination."** It removes randomness, not missing knowledge: the most likely answer for an unseen person is still a guess.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>With 12 equally likely months, what accuracy does pure guessing give?</summary>
+
+1 in 12, about 8.3%.
+
+</details>
+
+<details>
+<summary>Why does a model trained only on true sentences still produce false ones?</summary>
+
+It learns to produce text that looks like its training text. For a question it has no learned answer for, a plausible-looking answer still scores best, and nothing in training rewarded declining.
+
+</details>
+
+<details>
+<summary>A model says 90% confidence on 200 answers and gets 150 right. Over- or under-confident, and by how much?</summary>
+
+Accuracy is 150 out of 200, 75%. It is overconfident by 15 points.
+
+</details>
+
+<details>
+<summary>Name one failure mode of retrieval as a fix.</summary>
+
+The retrieved text may be wrong, or the right passage may not be found. Our model copied a wrong fact from its prompt for all 50 unseen people.
+
+</details>
+
+<details>
+<summary>Why are facts seen exactly once a useful warning sign?</summary>
+
+One sighting is hard to tell from noise, and Kalai and Vempala show that a calibrated model's hallucination rate is close to the share of facts seen exactly once. In our model such facts are right only 34% of the time.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+Primary papers on why models hallucinate and how to reduce it.
+
+- Ziwei Ji et al., [Survey of Hallucination in Natural Language Generation](https://arxiv.org/abs/2202.03629), ACM Computing Surveys (arXiv 2022).
+- Nikhil Kandpal et al., [Large Language Models Struggle to Learn Long-Tail Knowledge](https://arxiv.org/abs/2211.08411), ICML 2023.
+- Adam Tauman Kalai and Santosh Vempala, [Calibrated Language Models Must Hallucinate](https://arxiv.org/abs/2311.14648), STOC 2024.
+- Adam Tauman Kalai, Ofir Nachum, Santosh Vempala and Edwin Zhang, [Why Language Models Hallucinate](https://arxiv.org/abs/2509.04664), arXiv, September 2025.
+- Saurav Kadavath et al., [Language Models (Mostly) Know What They Know](https://arxiv.org/abs/2207.05221), arXiv 2022.
+- Potsawee Manakul, Adian Liusie and Mark Gales, [SelfCheckGPT](https://arxiv.org/abs/2303.08896), EMNLP 2023.
+- Patrick Lewis et al., [Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks](https://arxiv.org/abs/2005.11401), NeurIPS 2020.
+
+Next: Day 11, [reinforcement learning basics](/learn/alignment/rl-basics/).
+
+</Step>

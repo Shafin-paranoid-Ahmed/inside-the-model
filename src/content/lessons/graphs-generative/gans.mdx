@@ -1,0 +1,154 @@
+---
+title: "GANs"
+summary: "A generator and discriminator compete, pushing generated samples toward the data distribution."
+day: 13
+track: graphs-generative
+order: 4
+level: advanced
+duration: 30
+prereqs: ["graphs-generative/autoencoders"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+Two networks play a forger-versus-detective game.
+
+{/* SKELETON (Day 13 plan: plans/day-13.md). Widget: GANDuel (to build). Same two-moons data as the rest
+    of the day (src/lib/gen/toy.ts). Generator 2-32-32-2 tanh from 2D standard-normal noise,
+    discriminator 2-32-32-1 with sigmoid output, non-saturating generator loss, Adam, trained in a
+    worker; parameter snapshots every few steps so the timeline scrubs real training. Runs: "stable"
+    (default), "unstable" (larger learning rate) and "collapse" (a configuration found by probing). The
+    discriminator's output D(x) is drawn as a background map (--viz-pos = looks real, --viz-neg = looks
+    fake), real data neutral, generated points in --viz-forward. Every claim below is probe-checked. */}
+
+<Step title="A forger and a detective">
+A GAN trains two networks against each other: one makes fake points, the other tries to tell them from real ones.
+
+{/* IDEA: the adversarial game in one picture; the generated cloud ends up on the moons.
+    WIDGET: GANDuel mode="duel" run="stable".
+    OVER t: scrubs the whole training run; generated points move from a blob at the centre onto the moons
+    while the background map shifts; a step counter.
+    LOOK: the background map near the end: almost uniform, because the detective can no longer tell.
+    QUOTE: final on-data fraction and moon shares (quality()), and D's average output on real and on fake
+    points at the end. */}
+</Step>
+
+<Step title="The generator: noise in, data out">
+The generator is an ordinary network that turns a random input into a point, and training bends that mapping until its outputs look like data.
+
+{/* IDEA: G maps noise z (2 numbers from a standard normal) to x; the whole distribution of outputs is what
+    is learned. It never sees real data directly; it only learns through D.
+    WIDGET: GANDuel mode="generator" (trained G; a small noise panel beside the data plane).
+    OVER t: a grid of noise points and its grid lines in the noise panel flow through G to their outputs,
+    so the reader sees the square grid folded onto the moons; loop.
+    LOOK: which part of the noise square lands between the moons (stretched grid cells).
+    QUOTE: the fraction of the noise grid that maps onto the data. */}
+</Step>
+
+<Step title="The discriminator: a learned real-or-fake score">
+The discriminator is a classifier that outputs the probability that a point is real.
+
+{/* IDEA: D is logistic regression with a hidden layer (link /learn/foundations/logistic-regression/);
+    trained with cross-entropy on real (label 1) vs generated (label 0).
+    WIDGET: GANDuel mode="discriminator" (G frozen at its random start, only D trains for a few hundred
+    steps).
+    OVER t: the background map sharpens from flat 0.5 into a "real" region around the moons and a "fake"
+    region around the generator's blob; accuracy readout.
+    LOOK: the boundary where D(x) = 0.5.
+    QUOTE: D's accuracy after its training segment. */}
+</Step>
+
+<Step title="The minimax objective">
+Both networks share one score: the discriminator tries to push it up and the generator tries to push it down.
+
+{/* IDEA: min over G, max over D of E[log D(x)] + E[log(1 - D(G(z)))]; at the ideal D the game measures the
+    Jensen-Shannon divergence; equilibrium D = 0.5 everywhere. In practice G maximises log D(G(z))
+    (non-saturating loss) because the original gives vanishing gradients early.
+    WIDGET: GANDuel mode="objective" run="stable".
+    OVER t: scrubs training; loss curves for D and G with a reference line at log 4 (the value at D = 0.5),
+    with the plane above sharing the step cursor.
+    LOOK: the two curves do not go down together the way a normal loss does.
+    QUOTE: D and G loss at the start and end, and log 4 = 1.386.
+    SHOW THE MATH: the minimax value, the optimal D for fixed G, the non-saturating swap.
+    SHOW THE CODE: a 12-line PyTorch training step (D step, then G step). */}
+</Step>
+
+<Step title="How the detective steers the forger">
+The generator learns from the discriminator's gradient: each fake point is nudged in the direction that makes it look more real.
+
+{/* IDEA: the gradient of log D(x) at each generated point is the direction G is pushed; backprop carries it
+    into G's weights.
+    WIDGET: GANDuel mode="gradients" (one mid-training snapshot, chosen in the probe).
+    OVER t: arrows on generated points (gradient colour) grow in; then the points move one exaggerated
+    update along them; loop.
+    LOOK: arrows near the empty region between the moons point toward the moons.
+    QUOTE: the snapshot's step number and the mean arrow length before vs after the update. */}
+</Step>
+
+<Step title="Training dynamics and instability">
+Because each network chases a moving target, GAN training can circle or oscillate instead of settling.
+
+{/* IDEA: no single loss goes down; the game can rotate around the equilibrium. Larger learning rates
+    make it worse.
+    WIDGET: GANDuel mode="duel" run="unstable" with a learning-rate selector [stable rate, 4x] (exact
+    values from the probe) and a distance-to-data curve over training.
+    OVER t: scrubs the unstable run; the generated cloud swings between regions.
+    LOOK: the distance curve going up and down instead of settling.
+    QUOTE: the distance-to-data curve's min and max in the second half of training for both rates.
+    Probe first; if no oscillation appears, say what the sim shows instead. */}
+</Step>
+
+<Step title="Mode collapse">
+A generator can fool the discriminator by producing only one kind of output, and then it stops covering the data.
+
+{/* IDEA: mode collapse: G puts all its mass on one moon (or part of one); D eventually notices, G jumps,
+    and the cycle repeats.
+    WIDGET: GANDuel mode="collapse" run="collapse" with per-moon share bars.
+    OVER t: scrubs the collapsing run; the generated cloud sits on one moon; share bars.
+    LOOK: the moon share bars.
+    QUOTE: per-moon share at the end of the collapsing run vs the stable run.
+    RISK: two moons may not collapse reliably at this size. If no honest configuration is found, ask the
+    coordinator before switching to a ring-of-Gaussians dataset (see plan, open questions). */}
+</Step>
+
+<Step title="Common misconceptions">
+A few ideas about GANs sound right but are not.
+
+{/* NO WIDGET. Misconceptions:
+    1. A falling generator loss means better samples. Actually the losses of a two-player game do not
+       track sample quality.
+    2. The generator copies training examples. Actually it never sees them, only D's gradient.
+    3. The discriminator should be as strong as possible. Actually a perfect D gives the original G loss
+       almost no gradient (why the non-saturating loss is used).
+    4. Mode collapse means the generator outputs one single point. Actually it usually covers a subset
+       of the modes.
+    5. GANs are obsolete. Actually adversarial losses still appear inside other systems (for example
+       GAN-style losses in image autoencoders); VERIFY a concrete cited example before writing it. */}
+</Step>
+
+<Step title="Check yourself">
+Test your understanding with a few short questions.
+
+{/* NO WIDGET. Questions:
+    1. What value does D output everywhere at the equilibrium, and why?
+    2. Why does G need D's gradient rather than D's verdict?
+    3. What does the non-saturating loss change, and why?
+    4. How would you detect mode collapse from samples alone?
+    5. Why can't you stop training when the G loss is lowest? */}
+</Step>
+
+<Step title="Going deeper">
+Papers and resources for going further.
+
+{/* NO WIDGET. Cite:
+    - Goodfellow et al., "Generative Adversarial Nets", NeurIPS 2014 (arXiv:1406.2661).
+    - Goodfellow, "NIPS 2016 Tutorial: Generative Adversarial Networks" (arXiv:1701.00160).
+    - Radford, Metz, Chintala, DCGAN, 2015 (arXiv:1511.06434).
+    - Arjovsky, Chintala, Bottou, "Wasserstein GAN", 2017 (arXiv:1701.07875).
+    - Metz et al., "Unrolled Generative Adversarial Networks", 2016 (arXiv:1611.02163), mode collapse on
+      toy mixtures.
+    - Mescheder, Geiger, Nowozin, "Which Training Methods for GANs do actually Converge?", ICML 2018
+      (arXiv:1801.04406).
+    - Karras, Laine, Aila, StyleGAN, 2019 (arXiv:1812.04948).
+    Next: /learn/graphs-generative/diffusion/. */}
+</Step>

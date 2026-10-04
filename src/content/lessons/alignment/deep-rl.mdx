@@ -1,0 +1,149 @@
+---
+title: "Deep RL: From Q-Tables to DQN"
+summary: "Replace the Q-table with a neural network, then see how replay buffers and target networks make learning from changing targets more stable."
+day: 11
+track: alignment
+order: 4
+level: advanced
+duration: 35
+prereqs: ["alignment/q-learning","neural-networks/mlp","neural-networks/backprop-mlp"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+What changes when one set of weights must predict the value of every action?
+
+<Step title="A network replaces the Q-table">
+
+A deep Q-network, or DQN, takes a state as input and predicts one Q-value per action, sharing its weights across states instead of storing a separate table entry for each pair.
+
+{/*
+IDEA: function approximation Q_theta(s,a); normalized grid coordinates feed a small MLP with four action outputs; shared weights mean an update at one state can change predictions elsewhere.
+WIDGET: GridWorldLab mode="dqn-network" hidden=16 input="coordinates" focus="1,1" seed=17. Reuse the Day 11 4x3 grid; draw a 2-to-16-to-4 typed-array MLP beside the focused cell's four Q triangles.
+MOTION over t: focus moves through three cells; coordinates flow into hidden activations and four output bars; highlight the same weight used for every state.
+TRY: change the focus cell and watch the inputs change while the weights stay fixed.
+NUMBERS: parameter count, normalized inputs and four predicted Q-values at each selected cell; probe initialization before quoting.
+SHOW THE MATH: h = ReLU(W_1 x + b_1), Q = W_2 h + b_2. SHOW THE CODE: typed-array forward pass matching the displayed network.
+*/}
+
+</Step>
+
+<Step title="Training on a sampled Bellman target">
+
+One observed transition supplies a target for the chosen action, and backpropagation changes the network weights to bring that prediction closer to the target.
+
+{/*
+IDEA: semi-gradient Q-learning; target y = r + gamma (1 - terminated) max Q_theta(s',a'), detached from the gradient; loss = 0.5 (Q_theta(s,a) - y)^2. Distinguish terminal transitions from truncations.
+WIDGET: GridWorldLab mode="dqn-update" replay=false targetNetwork=false lr=0.01 gamma=0.9 hidden=16 seed=17. One real transition, selected-action output and target card; other output predictions shown as context.
+MOTION over t: move, form a detached target, reveal the residual, flow gradients backward, then apply one update and recompute predictions at all cells.
+TRY: inspect a neighbouring cell's prediction before and after this one transition's update.
+NUMBERS: r, next max-Q, target, selected Q, loss and neighbouring Q before/after; do not imply the neighbour necessarily improves.
+SHOW THE MATH: the detached squared TD loss and its gradient. SHOW THE CODE: one network update with a stop-gradient target.
+*/}
+
+</Step>
+
+<Step title="Why naive updates can become unstable">
+
+Network Q-learning can become unstable because nearby experiences look alike and the same changing weights predict both the value and its bootstrap target.
+
+{/*
+IDEA: correlated samples, moving targets, and the interaction of function approximation, bootstrapping and off-policy learning; contrast with a supervised fit to fixed Q-star targets from value iteration.
+WIDGET: GridWorldLab mode="dqn-instability" replay=false targetNetwork=false comparison="fixed-targets" lrs="0.01,0.1" updates=1000 hidden=16 seed=17. Same initial weights and state features; show Q(s,a) and its changing target on tight shared axes, max absolute Q and Bellman error on log axes.
+MOTION over t: predictions and targets trace together per update; highlight when the next target changes because the weights changed; mark any measured oscillation or growth.
+TRY: compare the moving-target trace with the fixed-target fit at the same learning rate.
+NUMBERS: peak absolute Q, target drift, final Bellman error and return for each run. PROBE FIRST: divergence is possible, not guaranteed in this grid; if no run diverges, teach the measured oscillation/target drift and mark a verified divergence counterexample as further reading rather than inventing one.
+SHOW THE MATH: show theta appearing in both Q_theta(s,a) and the detached target. Explain detachment prevents target differentiation but does not freeze targets between updates.
+*/}
+
+</Step>
+
+<Step title="A replay buffer mixes past experiences">
+
+A replay buffer stores earlier transitions and samples shuffled mini-batches from them, so each update can learn from a mixture of times and places.
+
+{/*
+IDEA: finite FIFO replay, uniform sampling, repeated use of experience; replay reduces sequential correlation but does not guarantee convergence or make the data on-policy.
+WIDGET: GridWorldLab mode="dqn-replay" capacity=256 batch=16 targetNetwork=false updates=1000 hidden=16 seed=19. Grid path beside a ring buffer with transition ages; compare sequential versus replay batches from the same collected stream and initial weights.
+MOTION over t: transitions enter the buffer; oldest transition leaves when full; selected batch entries fly to the update panel; state-visit and sample-age histograms fill.
+TRY: pause at a batch and find two sampled transitions collected far apart in time.
+NUMBERS: sampled ages, number of distinct states per batch and lag-one state correlation of the sequential versus sampled stream; probe loss/return differences without promising replay alone fixes instability.
+SHOW THE MATH: uniform sampling from the buffer. SHOW THE CODE: FIFO insertion and seeded mini-batch sampling.
+*/}
+
+</Step>
+
+<Step title="A target network holds the goal still">
+
+A target network is a copied set of weights held fixed for several updates, so the online network can chase a target that changes less often.
+
+{/*
+IDEA: online theta predicts Q(s,a), frozen theta-minus supplies the next-state max; hard copy every C updates; a frozen next-state prediction is not a convergence guarantee.
+WIDGET: GridWorldLab mode="dqn-target" replay=true capacity=256 batch=16 targetEvery=50 updates=300 hidden=16 seed=19. Two network outlines, online and target weight-distance readout, and predictions for one fixed diagnostic transition.
+MOTION over t: online weights update while target weights hold; each copy marker transfers all weights and resets distance; the fixed transition's target shows a staircase while online Q changes.
+TRY: scrub just before and after update 50 and compare the target prediction.
+NUMBERS: online/target Q, detached y and weight distance at updates 49, 50 and 51; use a fixed diagnostic transition so target drift is not confused with changing sampled inputs.
+SHOW THE MATH: y = r + gamma (1 - terminated) max Q_theta-minus(s',a'). SHOW THE CODE: hard-copy typed arrays every C updates.
+*/}
+
+</Step>
+
+<Step title="Putting DQN together">
+
+DQN alternates acting, storing experience and training on replay batches, with occasional target-network copies to slow the movement of its learning targets.
+
+{/*
+IDEA: assemble the loop; isolate replay and target-network effects with four variants, neither, replay only, target only and both; tabular Q-learning is the small-grid reference rather than a baseline DQN must beat.
+WIDGET: GridWorldLab mode="dqn-compare" variants="naive,replay,target,both" episodes=500 runs=10 gamma=0.9 epsilon=0.1 lr=0.01 hidden=16 capacity=256 batch=16 targetEvery=50 seed=23. Shared initialization and environment-seed schedule per comparison; display mean greedy evaluation return, variability and Bellman error beside greedy policy arrows.
+MOTION over t: training curves draw by episode; a selected run shows collect, store, sample, update and copy as labelled phases; recompute displayed metrics from the weights shown.
+TRY: compare the replay-only run with the run using both mechanisms.
+NUMBERS: final evaluation return and spread, error to Q-star and target drift for all four variants; if gains are small or reversed report them honestly. Never call training episode return held-out evaluation.
+SHOW THE CODE: a short DQN loop using the shared grid and MLP helpers. Link /learn/alignment/ppo/ for learning action probabilities directly.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Some common misunderstandings about deep Q-learning.
+
+{/*
+NO WIDGET. Misconceptions:
+1. "A DQN stores one independent value per state-action pair." Its shared weights couple predictions across states.
+2. "Replay makes every transition independent." Uniform sampling reduces sequential correlation, but samples still come from one finite experience pool.
+3. "The target network learns through backpropagation." It is copied from the online network and held fixed between copies.
+4. "Detaching the target solves moving targets." The same online weights still change the next target unless a separate frozen network supplies it.
+5. "Replay and a target network guarantee convergence." They are stabilizing mechanisms, not a universal guarantee.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Try these questions about networks, replay and targets.
+
+{/*
+NO WIDGET. Questions (answers in details blocks):
+1. How many parameters does the displayed 2-to-16-to-4 MLP have, including biases?
+2. Which network predicts Q(s,a), and which supplies the next-state maximum in DQN?
+3. Why can training on a transition from one cell change another cell's Q-values?
+4. What happens to the target for a fixed diagnostic transition between hard copies?
+5. Why does a transition into a terminal state need no bootstrap term?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Primary papers and resources on learning action values with neural networks.
+
+{/*
+NO WIDGET. References:
+- Volodymyr Mnih et al., "Playing Atari with Deep Reinforcement Learning", 2013, https://arxiv.org/abs/1312.5602 (experience replay; distinguish this from the 2015 target-network algorithm).
+- Volodymyr Mnih et al., "Human-level control through deep reinforcement learning", Nature 518, 2015, https://doi.org/10.1038/nature14236 (VERIFY algorithm details in the full paper before publishing).
+- Sutton and Barto, Reinforcement Learning: An Introduction, 2nd ed., 2018, chapter 11, http://incompleteideas.net/book/the-book-2nd.html (VERIFY the chosen divergence counterexample and reproduce its assumptions).
+- Hado van Hasselt, Arthur Guez and David Silver, "Deep Reinforcement Learning with Double Q-learning", https://arxiv.org/abs/1509.06461 (VERIFY before adding an overestimation extension).
+Next: /learn/alignment/ppo/
+*/}
+
+</Step>

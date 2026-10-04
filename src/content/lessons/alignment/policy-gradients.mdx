@@ -1,0 +1,132 @@
+---
+title: "Policy Gradients: REINFORCE and Actor-Critic"
+summary: "Make rewarding actions more likely, reduce gradient noise with baselines, and use a critic to learn from each transition."
+day: 11
+track: alignment
+order: 3
+level: advanced
+duration: 35
+prereqs: ["alignment/rl-basics","alignment/q-learning","math/chain-rule"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+What if the agent learns its action probabilities directly?
+
+<Step title="Policy gradients: make good actions more likely">
+
+A policy-gradient method skips Q-values and directly adjusts the policy's parameters so that actions followed by high reward become more probable.
+
+{/*
+IDEA: softmax policy pi_theta(a) = softmax(theta); gradient of expected reward = E[r grad log pi(a)]. Exact gradient vs one-sample estimate.
+WIDGET: BanditLab mode="softmax-pg" arms=3 lr=0.1 steps=200 seed=5 (bandit with known means so the exact gradient can be drawn).
+MOTION over t: each step: one arm is sampled (dot drops on it), its reward appears, an arrow on the logit bars shows r times grad log pi (up for the chosen arm, down for the others); probabilities tween; the exact expected-gradient arrow drawn faintly for comparison.
+TRY: notice that a chosen arm with positive reward gets pushed up even when it is not the best arm.
+NUMBERS: probability of the best arm at steps 0, 50, 200.
+SHOW THE MATH: the log-derivative trick, grad log softmax = onehot(a) - pi. Link /learn/math/chain-rule/.
+*/}
+
+</Step>
+
+<Step title="REINFORCE and baselines">
+
+Subtracting a baseline from the reward leaves the average gradient unchanged but makes each estimate much less noisy, which is why almost every policy-gradient method uses one.
+
+{/*
+IDEA: REINFORCE estimator; baseline b (average reward) subtracted; unbiased because E[grad log pi] = 0; variance drops.
+WIDGET: BanditLab mode="baseline" arms=3 samples=400 seed=9 (frozen policy, all rewards positive so the no-baseline estimate is badly noisy).
+MOTION over t: 400 single-sample gradient estimates stream into two histograms (no baseline vs baseline) for the logit of arm 1; the exact gradient is a vertical line; running means converge to it in both.
+TRY: compare the two histogram widths.
+NUMBERS: the two sample variances and their ratio; both sample means vs the exact gradient.
+SHOW THE MATH: proof that E[b grad log pi] = 0.
+*/}
+
+</Step>
+
+<Step title="REINFORCE in the grid">
+
+In a multi-step task REINFORCE weights every action in an episode by the return that followed it, so it needs many episodes, and a baseline helps here too.
+
+{/*
+IDEA: episode returns G_t as weights; credit assignment is coarse; learning is slower and noisier than Q-learning on this task.
+WIDGET: GridWorldLab mode="reinforce" baseline="both" lr=0.1 episodes=1000 runs=10. Policy arrows drawn with opacity = probability (soft policy sharpening); learning curves with and without a baseline.
+MOTION over t: arrows sharpen as episodes pass; the two curves draw; a sample episode replays at each marker.
+TRY: watch a cell near the pit whose arrow probabilities wobble before settling.
+NUMBERS: mean return at episodes 100 and 1000 for both variants (averaged over 10 runs).
+SHOW THE CODE: REINFORCE with a baseline, about 15 lines NumPy.
+*/}
+
+</Step>
+
+<Step title="One episode supplies a policy gradient">
+
+Each sampled action contributes a change to the policy, weighted by how much better its later return was than the baseline.
+
+{/*
+IDEA: combine the bandit's log-policy gradient with the grid's return-to-go; accumulate the episode gradient before updating the policy, holding its parameters fixed during collection.
+WIDGET: GridWorldLab mode="reinforce-update" baseline="state-value" episode=10 lr=0.1 seed=13. One trajectory beside a chosen state's logits, action probabilities and signed gradient contributions.
+MOTION over t: replay the episode forward, fill returns backward, subtract state baselines, then assemble gradient contributions and apply one policy update; marker labels match these segments.
+TRY: select an action whose return is below its baseline and see its probability fall after the update.
+NUMBERS: selected state's G_t, baseline, advantage, gradient contribution and chosen-action probability before/after; find a seed with the advertised negative advantage before writing the lesson.
+SHOW THE MATH: episode gradient sum_t (G_t - b(s_t)) grad log pi(a_t|s_t). SHOW THE CODE: collect, compute returns, accumulate, update.
+*/}
+
+</Step>
+
+<Step title="Actor-critic">
+
+An actor-critic method combines both families: a critic learns state values and its one-step error tells the actor, a policy, which way to move after every single step.
+
+{/*
+IDEA: advantage estimate delta = r + gamma V(s') - V(s); actor update uses delta in place of the full return; lower variance, some bias. Bridge to advantages and PPO in /learn/alignment/ppo/.
+WIDGET: GridWorldLab mode="actor-critic" lrActor=0.1 lrCritic=0.2 episodes=500 seed=13. Two layers: critic V as a heatmap, actor policy as arrows; the per-step TD error shown as a signed flash on the cell (--viz-pos/--viz-neg).
+MOTION over t: agent moves; each step shows the TD error, the critic cell updates, the actor arrow at that cell tilts; later markers fast-forward episodes; curve vs REINFORCE from the previous step.
+TRY: see a positive TD error raise the chosen action's arrow.
+NUMBERS: episodes to reach a mean return threshold vs REINFORCE (same threshold, from the sim).
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Some common misunderstandings about these methods.
+
+{/*
+NO WIDGET. Misconceptions:
+1. "Policy gradients need a differentiable environment." Actually only log pi is differentiated; the reward is just a number.
+2. "A baseline biases the gradient." It does not, if it does not depend on the action.
+3. "Actor-critic waits until the episode ends." A one-step critic supplies an update after each transition.
+4. "A baseline always reduces variance." Its quality matters; probe the chosen baseline's variance rather than promising this for every baseline.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Try these questions about the ideas above.
+
+{/*
+NO WIDGET. Questions (answers in details blocks):
+1. For a 3-arm softmax policy with pi = (0.5, 0.3, 0.2), arm 2 is chosen with reward 1: what is the REINFORCE update to each logit?
+2. Why does a baseline lower variance in the bandit with all-positive rewards?
+3. Which would you pick for a continuous action space, Q-learning or policy gradients, and why?
+4. How does the actor-critic TD error differ from a full episode return?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources for the methods above.
+
+{/*
+NO WIDGET. References:
+- Ronald J. Williams, "Simple Statistical Gradient-Following Algorithms for Connectionist Reinforcement Learning", Machine Learning 8, 1992 (REINFORCE).
+- Richard Sutton, David McAllester, Satinder Singh and Yishay Mansour, "Policy Gradient Methods for Reinforcement Learning with Function Approximation", NeurIPS 1999/2000 (VERIFY year label).
+- Volodymyr Mnih et al., "Asynchronous Methods for Deep Reinforcement Learning", ICML 2016, https://arxiv.org/abs/1602.01783 (A3C).
+- John Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation", https://arxiv.org/abs/1506.02438.
+- Sutton and Barto 2018, chapter 13. OpenAI Spinning Up, "Intro to Policy Optimization" (VERIFY section URL before publishing).
+Next: /learn/alignment/deep-rl/
+*/}
+
+</Step>

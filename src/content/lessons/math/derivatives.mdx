@@ -1,0 +1,171 @@
+---
+title: "Derivatives"
+summary: "The slope of a function at a point, and how it tells you which way to nudge an input."
+day: null
+track: math
+order: 4
+level: intro
+duration: 20
+prereqs: []
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import SlopeExplorer from '../../../components/widgets/SlopeExplorer/SlopeExplorer.svelte';
+
+<Step title="If I nudge the input, how much does the output move?">
+
+Take any function, a machine that turns a number $x$ into a number $f(x)$. Stand at one input and give it a tiny nudge. The output moves too. The ratio of the two movements is the **slope** of the function at that point: how many units the output rises for each unit the input rises.
+
+On a straight line the slope is the same everywhere. On a curve it changes from place to place, so we ask for the slope *at a point*. That number is the **derivative**, and it is what lets a learning algorithm decide which way to nudge a knob.
+
+The figure shows the curve $f(x) = x^2$ and one point on it, ringed. Watch the teal line. It passes through the ringed point and a second point that slides toward it. Drag the timeline back and forth.
+
+<SlopeExplorer client:visible lockMode lockFn fn="square" title="A second point slides toward the first, and the line through them rotates" />
+
+</Step>
+
+<Step title="From secant to tangent">
+
+A line through two points of a curve is called a **secant**. Its slope is easy to compute: rise over run,
+
+$$\frac{f(x+h) - f(x)}{h}.$$
+
+Here $h$ is the horizontal gap between the two points. With a wide gap ($h = 2$) the secant is a crude summary: at $x = 1$ on $x^2$ its slope is 4. As $h$ shrinks, the secant slope falls to 3, then 2.1, then 2.01, and the line rotates until it just touches the curve. That limiting line is the **tangent**, and its slope is the derivative.
+
+The chart on the right plots the secant slope against $h$ on a log scale, so you can see it settle onto the dashed level line. Notice that we never set $h$ to zero, which would divide zero by zero. We only ask where the slope is heading as $h$ gets smaller.
+
+<SlopeExplorer client:visible lockMode lockFn fn="square" x0={1} title="Secant slope converges to 2 as h shrinks" />
+
+<details>
+<summary>Show the math</summary>
+
+The derivative is defined as a limit:
+
+$$f'(x) = \lim_{h \to 0} \frac{f(x+h) - f(x)}{h}.$$
+
+For $f(x) = x^2$ the secant slope simplifies exactly: $\dfrac{(x+h)^2 - x^2}{h} = \dfrac{2xh + h^2}{h} = 2x + h$. As $h \to 0$ this becomes $2x$, so $f'(x) = 2x$. At $x = 1$ the readout should be $2 + h$: 4 at the start, 2.001 at the end.
+
+</details>
+
+</Step>
+
+<Step title="The derivatives you will meet again and again">
+
+You rarely compute limits by hand. A short list of results covers most of machine learning. Switch the curve in the figure and look at how the tangent tilts.
+
+- $x^2$ has slope $2x$. The slope grows as you move right, and it is negative on the left where the curve falls.
+- $e^x$ has slope $e^x$. It is its own derivative, so the curve is always exactly as steep as it is tall. At $x = 0.5$ both are 1.649.
+- The **sigmoid** $\sigma(x) = 1/(1 + e^{-x})$ squashes any number into $(0, 1)$ and is used as a gate or a probability. Its slope is $\sigma(x)\,(1 - \sigma(x))$. That is at most 0.25, at $x = 0$, and close to zero at both ends. At $x = 0.5$ it is 0.235.
+
+The flat ends of the sigmoid matter later: a slope near zero means a tiny learning signal. It is one cause of the vanishing gradients you will see in deep networks.
+
+<SlopeExplorer client:visible lockMode title="Pick a curve, drag the point, and read off the slope" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def slope(f, x, h=1e-6):
+    return (f(x + h) - f(x - h)) / (2 * h)   # a two-sided secant with a tiny gap
+
+sigmoid = lambda x: 1 / (1 + np.exp(-x))
+print(slope(np.exp, 0.5))          # 1.6487...  equals exp(0.5)
+print(slope(sigmoid, 0.5))         # 0.2350...  equals s * (1 - s)
+```
+
+</details>
+
+</Step>
+
+<Step title="Two knobs: partial derivatives">
+
+A model has many knobs, so the loss is a function of many inputs. Take two: $f(x, y)$. Picture it as a hilly surface seen from above, where the curves are contours joining points of equal height.
+
+The **partial derivative** $\partial f/\partial x$ is the ordinary slope you get by nudging $x$ and holding $y$ fixed. Likewise $\partial f/\partial y$ nudges only $y$. The figure uses the bowl $f(x, y) = \tfrac12 x^2 + y^2$. At the ringed point $(2, 1.5)$ the blue arrow is $\partial f/\partial x = 2$ and the green arrow is $\partial f/\partial y = 3$: the ground rises faster in the $y$ direction.
+
+Watch the two arrows grow, one after the other.
+
+<SlopeExplorer client:visible lockMode mode="gradient" title="One partial derivative per knob" />
+
+<details>
+<summary>Show the math</summary>
+
+For $f(x, y) = \tfrac12 x^2 + y^2$, treat the other variable as a constant: $\partial f/\partial x = x$ and $\partial f/\partial y = 2y$. At $(2, 1.5)$ that gives $2$ and $3$.
+
+</details>
+
+</Step>
+
+<Step title="The gradient points uphill">
+
+Stack the partial derivatives into one vector and you get the **gradient**:
+
+$$\nabla f = \left(\frac{\partial f}{\partial x},\ \frac{\partial f}{\partial y}\right).$$
+
+In the figure the two partial arrows slide together into the magenta diagonal, $\nabla f = (2, 3)$. It points straight across the contours, in the direction where the surface climbs fastest, and its length $\sqrt{2^2 + 3^2} = 3.61$ says how steep that climb is. (The arrows are drawn at two-fifths scale so they fit.)
+
+Uphill means the opposite direction is downhill. So a ball that repeatedly steps against the gradient rolls to the bottom: new position = old position $- \eta\,\nabla f$. With $\eta = 0.2$ the ball starts at height 4.25 and after 10 steps is at about 0.02. The small chart shows its height dropping at every step. Drag the ring to start it somewhere else: it always goes down. This is exactly gradient descent, the subject of [the gradient descent lesson](/learn/foundations/gradient-descent/).
+
+<SlopeExplorer client:visible lockMode mode="gradient" title="Stepping against the gradient always goes downhill" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+f    = lambda p: 0.5 * p[0]**2 + p[1]**2
+grad = lambda p: np.array([p[0], 2 * p[1]])   # (df/dx, df/dy)
+
+p, eta = np.array([2.0, 1.5]), 0.2
+for step in range(10):
+    p = p - eta * grad(p)                     # step against the gradient
+print(f(p))                                   # about 0.023
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think the derivative is a property of the whole curve.** Actually it is a number at one point. Different points have different slopes, which is why $f'(x)$ is itself a function of $x$.
+- **You might think a zero derivative means the function is zero.** Actually it means the curve is momentarily flat there. That happens at a bottom, a top, or a plateau.
+- **You might think the gradient points toward the minimum.** Actually it points in the direction of steepest local ascent, which is only roughly toward or away from a minimum. On a stretched bowl like this one it points noticeably off-center.
+- **You might think a partial derivative needs new calculus.** Actually it is the ordinary derivative with every other variable held constant.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>What does the secant slope $(f(x+h) - f(x))/h$ turn into as $h$ shrinks?</summary>
+The slope of the tangent, which is the derivative $f'(x)$.
+</details>
+
+<details>
+<summary>What is the derivative of $x^2$ at $x = -3$, and which way is the curve heading?</summary>
+$f'(-3) = 2(-3) = -6$. The slope is negative, so the curve is falling as $x$ increases.
+</details>
+
+<details>
+<summary>Why is the sigmoid a poor place to be if you want a big learning signal?</summary>
+Its slope $\sigma(1-\sigma)$ is never more than 0.25 and drops toward 0 for large positive or negative inputs.
+</details>
+
+<details>
+<summary>At a point, $\partial f/\partial x = -1$ and $\partial f/\partial y = 4$. Which way is downhill?</summary>
+The gradient is $(-1, 4)$, so downhill is $-\nabla f = (1, -4)$: a little to the right and a lot down.
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- 3Blue1Brown, [Essence of calculus](https://www.3blue1brown.com/topics/calculus): the picture-first series behind this lesson.
+- Khan Academy, [Multivariable calculus](https://www.khanacademy.org/math/multivariable-calculus): partial derivatives and the gradient.
+- Next: [Gradient descent](/learn/foundations/gradient-descent/) turns the downhill step into a training algorithm.
+
+</Step>

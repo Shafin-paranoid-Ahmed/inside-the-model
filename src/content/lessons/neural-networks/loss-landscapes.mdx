@@ -1,0 +1,212 @@
+---
+title: "Loss Landscapes and Why Deep Nets Train"
+summary: "Wells, saddles, flatness and skip connections: the shapes a loss surface can take, and what they mean for training."
+day: 6
+track: neural-networks
+order: 6
+level: advanced
+duration: 25
+prereqs: ["neural-networks/optimizers"]
+status: draft
+---
+
+import Step from '../../../components/ui/Step.astro';
+import LandscapeLab from '../../../components/widgets/LandscapeLab/LandscapeLab.svelte';
+
+Every setting of a network's weights gives one number, the training loss. If you imagine the weights as a position on a map and the loss as height, you get a **loss landscape**: training is a walk downhill across it. In the [optimizers lesson](/learn/neural-networks/optimizers/) the landscape was a single smooth bowl. Real ones are not. This lesson looks at the shapes that matter, one at a time, using surfaces small enough to draw.
+
+<Step title="Where you start decides which valley you reach">
+
+A bowl has one lowest point. Most loss surfaces have many low spots, called **minima** (singular *minimum*): points where every nearby direction goes uphill. Gradient descent only ever sees the slope under its feet, so it settles into whichever minimum it rolls into first.
+
+The figure has two weights, $x$ and $y$. The curve shows the loss as you vary $x$, with $y$ held at its current value: a hill in the middle and a well on each side. The weights start at $(0.12, 1.35)$, just right of the hilltop, with loss $1.609$. Each update uses a slightly noisy slope, like a mini-batch would give. By update 29 the dot is inside the right-hand well at $x = 0.902$. After that, $x$ hardly changes; the updates mostly shrink $y$, which is why the whole curve keeps sinking. At update 100 the loss is $0.019$.
+
+<LandscapeLab client:visible mode="nonconvex" title="Gradient descent on a surface with two wells" />
+
+Switch the starting side to the left and the same rule ends in the left well instead. Here both wells happen to be equally deep. In general they are not, and a minimum that is lowest only among its neighbors is called a **local minimum**.
+
+<details>
+
+<summary>Show the math</summary>
+
+The surface is $L(x,y)=(x^2-1)^2+0.35y^2$, with minima at $(-1,0)$ and $(1,0)$, both at loss $0$, and a hilltop at $x=0$. Each update is $\theta_{k+1}=\theta_k-0.025\,\hat g_k$, where $\hat g_k$ is the exact gradient plus one of eight fixed offsets that average to zero.
+
+</details>
+
+<details>
+
+<summary>Show the code</summary>
+
+```python
+theta = np.array([0.12, 1.35])
+for k in range(100):
+    g = grad_L(theta) + offsets[k % 8]   # noisy slope, like a mini-batch
+    theta -= 0.025 * g
+```
+
+</details>
+
+</Step>
+
+<Step title="A saddle is flat at the center but not a minimum">
+
+The slope can be zero at points that are not minima. At a **saddle point** the surface curves up in some directions and down in others, like the middle of a horse's saddle or a mountain pass. Gradient descent stops wherever the slope is zero, so a saddle can stall it.
+
+In the figure the dashed curve is the loss along $x$ through the center: it curves up. The solid curve is the loss along $y$: it curves down. The gray dot sits exactly on the center, where the slope is zero, and never moves. The teal dot starts just $0.06$ away along $y$. At first the slope there is tiny, so progress is slow: after 28 updates it has only reached $y = 0.301$. Then the downward curve takes over and the steps grow. By update 64 it is in a valley with loss $-0.952$, and it finishes at $y = 1.407$, loss $-1.000$.
+
+<LandscapeLab client:visible mode="saddle" title="Leaving a saddle point" />
+
+The slow start is the real cost. Near a saddle the slope is small, so training can crawl for many updates before it finds the way down.
+
+<details>
+
+<summary>Show the math</summary>
+
+The surface is $L(x,y)=\tfrac14(x^2+y^2)^2+x^2-y^2$, with gradient $\nabla L=\big(x(x^2+y^2)+2x,\;y(x^2+y^2)-2y\big)$. Both components vanish at the origin. The matrix of second derivatives there, the **Hessian**, is $\operatorname{diag}(2,-2)$: curvature $+2$ along $x$, $-2$ along $y$. Near the origin the $y$ update is about $y_{k+1}\approx(1+2\eta)\,y_k$, so with $\eta=0.03$ the distance grows by 6% per update until the quartic term bends the surface back up into the valleys at $y=\pm\sqrt2$, loss $-1$.
+
+</details>
+
+<details>
+
+<summary>Show the code</summary>
+
+```python
+for theta in ([0.0, 0.0], [0.0, 0.06]):
+    theta = np.array(theta)
+    for k in range(90):
+        theta -= 0.03 * grad_L(theta)
+```
+
+</details>
+
+</Step>
+
+<Step title="With many weights, saddles outnumber minima">
+
+A network has millions of weights, so at a flat point there are millions of directions to check. Each direction curves either up ($+$) or down ($-$). The point is a minimum only if every direction curves up.
+
+Count the possibilities. With 2 directions there are four sign patterns: $++$, $+-$, $-+$, $--$. One is a minimum ($++$), one is a maximum ($--$), and the other two are saddles. Each extra direction doubles the number of patterns, and still only one of them is all up. Watch the grid fill: 16 patterns at 4 directions, 256 at 8, and 4096 at 12, with a single minimum square in the top-left corner.
+
+<LandscapeLab client:visible mode="dimension" title="Counting curvature sign patterns" />
+
+If each sign were a fair coin flip, the chance that a flat point is a minimum would be $1/4096 \approx 0.000244$ at 12 directions. Real curvatures are not independent coin flips, so this is a rough argument, but it points the right way: in high dimensions most flat points are saddles, which is why escaping saddles matters more than getting stuck in bad minima.
+
+<details>
+
+<summary>Show the math</summary>
+
+With $d$ independent signs that are each positive with probability $\tfrac12$, the chance that all are positive is $(1/2)^d=2^{-d}$: $0.25$, $0.0625$, $0.00391$ and $0.000244$ for $d=2,4,8,12$. Dauphin et al. (2014) argue, with more careful random-matrix models and experiments, that saddles dominate the flat points of high-dimensional error surfaces.
+
+</details>
+
+</Step>
+
+<Step title="How flat a minimum looks depends on the units">
+
+A popular idea says that **flat** minima, where loss rises slowly as you move away, generalize better than **sharp** ones. Flatness is measured by **curvature**: how quickly the slope changes, or how sharply the bowl bends. But curvature depends on the units you measure the weights in.
+
+The gray curve is $L(\theta)=\theta^2$. The teal curve is the same function written in stretched units $\theta' = c\,\theta$. As $c$ grows from 1 to 4, every point slides outward by $c$ and keeps its height. The matched dots at $\theta = 0.70$ and $\theta' = 2.80$ both have loss $0.490$, yet the curvature drops from $2$ to $2/4^2 = 0.125$. Nothing about the model's predictions changed.
+
+<LandscapeLab client:visible mode="coordinates" title="Stretching the units flattens the bowl" />
+
+Neural networks have the same freedom built in. With ReLU units, you can multiply one layer's weights by $c$ and divide the next layer's by $c$ without changing a single output, so a minimum can be made to look as sharp or as flat as you like. Flatness can still be a useful signal, but only when it is measured in a way that ignores such rescalings.
+
+<details>
+
+<summary>Show the math</summary>
+
+With $\theta'=c\theta$, the rescaled loss is $L'(\theta')=(\theta'/c)^2$, so $L'(c\theta)=\theta^2=L(\theta)$ at matched points. The second derivatives are $\frac{d^2L}{d\theta^2}=2$ and $\frac{d^2L'}{d\theta'^2}=2/c^2$. Dinh et al. (2017) use exactly this kind of reparameterization to show that sharpness alone cannot explain generalization.
+
+</details>
+
+</Step>
+
+<Step title="Skip connections keep a direct path open">
+
+Deep networks stack many layers, and a signal has to pass through all of them. How much a small change in the input changes the output is the **sensitivity** (also called the input-output derivative). Gradients flow back through the same chain of factors, so if the sensitivity collapses, so does learning.
+
+The figure compares two tiny networks with two $\tanh$ blocks each. In the plain network each block replaces its input with $\tanh(w\,h)$. When $\tanh$ flattens out, its slope is small: at input $x=1$ the two block slopes are $0.366$ and $0.514$, and the sensitivity is only $0.366\times0.514\times0.5=0.094$, against $0.690$ at $x=0$. A **skip connection** (or residual connection) adds the block's input back to its output: $h + \alpha\tanh(w\,h)$. The direct path contributes a slope of exactly 1, so each block's factor becomes $1$ plus the branch's slope. With $\alpha=0$ only the direct path is left and the sensitivity is $0.5$ everywhere. As $\alpha$ grows to $0.5$, the factors at $x=1$ become $1.183$ and $1.082$, and the sensitivity rises to $0.640$. Across all five inputs it stays between $0.640$ and $1.260$.
+
+<LandscapeLab client:visible mode="residual" title="Sensitivity through plain and skip-connected blocks" />
+
+The direct path helps only while the branch does not cancel it. Set $\alpha$ to $-0.8$ and the branch's slope nearly cancels the 1 near $x=0$, where the sensitivity drops to $0.002$. At full scale, Li et al. (2018) visualized real loss surfaces and found that networks with skip connections have much smoother landscapes than the same networks without them.
+
+<details>
+
+<summary>Show the math</summary>
+
+Plain: $h_1=\tanh(w_1x)$, $h_2=\tanh(w_2h_1)$, output $v\,h_2$, so $\frac{d\,\text{out}}{dx}=v\,w_2(1-h_2^2)\,w_1(1-h_1^2)$. With skips: $h_1=x+\alpha\tanh(w_1x)$, $h_2=h_1+\alpha\tanh(w_2h_1)$, so $\frac{d\,\text{out}}{dx}=v\,[1+\alpha w_2(1-\tanh^2(w_2h_1))]\,[1+\alpha w_1(1-\tanh^2(w_1x))]$. The figure uses $w_1=1.2$, $w_2=1.15$, $v=0.5$ and inputs $-1,-0.5,0,0.5,1$.
+
+</details>
+
+<details>
+
+<summary>Show the code</summary>
+
+```python
+def plain(x):
+    return 0.5 * np.tanh(1.15 * np.tanh(1.2 * x))
+
+def residual(x, alpha):
+    h = x + alpha * np.tanh(1.2 * x)
+    h = h + alpha * np.tanh(1.15 * h)
+    return 0.5 * h
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- You might think a zero gradient means you have found a minimum. Actually, a saddle point also has zero gradient, with some directions still going down.
+- You might think training mostly fails by getting trapped in bad local minima. Actually, in high dimensions most flat points are saddles; the usual problem is slow progress near them, not being stuck forever.
+- You might think a flatter minimum is always a better one. Actually, rescaling the weights can make the same minimum look flatter or sharper without changing any prediction, so raw flatness proves nothing about held-out accuracy.
+- You might think skip connections always make gradients larger. Actually, they add a direct path with slope 1; a branch with the opposite sign can still cancel it.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+
+<summary>Why does the gray dot in the saddle figure never move?</summary>
+
+It sits exactly on the center, where the gradient is zero, so every gradient-descent update is zero. Any tiny displacement along the downward-curving direction, like the teal dot's $0.06$, grows and eventually escapes.
+
+</details>
+
+<details>
+
+<summary>With 8 curvature directions, how many sign patterns are there, and how many are minima?</summary>
+
+$2^8=256$ patterns, of which one (all up) is a minimum, one (all down) is a maximum, and 254 are saddles.
+
+</details>
+
+<details>
+
+<summary>If you stretch the units by $c=2$, what happens to the curvature of $\theta^2$ and to the loss at matched points?</summary>
+
+The curvature becomes $2/2^2=0.5$ instead of $2$. The loss at matched points is unchanged, because $(2\theta/2)^2=\theta^2$.
+
+</details>
+
+<details>
+
+<summary>In the skip-connection figure, why is the sensitivity exactly $0.5$ at every input when $\alpha=0$?</summary>
+
+Each block's factor is $1+\alpha\cdot(\text{branch slope})=1$, so only the readout weight $0.5$ remains.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Dauphin et al., [Identifying and attacking the saddle point problem in high-dimensional non-convex optimization](https://arxiv.org/abs/1406.2572) (2014).
+- Li et al., [Visualizing the Loss Landscape of Neural Nets](https://arxiv.org/abs/1712.09913) (2018); the authors' [project page](https://www.cs.umd.edu/~tomg/projects/landscapes/) has code and pictures of real loss surfaces.
+- Dinh et al., [Sharp Minima Can Generalize For Deep Nets](https://arxiv.org/abs/1703.04933) (2017).
+- [Optimizers: SGD, Momentum, RMSProp, Adam](/learn/neural-networks/optimizers/) for how different update rules move across the same landscape.
+
+</Step>

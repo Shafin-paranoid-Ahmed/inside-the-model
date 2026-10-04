@@ -1,0 +1,193 @@
+---
+title: "Why Sequences Need Memory"
+summary: "Order and context matter, and fixed-size networks cannot handle variable-length input naturally."
+day: 8
+track: sequences
+order: 1
+level: core
+duration: 15
+prereqs: ["neural-networks/mlp"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import SeqOrderDemo from '../../../components/widgets/SeqOrderDemo/SeqOrderDemo.svelte';
+import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+
+<Step title="Two sentences, one bag of words">
+
+"The dog chased the cat" and "the cat chased the dog" use exactly the same five words. They mean opposite things: in one the dog is running, in the other the cat is.
+
+A model that only counts which words appear cannot tell them apart. That model is called a **bag of words**: it throws all the words into a bag, shakes it, and looks at the contents. The figure below feeds both sentences to a bag-of-words feature and shows the vector it produces after each word. Watch the last strip of row A and the last strip of row B.
+
+<SeqOrderDemo client:visible show="bow" title="A bag of words cannot tell these two sentences apart" />
+
+After the last word the two vectors are identical, so the distance $\lVert A - B \rVert$ is $0.000$. Whatever a network builds on top of that vector, it will give the same answer for both sentences. This lesson is about why that happens and what to do about it.
+
+</Step>
+
+<Step title="Data that arrives in order">
+
+Many kinds of data are **sequences**: a list of items where position carries meaning.
+
+<table>
+<thead>
+<tr><th scope="col">Data</th><th scope="col">One item</th><th scope="col">Why order matters</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">Text</th><td>a word or character</td><td>"dog bites man" is not "man bites dog"</td></tr>
+<tr><th scope="row">Speech and audio</th><td>a sample or a short frame</td><td>a phoneme means little without its neighbours</td></tr>
+<tr><th scope="row">Time series</th><td>a price, a heart-rate reading</td><td>rising and falling are different stories</td></tr>
+<tr><th scope="row">DNA and proteins</th><td>a base or amino acid</td><td>the same letters in another order are another molecule</td></tr>
+<tr><th scope="row">Click streams and logs</th><td>an event</td><td>"add to cart, then pay" differs from "pay, then add"</td></tr>
+</tbody>
+</table>
+
+Three properties make sequences awkward for the networks you have met so far:
+
+- **Order carries meaning.** Shuffling the items changes what the data says.
+- **Length varies.** A sentence has 5 words or 50; an audio clip has 2 seconds or 20.
+- **Context can be far away.** In "The keys that I left on the table in the kitchen **are** missing", the verb "are" agrees with "keys", ten words earlier.
+
+</Step>
+
+<Step title="What a feed-forward network needs">
+
+An MLP takes a vector of a **fixed length** and returns a vector. To feed it a sentence you must first decide on a maximum length $L$, cut longer inputs, pad shorter ones with blanks, and glue the $L$ word vectors into one long input. The network then has a separate set of first-layer weights for every position.
+
+That works, but it wastes effort in two ways.
+
+**It cannot share what it learns.** If the network learns that "cat" is an animal when it appears at position 2, that knowledge sits in the weights for position 2. Position 4 has its own weights, which must learn "cat" again from scratch.
+
+**It grows with length.** With illustrative sizes (word vectors of size 100, a hidden layer of 128 units, $L = 20$), the first layer alone has $20 \cdot 100 \cdot 128 = 256{,}000$ weights. Double the maximum length and you double that number, and a sentence longer than $L$ simply does not fit.
+
+<details>
+<summary>Show the math</summary>
+
+Concatenating $L$ word vectors $\mathbf x_1,\dots,\mathbf x_L \in \mathbb R^{d}$ gives an input $\mathbf x \in \mathbb R^{Ld}$. A first layer with $m$ hidden units needs a weight matrix $W \in \mathbb R^{m \times Ld}$, so
+
+$$\text{parameters} = m\,L\,d = 128 \cdot 20 \cdot 100 = 256{,}000.$$
+
+A recurrent layer, which the next lessons build, reads one word at a time with a *shared* input matrix $W_{xh} \in \mathbb R^{m\times d}$ and a state matrix $W_{hh} \in \mathbb R^{m\times m}$. It needs $md + m^2 = 12{,}800 + 16{,}384 = 29{,}184$ weights whatever $L$ is.
+
+</details>
+
+</Step>
+
+<Step title="A sum cannot see order">
+
+The obvious fix for fixed length is to **add up** the word vectors, because a sum has the same size however many words go in:
+
+$$\mathbf s = \sum_{i=1}^{n} \mathbf x_i, \qquad \text{feature} = \tanh(W\mathbf s + \mathbf b).$$
+
+The figure shows that feature growing as words arrive: after each word the strip is $\tanh(W \sum_{i \le k} \mathbf x_i + \mathbf b)$. The trouble is that addition does not care about order. $\mathbf x_1 + \mathbf x_2 = \mathbf x_2 + \mathbf x_1$, and the same holds for any reshuffling of $n$ terms. So any function of the sum gives the same answer for every ordering of the same words.
+
+Try it: the second sentence below has one different word, so its bag is a different set and the distance is no longer zero. Then edit it back to a reshuffling of the first and the distance returns to $0.000$.
+
+<SeqOrderDemo client:visible show="bow" a="the dog chased the cat" b="the dog chased the man" title="Change a word and the bag changes; reorder the words and it does not" />
+
+<details>
+<summary>Show the code</summary>
+
+Bag of words in NumPy. The result depends only on which words occur, never on their order, for any weights.
+
+```python
+import numpy as np
+
+rng = np.random.default_rng(0)
+emb = {w: rng.normal(size=4) for w in ["the", "dog", "cat", "chased"]}
+W = rng.normal(size=(4, 4))
+
+def bag(words):
+    return np.tanh(W @ sum(emb[w] for w in words))
+
+a = bag("the dog chased the cat".split())
+b = bag("the cat chased the dog".split())
+print(np.allclose(a, b))   # True, for any W
+```
+
+</details>
+
+</Step>
+
+<Step title="Carry a summary forward">
+
+People do not read a sentence as a bag. They read it left to right, keeping a running understanding, and update it word by word. That is the idea to copy: keep a **state** vector $\mathbf h_t$ that summarizes everything read so far, and after each new item $\mathbf x_t$ compute a new state from the old one:
+
+$$\mathbf h_t = f(\mathbf h_{t-1}, \mathbf x_t).$$
+
+Two things make this work. The state has a **fixed size**, so any length is fine. And the function $f$ is **not commutative**: reading $a$ then $b$ gives $f(f(\mathbf h, a), b)$, which is not the same as $f(f(\mathbf h, b), a)$. Order changes the result.
+
+The figure now adds the recurrent rows under the bag-of-words rows. The bag of words still ends with identical vectors. The recurrent state ends in different places: here $\lVert A - B \rVert \approx 1.43$. The same word vectors went in; the only thing that changed is the order they were read in.
+
+<SeqOrderDemo client:visible show="both" title="The same words, read in two orders" />
+
+In real models the state also has to be learned to carry the *useful* parts of the past. The random weights here only prove that the machinery can separate the two orders. Learning which details to keep is what the rest of the day is about.
+
+</Step>
+
+<Step title="The loop that makes it work">
+
+Here is that idea drawn as a machine. A single **cell** reads one input, mixes it with its previous state, and produces the next state. The loop arrow carries the state from one step to the next. Watch it fold, then unroll into one copy of the cell per time step: this is the picture we will keep reusing all day.
+
+<RNNUnroller client:visible sequence="cat" folded showPanel={false} title="One cell with a loop: a recurrent network reading “cat”" />
+
+The next lesson opens the cell and writes down exactly what it computes: [The RNN cell and hidden state](/learn/sequences/rnn-cell/).
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think a bag of words is a bad model of language. Actually** it is a strong baseline for tasks where the topic matters more than the order, such as spam filtering or sorting news by subject. It fails when structure matters: who did what to whom.
+
+**You might think a big MLP over padded input solves the length problem. Actually** it only postpones it. Anything longer than the pad length is cut off, and every position learns its own weights, so knowledge does not transfer across positions.
+
+**You might think recurrence means the network remembers everything it has read. Actually** the state is a fixed-size vector, so it is a lossy summary. What it keeps is decided by learned weights, and the lessons on vanishing gradients and gated cells are about how hard it is to make it keep the right things.
+
+**You might think order only matters in language. Actually** it matters anywhere the items have a sequence: a stock price rising then falling, the same amino acids in a different order, a click stream. The same reasoning applies.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. Why must a bag-of-words feature give the same vector for "the dog chased the cat" and "the cat chased the dog"?</summary>
+
+Both sentences contain the same multiset of words, so the sum $\sum_i \mathbf x_i$ has the same terms in a different order. Addition is commutative, so the sum is identical, and any function of it (here $\tanh(W\mathbf s + \mathbf b)$) is identical too.
+
+</details>
+
+<details>
+<summary>2. A model reads a sentence with a padded MLP of maximum length 20. What goes wrong with a 35-word sentence, and what goes wrong with a 3-word sentence?</summary>
+
+The 35-word sentence must be truncated, so 15 words are lost. The 3-word sentence is padded with 17 blanks, and the network must have learned to ignore them; also each word lands on the weights for its own position, which have seen few examples of that word at that position.
+
+</details>
+
+<details>
+<summary>3. What two properties of $\mathbf h_t = f(\mathbf h_{t-1}, \mathbf x_t)$ let it handle both variable length and order?</summary>
+
+The state $\mathbf h_t$ has a fixed size however many items were read, so length does not change the interface. And $f$ is applied one item at a time in reading order and is not commutative, so a different order produces a different final state.
+
+</details>
+
+<details>
+<summary>4. With the sizes in this lesson, how many first-layer weights does a padded MLP need, and how many does a recurrent layer need?</summary>
+
+The padded MLP needs $128 \cdot 20 \cdot 100 = 256{,}000$ and grows with $L$. The recurrent layer needs $md + m^2 = 12{,}800 + 16{,}384 = 29{,}184$ and does not depend on $L$.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Jeffrey Elman, "Finding structure in time", *Cognitive Science* 14(2), 179-211 (1990). The paper that made this recurrent architecture, with a hidden state fed back into itself, a standard tool. It trains a small network to predict the next item and finds that the hidden state learns structure in sequences.
+- Michael Jordan, "Serial order: a parallel distributed processing approach", ICS Report 8604 (1986). An earlier recurrent network that fed the *output* back as context.
+- Goodfellow, Bengio and Courville, [Deep Learning, chapter 10: Sequence Modeling](https://www.deeplearningbook.org/contents/rnn.html). The standard textbook treatment of recurrent networks, unrolling and gated cells.
+- Andrej Karpathy, [The Unreasonable Effectiveness of Recurrent Neural Networks](https://karpathy.github.io/2015/05/21/rnn-effectiveness/). What character-level RNNs can do, with plenty of examples.
+
+Next: [The RNN cell and hidden state](/learn/sequences/rnn-cell/).
+
+</Step>

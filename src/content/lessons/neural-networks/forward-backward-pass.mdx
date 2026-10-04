@@ -1,0 +1,208 @@
+---
+title: "Forward and Backward Pass"
+summary: "Step through the forward pass to get the loss, then the backward pass to get every gradient."
+day: 5
+track: neural-networks
+order: 3
+level: core
+duration: 35
+prereqs: ["neural-networks/chain-rule-visually"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import BackpropViz from '../../../components/widgets/BackpropViz/BackpropViz.svelte';
+
+<Step title="Numbers flow right, then gradients flow left">
+
+Training a model is a loop, and every turn of the loop has the same four beats.
+
+1. **Forward pass.** Push the inputs through the graph and get a prediction.
+2. **Loss.** Compare the prediction with what you wanted and squeeze the miss into one number.
+3. **Backward pass.** Send derivatives of that number back through the same graph, so every weight learns its share of the blame.
+4. **Update.** Nudge each weight a little against its gradient.
+
+The figure shows one full turn on the little graph from this day, $L = (a \cdot b + c)^2$. Values (teal) sweep left to right, then a gradient wave (magenta) sweeps right to left, then the three inputs change and the next turn starts with a smaller $L$. Nothing is animated for decoration: each beat is a step of the algorithm, and the rest of the lesson takes them one at a time.
+
+<BackpropViz client:visible mode="expr" title="One training cycle: forward, loss, backward, update" showPanel={false} />
+
+For this small graph we treat $L$ as the thing to make small. In a real network $L$ is a measure of how wrong the prediction is, and you will see that version in [Backpropagation Through an MLP](/learn/neural-networks/backprop-mlp/).
+
+</Step>
+
+<Step title="Forward pass: evaluate in order">
+
+The forward pass visits the nodes in an order where each node comes after the nodes it depends on. With $a = 2$, $b = -3$, $c = 10$:
+
+$$m = a \cdot b = -6, \qquad s = m + c = 4, \qquad L = s^2 = 16.$$
+
+Two things happen at every node, and the second one is easy to miss. The node **computes its output** and passes it on. It also **keeps** what it will need later: its inputs or its output, whichever its local derivative depends on. The multiply node keeps $a$ and $b$; the square node keeps $s$. This stored state is the reason a backward pass costs memory: activations from the forward pass are held until the gradient comes back for them. It is the standard cost of training as opposed to just running a model.
+
+<BackpropViz client:visible mode="expr" loopPhase="forward" title="Forward pass: each node computes and remembers" />
+
+</Step>
+
+<Step title="The loss is the last node">
+
+The output of this graph is a single number, $L = 16$. Everything this backward pass computes answers one question about it: *how does $L$ respond to each quantity in the graph?* A scalar loss makes the seed simply 1. Reverse-mode autodiff can also handle a vector output by supplying an upstream vector: one sweep computes the gradient of that weighted sum, rather than the entire Jacobian.
+
+The first answer is free. $L$ responds to itself exactly one-for-one: if $L$ rises by $\varepsilon$, $L$ rises by $\varepsilon$. So
+
+$$\frac{\partial L}{\partial L} = 1.$$
+
+This is the **seed** of the backward pass. It is the value placed on the output node before anything moves. Every other gradient will be a product that starts from this 1.
+
+<BackpropViz client:visible mode="expr" loopPhase="loss" title="The loss node, before the backward pass starts" />
+
+</Step>
+
+<Step title="Backward: one node at a time">
+
+Now walk backward. At each node the rule is the same, and it uses only what the node kept from the forward pass:
+
+$$\text{gradient sent to an input} = \text{upstream gradient} \times \text{local derivative.}$$
+
+1. **Square node**, $L = s^2$. Upstream is $\partial L/\partial L = 1$. Local derivative $2s = 8$. So $\partial L/\partial s = 1 \times 8 = 8$.
+2. **Add node**, $s = m + c$. Upstream is $8$. Both local derivatives are $1$, so both inputs receive the full $8$: $\partial L/\partial m = 8$ and $\partial L/\partial c = 8$.
+3. **Multiply node**, $m = a \cdot b$. Upstream is $8$. Local derivatives: $\partial m/\partial a = b = -3$ and $\partial m/\partial b = a = 2$. So $\partial L/\partial a = 8 \times (-3) = -24$ and $\partial L/\partial b = 8 \times 2 = 16$.
+
+Watch the wave move through those three nodes in exactly that order. The order is not a matter of taste: a node can only send gradients down once **everything downstream of it** has sent its gradient in. That is reverse topological order.
+
+<BackpropViz client:visible mode="expr" loopPhase="backward" select="a" title="The backward pass, node by node" />
+
+</Step>
+
+<Step title="The whole ledger">
+
+Here is everything from one forward and one backward pass, side by side. Read across a row: the value came from the forward pass, the gradient from the backward pass.
+
+<table>
+<thead>
+<tr><th scope="col">Node</th><th scope="col">Value</th><th scope="col">Upstream</th><th scope="col">Local derivative(s)</th><th scope="col">Gradient</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">L = s²</th><td>16</td><td>seed 1</td><td>2s = 8</td><td>∂L/∂L = 1</td></tr>
+<tr><th scope="row">s = m + c</th><td>4</td><td>8</td><td>1, 1</td><td>∂L/∂s = 8</td></tr>
+<tr><th scope="row">m = a·b</th><td>−6</td><td>8</td><td>b = −3, a = 2</td><td>∂L/∂m = 8</td></tr>
+<tr><th scope="row">a</th><td>2</td><td>8 (via m)</td><td>−3</td><td>∂L/∂a = −24</td></tr>
+<tr><th scope="row">b</th><td>−3</td><td>8 (via m)</td><td>2</td><td>∂L/∂b = 16</td></tr>
+<tr><th scope="row">c</th><td>10</td><td>8 (via s)</td><td>1</td><td>∂L/∂c = 8</td></tr>
+</tbody>
+</table>
+
+One forward pass and one backward pass produced all three gradients that the loop needs: $(-24,\ 16,\ 8)$. Notice the cost: each node is visited once in each direction. Nothing is recomputed per input.
+
+<details>
+<summary>Show the math</summary>
+
+Write $\bar v = \partial L/\partial v$ (the **adjoint** of $v$). Backpropagation is the recursion, from output to inputs,
+
+$$\bar L = 1, \qquad \bar u \mathrel{+}= \bar v\,\frac{\partial v}{\partial u}\quad\text{for each node } v \text{ and each input } u \text{ of } v.$$
+
+The $+{=}$ matters: an input used by several nodes receives one term from each of them. Here $\bar s = 1\cdot 2s = 8$, $\bar m = \bar s \cdot 1 = 8$, $\bar c = \bar s \cdot 1 = 8$, $\bar a = \bar m\, b = -24$, $\bar b = \bar m\, a = 16$.
+
+</details>
+
+</Step>
+
+<Step title="A value used twice: gradients accumulate">
+
+In the tiny graph every value feeds one node, so each gradient arrives in a single piece. A real network is different: a value can feed many nodes, and then it gets a gradient contribution from each one, and **the contributions add**. This is why the update rule above is written with $+{=}$.
+
+The 2-3-1 network has this shape. The input $x_2 = 0.5$ feeds all three hidden units. After the backward pass has reached the hidden layer, the gradients at the three pre-activations are $\delta = (1.677,\ -1.230,\ 0.734)$, and $x_2$ multiplies $w_{12} = -0.6$, $w_{22} = 0.9$ and $w_{32} = 0.7$ on the way in. Each unit sends back its own piece:
+
+$$\underbrace{(1.677)(-0.6)}_{-1.006} + \underbrace{(-1.230)(0.9)}_{-1.107} + \underbrace{(0.734)(0.7)}_{+0.514} = -1.60 .$$
+
+Click $x_2$ in the figure, and the panel shows three paths added together. Accumulation is exactly the "several paths" rule of the [previous lesson](/learn/neural-networks/chain-rule-visually/), carried out incrementally: each consumer adds its contribution as the wave passes it.
+
+<BackpropViz client:visible loopPhase="backward" initialPhase="update" select="x2" title="x₂ receives three contributions and sums them" />
+
+In code this is why gradients start at zero and are added to. Forgetting to zero them between iterations is a classic bug: gradients from the previous step silently accumulate.
+
+</Step>
+
+<Step title="Check the gradients without calculus">
+
+You can verify a backward pass with the crudest tool available, a finite difference. Nudge $a$ from $2$ to $2.0001$ and rerun only the forward pass: $m = -6.0003$, $s = 3.9997$, $L = 15.9976$. The loss dropped by $0.0024$ for a nudge of $0.0001$, so the slope is $-23.999$, matching $\partial L/\partial a = -24$ to the precision of the step.
+
+This is called a **gradient check**, and it is how people test hand-written backward code. It costs one forward pass per parameter, so it is only a test, never the method. It is worth keeping the two roles apart: the finite difference is slow but obviously right, the backward pass is fast and needs to be verified against it.
+
+The chain-rule figure from the previous lesson showed the same comparison for a chain of functions, with the numerical derivative printed next to the product of slopes.
+
+</Step>
+
+<Step title="The update: one step downhill">
+
+The gradient $(-24, 16, 8)$ says which way is uphill for each input. To make $L$ smaller we move the other way, scaled by a learning rate $\eta$:
+
+$$a \leftarrow a - \eta\,\frac{\partial L}{\partial a}, \qquad b \leftarrow b - \eta\,\frac{\partial L}{\partial b}, \qquad c \leftarrow c - \eta\,\frac{\partial L}{\partial c}.$$
+
+With the figure's default $\eta = 0.02$:
+
+- $a$ goes from $2$ to $2 - 0.02(-24) = 2.48$
+- $b$ goes from $-3$ to $-3 - 0.02(16) = -3.32$
+- $c$ goes from $10$ to $10 - 0.02(8) = 9.84$
+
+Rerun the forward pass with these values: $m = 2.48 \cdot (-3.32) = -8.234$, $s = -8.234 + 9.84 = 1.606$ and $L = 2.58$. One step took the loss from $16$ to $2.58$.
+
+Let the figure loop and the loss curve under it fall. Then reset and set the learning rate to $\eta = 0.1$: from the original inputs, the first step takes $a$ to $4.4$, $b$ to $-4.6$, $c$ to $9.2$, and $L$ **rises** to $121.8816$ (about $122$). The gradient is a local slope; step too far and you leave the region where it is right. The [learning-rate lesson](/learn/neural-networks/learning-rate-schedules/) picks this up.
+
+<BackpropViz client:visible mode="expr" select="a" title="Repeat the cycle: the loss falls, until η is too big" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think the backward pass needs a different graph. Actually** it walks the same graph in the opposite direction, using the values the forward pass stored. Without those stored values the local derivatives could not be evaluated.
+
+**You might think the backward pass is a second, more expensive pass. Actually** it costs about as much as the forward pass: one visit per node, one multiply per edge.
+
+**You might think gradients are assigned once and done. Actually** they are accumulated, and they are recomputed from scratch on every training step. If you forget to reset them, the stale ones add in.
+
+**You might think a large gradient means a large change to the output. Actually** it means the output is *sensitive* there. What actually changes is gradient times step size, and a step that is too large can overshoot, as with $\eta = 0.1$ above.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. For L = (a·b + c)² with a = 1, b = 4, c = −2, run the forward and backward pass and give all three gradients.</summary>
+
+Forward: $m = 4$, $s = 2$, $L = 4$. Backward: $\partial L/\partial s = 2s = 4$; the add node passes $4$ to $m$ and to $c$; the multiply node gives $\partial L/\partial a = 4 \cdot b = 16$ and $\partial L/\partial b = 4 \cdot a = 4$. Gradients: $(16,\ 4,\ 4)$ for $(a, b, c)$.
+
+</details>
+
+<details>
+<summary>2. Why can the backward pass not start at an intermediate node?</summary>
+
+Because the seed comes from the loss. A gradient is "how does $L$ respond", so the start has to be at $L$, and every node's upstream gradient depends on everything between it and $L$. The wave must reach a node's consumers before it can leave the node.
+
+</details>
+
+<details>
+<summary>3. A value feeds two nodes, and the backward pass delivers 3.0 from one and −1.0 from the other. What is its gradient?</summary>
+
+$3.0 + (-1.0) = 2.0$. Contributions from different consumers add.
+
+</details>
+
+<details>
+<summary>4. Why does training use more memory than running the model?</summary>
+
+The backward pass needs the forward pass's values (each node's inputs or output) to evaluate its local derivatives, so they are kept until the gradient has passed back through. Running a model without gradients can discard each activation as soon as the next layer has used it.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Rumelhart, Hinton and Williams, "Learning representations by back-propagating errors", *Nature* 323 (1986). The forward and backward passes for multilayer networks.
+- Christopher Olah, [Calculus on Computational Graphs: Backpropagation](https://colah.github.io/posts/2015-08-Backprop/). The forward and backward sweeps on the same graph, with the sum-over-paths view.
+- Andrej Karpathy, [The spelled-out intro to neural networks and backpropagation](https://www.youtube.com/watch?v=VMj-3S1tku0). Builds the forward and backward pass by hand for exactly these expressions.
+- Baydin, Pearlmutter, Radul and Siskind, "Automatic differentiation in machine learning: a survey", *JMLR* 18 (2018), section 3 on reverse accumulation.
+
+Next: [Backpropagation Through an MLP](/learn/neural-networks/backprop-mlp/) runs these two passes on a real 2-3-1 network.
+
+</Step>

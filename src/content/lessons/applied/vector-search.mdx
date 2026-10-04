@@ -1,0 +1,167 @@
+---
+title: "Embeddings and Vector Search"
+summary: "Turn text into vectors, then find the nearest ones: exactly, or fast with an approximate index."
+day: 14
+track: applied
+order: 1
+level: core
+duration: 25
+prereqs: ["transformers/embeddings"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+Search by meaning rather than by matching words.
+
+<Step title="Keyword search misses the point">
+
+A search that only matches words fails when the question and the answer use different words for the same thing.
+
+{/*
+IDEA: hook. "what happens if I bring the drill back late" vs the passage "Overdue tools cost 50 cents a day" share no content word, so keyword match scores 0, embedding match ranks it first.
+WIDGET: EmbedSearch mode="keyword" query="what happens if I bring the drill back late". Two ranked lists side by side over the built-in corpus (src/lib/applied/corpus.ts, the made-up Elm Street Tool Library handbook): left = keyword overlap (BM25 from src/lib/applied/embed.ts), right = cosine on LSA embeddings. Same corpus, same query.
+MOTION over t: the query's words light up in each passage they match (left), then the bars of both rankings grow to their scores; the right answer passage is outlined (--accent) in both lists so the reader sees where it lands.
+TRY: type another query in the text box (re-ranks live; the timeline replays the bar growth).
+QUOTE (from sim, never guessed): the keyword score and rank of the overdue passage, and its embedding rank and cosine.
+PROBE FIRST: the corpus must be authored so this query really fails on BM25 and succeeds on LSA; this exact pair is a unit test.
+*/}
+
+</Step>
+
+<Step title="Text becomes a vector">
+
+An embedding model turns a piece of text into a list of numbers, so that texts about the same thing get similar lists.
+
+{/*
+IDEA: embedding = function text -> fixed-length vector (here 16 numbers). Ours is LSA (TF-IDF matrix + truncated SVD, Deerwester et al. 1990), a real, classic embedding method computed in closed form from the corpus; production systems use a trained transformer encoder (link /learn/transformers/embeddings/). Say this once, plainly.
+WIDGET: EmbedSearch mode="embed" query="overdue fees". Left: the 40 handbook passages as points in a 2D PCA projection of their 16-D vectors, coloured by --viz-seq intensity of similarity to the query. Right: the query's 16 numbers as a bar strip (--viz-pos / --viz-neg).
+MOTION over t: the query's words are looked up one by one (TF-IDF weights appear), the 16-D vector assembles bar by bar, then the query point flies from the centre to its place in the projection and its 3 nearest passages get connecting lines.
+TRY: hover a point to read its passage; passages about fees cluster.
+QUOTE: dimension (16), number of passages, vocabulary size, and the share of variance the 2D picture keeps (so the reader knows the projection loses information).
+SHOW THE MATH: TF-IDF weight, truncated SVD X ≈ U_k S_k V_k^T, query fold-in q_k = S_k^-1 U_k^T q.
+SHOW THE CODE: sklearn TfidfVectorizer + TruncatedSVD(16) in 8 lines, matching the sim.
+*/}
+
+</Step>
+
+<Step title="Measuring similarity: cosine and dot product">
+
+Two vectors are similar when they point the same way; cosine similarity measures the angle and ignores length, while the dot product also rewards length.
+
+{/*
+IDEA: cosine = dot of unit vectors; dot product favours long vectors (long passages / frequent words); after normalising, both rank identically and the dot is cheaper. Link /learn/math/dot-product/.
+WIDGET: EmbedSearch mode="similarity" query="overdue fees". Top-8 list with two score columns, cosine and raw dot, plus the vector length of each passage.
+MOTION over t: a toggle-like sweep over t: first ranked by dot, then the bars glide to their cosine order; then all vectors are normalised (lengths animate to 1) and the dot ranking collapses onto the cosine ranking.
+TRY: find the long passage that the dot product over-ranks.
+QUOTE: that passage's rank under dot vs cosine, its length; confirm ranks identical after normalisation.
+REUSE NOTE: DotProduct mode="geometry" already teaches the angle picture; do not repeat it, link to it.
+SHOW THE MATH: cos(a,b) = a·b / (|a||b|).
+*/}
+
+</Step>
+
+<Step title="Exact search: compare against everything">
+
+The simplest search computes the similarity between the query and every stored vector and keeps the best few.
+
+{/*
+IDEA: brute-force k-NN is exact, cost grows linearly with N (N·d multiply-adds per query). Fine for 40 passages, not for a billion.
+WIDGET: AnnIndex mode="exact" k=5. 2D synthetic set (seeded clustered points, 2000 points) drawn on Canvas; a query point.
+MOTION over t: a scan line sweeps the points in storage order, each visited point flashes, the running top-5 list updates; a counter counts distance computations to 2000.
+TRY: drag the query point; the scan replays.
+QUOTE: comparisons = N; then the cost at N = 1e9, d = 768 computed in the readout (multiply-adds), as a scale bar on a log axis.
+SHOW THE CODE: numpy argpartition top-k over a matrix product.
+*/}
+
+</Step>
+
+<Step title="IVF: search only the nearest buckets">
+
+An inverted-file index groups the vectors into clusters ahead of time, then searches only the few clusters nearest the query.
+
+{/*
+IDEA: IVF = k-means into nlist cells (reuse KMeansLab kmeans + initCentroids 'plusplus'), each vector stored in its cell's list; a query compares to the nlist centroids, then scans the nprobe nearest lists. Misses happen when a true neighbour sits just across a cell border.
+WIDGET: AnnIndex mode="ivf" nlist=16 nprobe=1. Same 2000 points, cells drawn as Voronoi regions (thin lines, cell fill = --viz-seq-1).
+MOTION over t: centroids compared (16 flashes), the nearest cell fills, its points are scanned, the found top-5 appear; then the true top-5 are ringed so a missed neighbour (if any) is visible across the border.
+TRY: raise nprobe from 1 to 4 (slider) and watch recall and comparisons both rise.
+QUOTE: recall@5 and comparisons for nprobe = 1, 2, 4 at this query, and averaged over 200 seeded queries.
+*/}
+
+</Step>
+
+<Step title="HNSW: a graph you can walk downhill">
+
+HNSW links each vector to a few close neighbours in a layered graph, and a search hops greedily from neighbour to neighbour toward the query.
+
+{/*
+IDEA: hierarchical navigable small world (Malkov & Yashunin): few nodes on upper layers with long links, all nodes on layer 0; greedy descent per layer, then a beam of width ef on layer 0. Levels drawn from a seeded geometric distribution.
+WIDGET: AnnIndex mode="hnsw" M=6 ef=8. Same points (subsample 400 for a readable graph). Layers drawn as stacked translucent planes? NO: draw only the current layer's edges in 2D, layer number in the readout, to stay readable at 390 px.
+MOTION over t: entry point on top layer, greedy hops (particle along each edge, --viz-forward), drop to next layer, repeat, then the layer-0 beam expands; visited nodes counted.
+TRY: drag the query; raise ef from 8 to 32.
+QUOTE: hops per layer, visited nodes, recall@5 for ef = 8 and 32 (from sim).
+SHOW THE MATH: none; Show the code: faiss IndexHNSWFlat(d, 32) three lines, marked as the real library call.
+*/}
+
+</Step>
+
+<Step title="The speed and recall trade-off">
+
+Approximate indexes trade a little accuracy, measured as recall, for a large saving in comparisons.
+
+{/*
+IDEA: recall@k vs distance computations is the real figure of merit (as in ANN-Benchmarks). Measured in 32-D, where it is harder than the 2D pictures suggest.
+WIDGET: AnnIndex mode="tradeoff" dim=32. No scatter: a chart, x = distance computations per query (log axis), y = recall@10, curves for IVF (nprobe sweep) and HNSW (ef sweep), point for exact at recall 1. Dataset: 5000 seeded clustered points in 32-D, 200 queries. Precomputed once (worker if init exceeds 50 ms).
+MOTION over t: the curves draw from cheap to expensive settings; a cursor point travels each curve with its setting label.
+TRY: hover a point to read its setting.
+QUOTE: comparisons needed by each index to reach recall 0.9 and 0.99, vs 5000 for exact.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few ideas about embeddings and search that are easy to get wrong.
+
+{/*
+NO WIDGET. Intended misconceptions:
+1. "Embeddings understand meaning." They encode co-occurrence statistics; similar vectors mean similar usage in training text, which can include unwanted associations.
+2. "Cosine similarity of 0.8 means 80% relevant." Scores are only comparable within one model; the scale differs between models.
+3. "Approximate search returns wrong answers." It sometimes misses a true neighbour; recall is measured and tunable.
+4. "More dimensions are always better." Cost and memory grow with d; distances concentrate in high dimensions (link classic-ml/k-nearest-neighbors).
+5. "Vector search replaces keyword search." Exact strings (ids, names, codes) favour keyword search; many systems combine both (hybrid).
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Short questions to test the ideas above.
+
+{/*
+NO WIDGET. Questions:
+1. Two vectors have cosine 1 but different lengths. Are they the same embedding? (Same direction, different scale.)
+2. Brute force over 1e6 vectors of 768 numbers: how many multiply-adds per query?
+3. IVF with nlist 1000 and nprobe 10 scans roughly what fraction of the data?
+4. Why can raising HNSW's ef never lower recall in expectation, and what does it cost?
+5. Which query would keyword search answer better than embeddings in the handbook? (an exact item code)
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources for going further.
+
+{/*
+NO WIDGET. Cite (check each link before writing):
+- Deerwester et al., "Indexing by Latent Semantic Analysis", JASIS 1990 (LSA, our embedding method).
+- Mikolov et al., "Efficient Estimation of Word Representations in Vector Space", 2013, arXiv:1301.3781.
+- Reimers & Gurevych, "Sentence-BERT", EMNLP 2019, arXiv:1908.10084.
+- Malkov & Yashunin, "Efficient and robust approximate nearest neighbor search using HNSW graphs", arXiv:1603.09320.
+- Jégou, Douze & Schmid, "Product Quantization for Nearest Neighbor Search", TPAMI 2011 (IVF-ADC).
+- Johnson, Douze & Jégou, "Billion-scale similarity search with GPUs", arXiv:1702.08734 (FAISS).
+- Aumüller et al., ANN-Benchmarks (ann-benchmarks.com), VERIFY current URL.
+- Robertson & Zaragoza, "The Probabilistic Relevance Framework: BM25 and Beyond", 2009 (keyword baseline).
+*/}
+
+</Step>

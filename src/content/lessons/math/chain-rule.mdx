@@ -1,0 +1,172 @@
+---
+title: "The Chain Rule"
+summary: "How derivatives of composed functions multiply, the engine behind backpropagation."
+day: null
+track: math
+order: 5
+level: core
+duration: 20
+prereqs: ["math/derivatives"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ChainGears from '../../../components/widgets/ChainGears/ChainGears.svelte';
+
+<Step title="Two gears, one turn">
+
+Picture two gears meshed in a line. Turn the first one a little and it turns the second by a fixed multiple of that turn. The second gear turns a third by another multiple. To know how much the last gear moves when you turn the first, you never need to look inside: you multiply the ratios.
+
+Functions that feed one another behave the same way. When the output of one function is the input of the next, a small change at the start is scaled by the first link, and then scaled again by the second. That is the **chain rule**. Watch a tiny nudge to $x$ travel down the figure. Each number line is one variable, the shaded bar is how far the nudge has moved it, and each gear is a link with its rate written beside it.
+
+<ChainGears client:visible scenario="two" title="A nudge to x, scaled by each link in turn" />
+
+</Step>
+
+<Step title="Composing two functions">
+
+Two functions **composed** means the output of one goes straight into the other. Call the first $g$ and the second $f$:
+
+$$y = f(g(x)).$$
+
+Here $g(x) = 3x$ and $f(g) = g^2$, so $y = (3x)^2$. From the [derivatives lesson](/learn/math/derivatives/): the derivative $\dfrac{dg}{dx}$ is the rate at which $g$ changes when $x$ changes, meaning a nudge $\Delta x$ moves $g$ by about $\dfrac{dg}{dx}\,\Delta x$. Then $g$ is itself the input of $f$, so that nudge in $g$ moves $y$ by about $\dfrac{dy}{dg}$ times as much:
+
+$$\Delta y \approx \frac{dy}{dg}\,\Delta g \approx \frac{dy}{dg}\,\frac{dg}{dx}\,\Delta x.$$
+
+Divide by $\Delta x$ and you have the rule:
+
+$$\frac{dy}{dx} = \frac{dy}{dg}\cdot\frac{dg}{dx}.$$
+
+The sensitivity of the whole chain is the product of the sensitivities of its links. The $\approx$ becomes exact as the nudge shrinks to nothing, which is the definition of a derivative.
+
+<details>
+<summary>Show the math</summary>
+
+The "small nudge" reading is the definition of the derivative: $g(x+\Delta x) = g(x) + g'(x)\,\Delta x + \text{(something much smaller than } \Delta x)$. Feed the right side into $f$ and expand again: $f(g + \Delta g) = f(g) + f'(g)\,\Delta g + \dots$ with $\Delta g = g'(x)\,\Delta x + \dots$. Collect the terms that are proportional to $\Delta x$ and the coefficient is $f'(g(x))\,g'(x)$. In Leibniz notation that is the product above; in prime notation it is $(f\circ g)'(x) = f'(g(x))\cdot g'(x)$.
+
+</details>
+
+</Step>
+
+<Step title="A concrete example">
+
+Take $x = 1$ and nudge it by $\Delta x = 0.02$. Follow the figure through with actual numbers.
+
+- **Link 1.** $g = 3x$, so $g = 3$ and $\dfrac{dg}{dx} = 3$. The nudge becomes $\Delta g = 3 \times 0.02 = 0.06$.
+- **Link 2.** $y = g^2$, so $y = 9$ and $\dfrac{dy}{dg} = 2g = 6$. The nudge becomes $\Delta y = 6 \times 0.06 = 0.36$.
+- **Whole chain.** $\dfrac{dy}{dx} = 6 \times 3 = 18$, and indeed $18 \times 0.02 = 0.36$.
+
+Notice that the second rate, $2g$, depends on where $g$ currently is. Use the slider under the figure to move $x$: link 1 stays $\times 3$ but link 2 changes, and so does the product. The last line under the figure is a check with no calculus in it: it feeds $x + \Delta x$ through the real functions and divides the real change in $y$ by $\Delta x$. At $x = 1$ that gives $18.18$. It is a hair off from $18$ because a nudge of $0.02$ is small but not infinitely small.
+
+You can also confirm this the long way. $y = (3x)^2 = 9x^2$, so $\dfrac{dy}{dx} = 18x$, which is $18$ at $x = 1$. The chain rule got the same answer without expanding anything, and that is the point: it works when expanding is impractical.
+
+<ChainGears client:visible scenario="two" title="Move x: the rates change, the multiplying does not" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def g(x): return 3 * x          # link 1
+def f(g): return g ** 2         # link 2
+
+x, dx = 1.0, 0.02
+dg_dx = 3.0                     # derivative of g
+df_dg = 2 * g(x)                # derivative of f, evaluated at g(x)
+chain = df_dg * dg_dx           # 18.0
+
+real = (f(g(x + dx)) - f(g(x))) / dx   # 18.18: the honest check
+```
+
+</details>
+
+</Step>
+
+<Step title="Chains of many functions">
+
+Nothing limits a chain to two links. Take $y = 4\big/\big(1 + (2x)^2\big)$ and build it in four small steps:
+
+$$a = 2x,\qquad b = a^2,\qquad c = \frac{1}{1+b},\qquad y = 4c.$$
+
+Each step has its own rate: $\dfrac{da}{dx}$, $\dfrac{db}{da}$, $\dfrac{dc}{db}$, $\dfrac{dy}{dc}$. The rule extends by simply multiplying all of them:
+
+$$\frac{dy}{dx} = \frac{dy}{dc}\cdot\frac{dc}{db}\cdot\frac{db}{da}\cdot\frac{da}{dx}.$$
+
+At $x = 0.5$ the rates are $2$, then $2a = 2$, then $-1/(1+b)^2 = -0.25$, then $4$. Their product is $2 \times 2 \times (-0.25) \times 4 = -4$. Watch the third link: its rate is negative, so the nudge flips direction there and $y$ ends up moving opposite to $x$. A negative rate anywhere in the chain flips the sign of the whole answer.
+
+Each new function is just one more gear. The information you need from each link is only its own local rate at the point where the nudge arrives. This is exactly why the trick scales to networks with hundreds of layers: no link has to know anything about the others.
+
+<ChainGears client:visible scenario="long" title="Four links, four rates, one product" />
+
+</Step>
+
+<Step title="When paths split: add the contributions">
+
+Sometimes $x$ influences $y$ by more than one route. Let $a = x^2$ and $b = 3x$, and let both feed the output, $y = a \cdot b$. Now there are two paths from $x$ to $y$: one through $a$, one through $b$.
+
+A nudge to $x$ travels down both paths at once. Each path scales it by the product of its own rates, and when the two arrive at $y$ they **add**:
+
+$$\frac{dy}{dx} = \underbrace{\frac{\partial y}{\partial a}\frac{da}{dx}}_{\text{path through } a} + \underbrace{\frac{\partial y}{\partial b}\frac{db}{dx}}_{\text{path through } b}.$$
+
+The curly $\partial$ means "the rate when only this input changes and the other is held still". For $y = a \cdot b$ those rates are $\partial y/\partial a = b$ and $\partial y/\partial b = a$.
+
+At $x = 2$: $a = 4$ and $b = 6$. Path through $a$: $b \times 2x = 6 \times 4 = 24$. Path through $b$: $a \times 3 = 4 \times 3 = 12$. Total: $24 + 12 = 36$. Check: $y = 3x^3$, so $\dfrac{dy}{dx} = 9x^2 = 36$. In the figure, the shaded bar at $y$ is built from two stacked pieces, one per path: $0.48$ and $0.24$ for a nudge of $0.02$, adding to $0.72$.
+
+Rule of thumb: **multiply along a path, add across paths.** In a neural network, one weight can affect the loss through many routes, and backpropagation is exactly this bookkeeping, done efficiently.
+
+<ChainGears client:visible scenario="paths" title="Two paths from x to y: the contributions stack" />
+
+</Step>
+
+<Step title="Where this goes next">
+
+Everything a neural network does in training rests on this one rule. A network is a long chain of simple functions, and the loss is the last link. To improve a weight you need to know how the loss responds to it, and the chain rule gives that as a product of local rates, one per layer. The next lesson, [The chain rule, visually](/learn/neural-networks/chain-rule-visually/), draws each link as a curve with a tangent line and shows the multiplication for a real three-function chain. After that, [backpropagation](/learn/neural-networks/backprop-mlp/) runs the same bookkeeping backward through a whole network.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** the derivative of a composition is the product of the two functions' derivatives evaluated at the same input, $f'(x)\,g'(x)$. **Actually** $f'$ must be evaluated at $g(x)$, the value the second function actually receives. In the example $f'(g) = 2g$ was $6$ at $x=1$, not $2x = 2$.
+- **You might think** paths that split should be multiplied together. **Actually** you multiply along a path and add across paths. Two ways of influencing $y$ are two separate contributions to the same change.
+- **You might think** a negative rate means the calculation went wrong. **Actually** it means that link reverses direction: push the input up and the output goes down. Signs multiply along the chain like any other numbers.
+- **You might think** the chain rule is exact for a finite nudge. **Actually** it is exact for infinitely small nudges. For a real nudge the product of rates is a very good approximation, and the "real change" line under each figure shows the small gap.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>If $y = f(g(x))$ with $g'(2) = 5$ and $f'(g(2)) = -3$, what is $dy/dx$ at $x = 2$?</summary>
+
+Multiply the rates: $-3 \times 5 = -15$.
+
+</details>
+
+<details>
+<summary>What is the derivative of $y = (x^2 + 1)^3$? Identify the two links first.</summary>
+
+Links: $u = x^2 + 1$ and $y = u^3$. Rates: $du/dx = 2x$ and $dy/du = 3u^2$. Product: $3(x^2+1)^2 \cdot 2x = 6x\,(x^2+1)^2$.
+
+</details>
+
+<details>
+<summary>A chain has five links with rates $2, 0.5, -1, 3, 0.1$. Which ones flip the sign, and what is the total rate?</summary>
+
+Only the third ($-1$) is negative, so the total is negative: $2 \times 0.5 \times (-1) \times 3 \times 0.1 = -0.3$.
+
+</details>
+
+<details>
+<summary>$y = u + v$, where $u = x^2$ and $v = 5x$. How many paths lead from $x$ to $y$, and what is $dy/dx$ at $x = 3$?</summary>
+
+Two paths, through $u$ and through $v$. Along each, the rate from $u$ or $v$ to $y$ is $1$. Contributions: $2x = 6$ and $5$. Total: $6 + 5 = 11$.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- 3Blue1Brown, [Visualizing the chain rule and product rule](https://www.3blue1brown.com/lessons/chain-rule-and-product-rule), a geometric view of the same idea.
+- Khan Academy, [Chain rule](https://www.khanacademy.org/math/ap-calculus-ab/ab-differentiation-2-new/ab-3-1a/a/chain-rule-review), with worked practice problems.
+- Andrej Karpathy, [The spelled-out intro to neural networks and backpropagation: building micrograd](https://www.youtube.com/watch?v=VMj-3S1tku0), where the chain rule becomes working code.
+
+</Step>

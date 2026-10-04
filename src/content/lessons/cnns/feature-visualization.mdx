@@ -1,0 +1,193 @@
+---
+title: "What CNNs \"See\": Feature Visualization"
+summary: "Train a small CNN in your browser, then look inside it: its filters, the images that excite a channel, the examples a channel likes best, and saliency maps with an honest sanity check."
+day: 7
+track: cnns
+order: 5
+level: advanced
+duration: 25
+prereqs: ["cnns/resnets"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import FeatureViz from '../../../components/widgets/FeatureViz/FeatureViz.svelte';
+
+A trained network is a pile of numbers. This lesson shows four ways to look at those numbers and ask what they have learned. All four run on one small CNN that trains in your browser while you read, so every picture and every number below comes from the same network.
+
+It looks at 16×16 greyscale images of four kinds: a vertical bar, a horizontal bar, a diagonal bar and a ring, each at a random place with some noise. Layer 1 has six [filters](/learn/cnns/convolution/) of 3×3 weights. Layer 2 has eight channels, each fed by all six layer-1 channels. A last layer turns the eight layer-2 numbers into one score per class. After training it classifies all 200 held-out images correctly.
+
+<Step title="Layer 1: filters you can read">
+
+A **filter** is a small grid of weights that slides across the image. At each position it multiplies the pixels under it by its weights and adds them up, so the output is large where the pixels match the filter's pattern. Layer 1 works directly on pixels, which means its filters can be drawn as tiny pictures: blue cells are positive weights, orange cells are negative.
+
+Press play and watch training. At step 0 every weight is a small random number, none larger than 0.3 in size, and accuracy on images the network has never seen is 23%, about the 25% you get by guessing among four classes. By step 45 accuracy is 96% and by step 72 it is 100%. The weights have grown about three times larger, and some of them have organised.
+
+<FeatureViz client:visible mode="filters" title="Six first-layer filters as the network trains" />
+
+Look at the last frame. **Filter 3** has a positive middle column (about +0.3 in each row) between negative columns, so it fires on a bright vertical stroke on a dark background. **Filter 5** is positive on the left and strongly negative on the right (−0.7, −0.7, −0.9), so it fires on a vertical edge: bright on the left, dark on the right. **Filter 1** is positive at the top left and negative at the bottom right, a diagonal edge. **Filter 6** is positive everywhere. It just measures how bright its patch is.
+
+Nobody told the network to build edge detectors. Gradient descent found that they help separate the classes. The same thing happens in large networks trained on photographs: the first-layer filters of AlexNet (Krizhevsky et al., 2012) include oriented edges and colour blobs. Not every filter becomes an edge detector, though, as filter 6 shows.
+
+</Step>
+
+<Step title="Ask the network what would excite it">
+
+Layer 2 and beyond cannot be drawn as a picture of pixels, because their weights act on the previous layer's channels, not on pixels. So we turn the question around. Normally the image is fixed and training changes the weights to lower the loss. Here the weights are fixed and we change the **image** to raise one number: a class score, or how strongly a channel responds. This is [gradient descent](/learn/foundations/gradient-descent/) run uphill on the input, called **activation maximization**.
+
+Simonyan, Vedaldi and Zisserman (2014) did this for class scores. Each step has three parts. Run the image forward and read the number. [Backpropagate](/learn/neural-networks/backprop-mlp/) as usual, but keep going past the first layer to get the gradient of that number with respect to every pixel. Nudge each pixel in the direction that raises the number, and keep all pixels between 0 and 1.
+
+The figure starts from a nearly blank image and raises the network's score for "ring". Watch the curve: the score climbs from −3.6 to 12.4 in 24 steps and ends at 13.2. The highest ring score any of the 200 test images gets is 11.1, so the optimised image beats every real example. Its pixels spell out dark strokes curving around a lighter centre, scattered with stray pixels.
+
+<FeatureViz client:visible mode="maximize" show="plain" target="class3" title="Gradient ascent on the 'ring' score" />
+
+<details>
+<summary>Show the math</summary>
+
+Let $a(x)$ be the number to raise, for example the ring score as a function of the image $x$. One step is
+
+$$x \leftarrow \operatorname{clip}_{[0,1]}\!\Big(x + \eta\,\frac{g}{\operatorname{rms}(g)}\Big), \qquad g = \frac{\partial a}{\partial x}.$$
+
+Dividing by the root-mean-square of $g$ makes every step the same size no matter how steep the score currently is. Here $\eta = 0.06$ and the run is 48 steps. For a channel, $a$ is the average of the channel's ReLU output over all positions.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+x = torch.full((1, 1, 16, 16), 0.1, requires_grad=True)   # nearly blank start
+for _ in range(48):
+    a = model(x)[0, RING]                                  # the number to raise
+    g, = torch.autograd.grad(a, x)                         # d a / d pixels
+    x = (x + 0.06 * g / g.pow(2).mean().sqrt()).clamp(0, 1).detach().requires_grad_()
+```
+
+</details>
+
+</Step>
+
+<Step title="Plain ascent finds static; a few constraints make it readable">
+
+Gradient ascent does not care whether the image looks like anything. Any pixel pattern that raises the number is fair game, including patterns so fine-grained that a person would call them static. Olah, Mordvintsev and Schubert (2017) found the same on large networks and fixed it by constraining the search. Two constraints are used here. A small penalty pulls the image back toward blank, and each step ends with a slight blur. Before each step the image is also shifted by up to one pixel at random (**jitter**), so the result cannot depend on exact pixel alignment.
+
+Compare the two runs on layer 2, channel 1. Define **jaggedness** as the average brightness difference between neighbouring pixels: 0 for a flat image, higher for speckle. The starting image has 0.02. Plain ascent raises the channel from 0.94 to 6.35, and the picture is a speckled mix of black and white with jaggedness 0.27. The cleaned-up run reaches 5.51, which is 87% as much, with jaggedness 0.09 and a picture of broad vertical bands.
+
+<FeatureViz client:visible mode="maximize" show="both" target="l20" title="Plain ascent against a cleaned-up ascent" />
+
+Try the menu: for every class score and channel the cleaned-up picture is smoother, and it usually reaches a slightly lower activation. The constraints are a choice. The more you smooth, the easier the picture is to read and the less it tells you about everything the unit responds to.
+
+<details>
+<summary>Show the math</summary>
+
+The cleaned-up run replaces the plain update with
+
+$$x' = \operatorname{shift}(x), \qquad u = x' + \eta\,\frac{g(x')}{\operatorname{rms}(g(x'))} - \lambda\,(x' - x_0), \qquad x \leftarrow \operatorname{shift}^{-1}\!\big((1-\beta)\,u + \beta\,\operatorname{blur}(u)\big),$$
+
+with start brightness $x_0 = 0.1$, $\lambda = 0.01$, $\beta = 0.3$, a shift of $-1$, $0$ or $1$ pixel in each direction, and pixels clipped to $[0, 1]$ afterwards.
+
+</details>
+
+</Step>
+
+<Step title="Strokes first, arrangements later">
+
+Another way to ask what a channel does is to show it real images. Run all 200 test images through the network and keep the ones where a channel responds most. The blue box on each image outlines the patch the unit actually sees (its [receptive field](/learn/cnns/receptive-fields/)): a layer-1 unit sees 3×3 pixels, a layer-2 unit sees 8×8.
+
+Layer 1, channel 4 has a small box on a short dark stroke, and its best images come from three different classes: ring, horizontal and diagonal. Of its 12 best images only 5 are rings. A 3×3 patch cannot tell a ring's arc from the end of a bar. Layer 2, channel 2 sees a bigger patch, and all 12 of its best images are rings, with the box covering a piece of the ring. Across the channels, an average of 63% of a layer-1 channel's 12 best images share a class, against 86% for layer 2. Use the buttons to compare other channels.
+
+<FeatureViz client:visible mode="hierarchy" title="The images that excite a channel the most" />
+
+This is only the first two rungs. Zeiler and Fergus (2014) displayed what units respond to in a large network trained on photographs: edges and colours in layer 1, corners and combinations of edges in layer 2, textures and then object parts in the middle layers, and whole objects near the top. Olah et al. (2017) describe the same climb as edges, textures, patterns, parts and objects. A two-layer network on four shapes does not have the depth to show it, so it stops where its layers stop.
+
+</Step>
+
+<Step title="Saliency: which pixels matter for this answer?">
+
+The gradient trick also works on a real image. Take the image, pick a class score, and compute the gradient of that score with respect to every pixel. It says how much the score would change if that pixel got slightly brighter. Drawing its size as a heat map gives a **saliency map** (Simonyan, Vedaldi and Zisserman, 2014): bright pixels are the ones the score is most sensitive to.
+
+The test image is a vertical bar, and the network scores it 7.2 for "vertical bar" and −5.0 for "horizontal bar". Scrub through the four classes. For every class the heat gathers around the bar: 44% of the "vertical" map lies in the three columns around the bar, which hold 19% of the pixels. The map is blotchy, partly because max-pooling and ReLUs pass gradient through only a few pixels at a time. Try the other test images with the buttons.
+
+<FeatureViz client:visible mode="saliency" view="class" title="How sensitive each class score is to each pixel" />
+
+<details>
+<summary>Show the math</summary>
+
+For class score $z_c(x)$ the map is $S_{ij} = \left|\partial z_c / \partial x_{ij}\right|$. It is the same backward pass as activation maximization, evaluated once at a fixed image instead of repeated in a loop.
+
+</details>
+
+</Step>
+
+<Step title="A map that looks sensible can still be wrong">
+
+A heat map that outlines the object is satisfying, and satisfying is not the same as correct. Adebayo, Gilmer, Muelly, Goodfellow, Hardt and Kim (2018) proposed a sanity check: replace the network's weights with random numbers, one layer at a time from the top, and recompute the map. If the map still looks the same, it cannot be explaining what the weights learned. They found that several popular methods, guided backpropagation among them, produced nearly the same picture for a randomised network as for a trained one.
+
+Scrub the timeline. The panels are the test image, the trained network's map, the map after more and more layers are randomised, and a plain edge map of the image that uses no network at all. The bars average 40 test images. A correlation of 1 means the same pattern and 0 means unrelated. This plain gradient passes the basic check: randomising all three layers drops the map's correlation with the trained map from 1.00 to 0.25. But its resemblance to the image's edges barely moves, 0.31 for the trained network and 0.33 for the fully randomised one.
+
+<FeatureViz client:visible mode="saliency" view="sanity" title="Saliency after randomising the weights" />
+
+So "the map traces the object's edges" cannot be taken as proof that the map reflects what this network learned. Part of what the map shows comes from the image and the architecture. Run the randomisation test before you trust a saliency method on a new model.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think** a feature visualization shows what the network sees in a real image. **Actually** it is the result of an optimisation: one image, built from a chosen start and chosen constraints, that raises one number. Real examples (the best-images figure) show what a unit does on data.
+
+**You might think** each channel detects one nameable thing. **Actually** layer-1 channel 4 responded strongly to rings, horizontal bars and diagonals. Units often respond to several patterns, and a name like "ring detector" is a summary, not a definition.
+
+**You might think** a bright saliency pixel means the network looked at that object. **Actually** it means the score is locally sensitive to that pixel. Sensitivity depends on the weights, the image and the method, and the randomisation test shows that a map can look sensible without carrying much information about the weights.
+
+**You might think** training always produces edge detectors. **Actually** filter 6 here just averages brightness and filter 4 is a broad blob. Edge-like filters are common in first layers of large image networks; they are a finding, not a rule.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>Why can layer-1 filters be drawn as pictures but layer-2 filters cannot?</summary>
+
+A layer-1 filter multiplies pixels, so its 3×3 weights have the same layout as a patch of image. A layer-2 filter has 6×3×3 weights acting on layer-1 channels. Those inputs are feature maps, not pixels, so the weights only make sense in terms of what the layer-1 channels mean.
+
+</details>
+
+<details>
+<summary>In activation maximization, what is fixed and what changes?</summary>
+
+The weights are fixed and the image changes, one gradient step at a time, to raise a chosen activation or class score. It is the reverse of training, which fixes the images and changes the weights.
+
+</details>
+
+<details>
+<summary>Why does the cleaned-up image reach a lower activation than the plain one?</summary>
+
+It is more constrained: the blur, the pull toward blank and the jitter stop it from using fine-grained pixel patterns that the unit responds to. For layer 2, channel 1 it keeps 87% of the plain activation (5.51 against 6.35) and loses most of the speckle.
+
+</details>
+
+<details>
+<summary>After all three layers are randomised the saliency map still correlates 0.33 with the image's edges. What does that tell you?</summary>
+
+Resembling the image's edges is not evidence that the map reflects the trained weights, since a network with random weights gives about the same resemblance (0.31 for the trained one). The map should also change when the weights change, and here it does: its correlation with the trained map falls to 0.25.
+
+</details>
+
+<details>
+<summary>A layer-2 unit sees an 8×8 patch of a 16×16 image. Why do its best images look more class-specific than layer 1's?</summary>
+
+A bigger patch contains more of the shape. A 3×3 patch of a ring's arc looks like a piece of a bar, but an 8×8 patch holds enough of the curve to tell them apart.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Olah, C., Mordvintsev, A. and Schubert, L. (2017). [Feature Visualization](https://distill.pub/2017/feature-visualization/). Distill, 2(11). doi:10.23915/distill.00007. Optimisation targets, regularisers and the edges-to-objects progression in a large network.
+- Simonyan, K., Vedaldi, A. and Zisserman, A. (2014). [Deep Inside Convolutional Networks: Visualising Image Classification Models and Saliency Maps](https://arxiv.org/abs/1312.6034). ICLR Workshop. Class-score maximization and gradient saliency maps.
+- Zeiler, M. D. and Fergus, R. (2014). [Visualizing and Understanding Convolutional Networks](https://arxiv.org/abs/1311.2901). ECCV 2014. What units in each layer of a large network respond to.
+- Adebayo, J., Gilmer, J., Muelly, M., Goodfellow, I., Hardt, M. and Kim, B. (2018). [Sanity Checks for Saliency Maps](https://arxiv.org/abs/1810.03292). NeurIPS 2018. The weight-randomisation test used above.
+- Krizhevsky, A., Sutskever, I. and Hinton, G. E. (2012). [ImageNet Classification with Deep Convolutional Neural Networks](https://papers.nips.cc/paper/2012/hash/c399862d3b9d6b76c8436e924a68c45b-Abstract.html). NeurIPS 2012. Its first-layer filters are a well-known example of learned edge and colour detectors.
+- Earlier in this track: [convolution](/learn/cnns/convolution/), [receptive fields](/learn/cnns/receptive-fields/) and [residual networks](/learn/cnns/resnets/).
+
+</Step>

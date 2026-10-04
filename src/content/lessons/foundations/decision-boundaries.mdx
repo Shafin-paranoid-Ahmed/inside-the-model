@@ -1,0 +1,184 @@
+---
+title: "Decision Boundaries"
+summary: "The surface where a classifier switches its answer, and how the shape of the model decides what that surface can look like."
+day: 2
+track: foundations
+order: 3
+level: intro
+duration: 20
+prereqs: ["foundations/logistic-regression"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import BoundaryExplorer from '../../../components/widgets/BoundaryExplorer/BoundaryExplorer.svelte';
+
+<Step title="A classifier cuts space into regions">
+
+A classifier looks at a point and answers with a class. If you feed it every point on a plane, the plane splits into regions: here it says "blue", there it says "orange". The curve between the regions is the **decision boundary**, the place where the answer flips.
+
+In the figure, each point has two measurements, its $x$ and $y$ coordinates. Blue circles are class 1 and orange diamonds are class 0. The background colour is the classifier's belief: the bluer it is, the more sure the model is that a point there belongs to class 1. The black line is where the belief is exactly one half. Watch it swing into place as training runs.
+
+<BoundaryExplorer client:visible title="Training a classifier: the boundary finds its place" editable={false} />
+
+</Step>
+
+<Step title="From score to probability to boundary">
+
+The model in the figure is the one from [logistic regression](/learn/foundations/logistic-regression/). It computes a **score** from the coordinates, then turns the score into a probability with the sigmoid:
+
+$$z = b + w_1 x + w_2 y, \qquad P(\text{class 1}) = \sigma(z) = \frac{1}{1 + e^{-z}}.$$
+
+The sigmoid equals one half exactly when $z = 0$. So the decision boundary is the set of points where the score is zero. That is a single equation, $b + w_1 x + w_2 y = 0$, and it describes a straight line.
+
+The chart on the right shows the loss, the number training pushes down. It starts at $\ln 2 \approx 0.693$: with all weights at zero every point gets probability one half, and the loss is the same whatever the labels are. Drag the timeline back and forth to see the line and the loss move together.
+
+<details>
+<summary>Show the math</summary>
+
+$\sigma(z) = \tfrac12$ means $1 + e^{-z} = 2$, so $e^{-z} = 1$ and $z = 0$. In two dimensions $b + w_1 x + w_2 y = 0$ is a line with normal vector $(w_1, w_2)$. In $d$ dimensions the same equation is a flat hyperplane. The loss is the mean cross-entropy $-\tfrac1n\sum_i \big[c_i \ln p_i + (1-c_i)\ln(1-p_i)\big]$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def train(X, c, steps=200, lr=0.8):
+    Xb = np.c_[np.ones(len(X)), X]           # bias column, then features
+    w = np.zeros(Xb.shape[1])
+    for _ in range(steps):
+        p = 1 / (1 + np.exp(-Xb @ w))        # probability of class 1
+        w -= lr * Xb.T @ (p - c) / len(X)    # gradient of mean cross-entropy
+    return w                                 # boundary: Xb @ w == 0
+```
+
+</details>
+
+<BoundaryExplorer client:visible title="The line is the set of points where the score is zero" editable={false} />
+
+</Step>
+
+<Step title="Weights move the boundary, confidence is distance">
+
+Changing the weights moves the line. The bias $b$ slides it without turning it, and the ratio $w_1 : w_2$ sets its direction. Training is a search for the weights that put the line between the two groups.
+
+Hover over the plane. The readout shows the probability at that spot and, for a line, the **distance to the boundary**. The two are tied together. The score $z$ is the distance times the length of the weight vector, so points far from the line get scores far from zero, and the sigmoid turns those into probabilities near 0 or 1. Points close to the line get probabilities near one half. That is why the dashed contours, at 12% and 88%, run parallel to the boundary on each side: confidence is just distance from the line.
+
+Now click on the plane to add a point, choosing its class in the menu. Put an orange diamond deep in the blue region and see the line lurch to accommodate it, and the loss jump up.
+
+<BoundaryExplorer client:visible title="Hover for confidence, click to add points" />
+
+<details>
+<summary>Show the math</summary>
+
+The distance from $(x, y)$ to the line $b + w_1 x + w_2 y = 0$ is $z / \lVert w \rVert$ with $\lVert w \rVert = \sqrt{w_1^2 + w_2^2}$. Then $P = \sigma(\lVert w \rVert \cdot \text{distance})$. Scaling the weights up makes the same boundary more confident, sharpening the transition from blue to orange without moving the line.
+
+</details>
+
+</Step>
+
+<Step title="When a line is not enough">
+
+Change **Data** to XOR in the figure below. The classes sit in opposite corners: class 1 is upper right and lower left, class 0 is the other two. Try to place a line so that blue is on one side and orange on the other. You cannot: any line leaves about half the points on the wrong side. Points on the wrong side get a heavy black outline.
+
+The model is not badly trained. It is too simple. A line is the only boundary shape it can draw, so training just finds the least bad line and the loss stalls near $\ln 2$. Nothing in more training time can fix that.
+
+<BoundaryExplorer client:visible dataset="xor" model="linear" title="XOR with a straight boundary: stuck near 50%" />
+
+</Step>
+
+<Step title="Bend the boundary by adding features">
+
+The fix is to give the model more to work with. Instead of only $x$ and $y$, feed it the extra features $x^2$, $xy$ and $y^2$. The score becomes
+
+$$z = b + w_1 x + w_2 y + w_3 x^2 + w_4 xy + w_5 y^2.$$
+
+It is still a logistic regression, still linear in the weights, and it is trained exactly the same way. But the set $z = 0$ is now a conic section: an ellipse, a hyperbola, a pair of lines. For XOR the useful feature is $xy$, which is positive in exactly the two blue corners and negative in the two orange ones. Watch the weight on $xy$ take over.
+
+<BoundaryExplorer client:visible dataset="xor" model="poly" title="XOR with squared and product features: the boundary bends" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def poly_features(X):
+    x, y = X[:, 0], X[:, 1]
+    return np.c_[x, y, x**2, x * y, y**2]     # then train() as before
+
+w = train(poly_features(X), c)
+```
+
+</details>
+
+</Step>
+
+<Step title="A closed boundary">
+
+The rings dataset has class 0 in a disc at the centre and class 1 on a circle around it. No line separates these, and no single curve of the form "one side is blue" is a line at all: the boundary must be a closed loop. With the $x^2$ and $y^2$ features it can be. A circle centred at the origin is $x^2 + y^2 = r^2$, which is a score $z = w_3 x^2 + w_5 y^2 + b$ with $w_3 = w_5 > 0$ and $b = -w_3 r^2$.
+
+Use the **Features** menu to switch between the two models, and the **Data** menu to try all three datasets. Notice the trade: more features can draw more shapes, and in real models that same freedom is what lets a network memorise noise. You will meet that in [overfitting](/learn/foundations/overfitting-bias-variance/).
+
+<BoundaryExplorer client:visible dataset="circles" model="poly" title="Rings: a closed boundary from squared features" />
+
+<p>In real models the features are not hand-picked. A neural network learns its own features in the hidden layers, so the boundary can take almost any shape.</p>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** a classifier stores the boundary as a line to be drawn. **Actually** it stores weights. The boundary is the set of points where a score crosses zero, and it exists only because we ask where the answer flips.
+- **You might think** training longer will eventually fit any data. **Actually** the model can only draw boundaries of the shape its features allow. A line on XOR never gets past chance, however long it trains.
+- **You might think** a probability of 0.9 means the model is right 90% of the time. **Actually** it says the point is far from the boundary. Whether 0.9 is honest is a separate question, called calibration.
+- **You might think** more features are always better. **Actually** they give the boundary freedom to wiggle around individual points, including noisy ones.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>The score at a point is $z = 0$. What is the model's probability of class 1?</summary>
+
+One half, since $\sigma(0) = 0.5$. The point lies exactly on the decision boundary.
+
+</details>
+
+<details>
+<summary>A logistic model has $b = -1$, $w_1 = 2$, $w_2 = 0$. Where is the boundary?</summary>
+
+Solve $-1 + 2x = 0$, so $x = 0.5$: a vertical line. Points to the right of it are class 1.
+
+</details>
+
+<details>
+<summary>You double every weight and the bias. What happens to the boundary and to the confidence?</summary>
+
+The boundary is unchanged because $z = 0$ is the same equation. The confidence rises, because every score doubles and the sigmoid saturates faster.
+
+</details>
+
+<details>
+<summary>Why can a plain logistic regression not solve XOR?</summary>
+
+Its boundary is a line, and no line puts the two blue corners on one side and the two orange corners on the other.
+
+</details>
+
+<details>
+<summary>Which single extra feature makes XOR easy?</summary>
+
+The product $xy$: it is positive when $x$ and $y$ share a sign and negative otherwise.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Bishop, *Pattern Recognition and Machine Learning*, section 4.3: probabilistic discriminative models and logistic regression.
+- Hastie, Tibshirani and Friedman, [*The Elements of Statistical Learning*](https://hastie.su.domains/ElemStatLearn/), chapter 4: linear methods for classification.
+- Minsky and Papert (1969), *Perceptrons*: the classic argument that a single linear unit cannot compute XOR.
+- Google, [*Machine Learning Crash Course: Classification*](https://developers.google.com/machine-learning/crash-course/classification).
+
+</Step>

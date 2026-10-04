@@ -1,0 +1,211 @@
+---
+title: "Random Forests and Gradient Boosting"
+summary: "Combine many weak trees, by averaging (bagging) or by fixing errors in sequence (boosting)."
+day: 3
+track: classic-ml
+order: 3
+level: core
+duration: 30
+prereqs: ["classic-ml/decision-trees"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ForestBoost from '../../../components/widgets/ForestBoost/ForestBoost.svelte';
+
+<Step title="One tree is jumpy. Many trees vote.">
+
+A [decision tree](/learn/classic-ml/decision-trees/) that is allowed to grow until every training point sits in a pure leaf fits the noise as well as the pattern, so a slightly different training set gives a noticeably different tree. That instability is a weakness of one tree, but it becomes a strength when you combine many trees: if the trees make different mistakes, averaging cancels them.
+
+**Bagging** (short for bootstrap aggregating) makes the trees differ by giving each one its own training set. A **bootstrap sample** of a data set with $n$ points is made by drawing $n$ times *with replacement*: pick a random point, write it down, put it back, repeat. Some points are drawn several times, and some are never drawn. The chance that a given point is never drawn is $(1 - 1/n)^n \approx 1/e \approx 0.37$, so each tree leaves out about a third of the points. Those are its **out-of-bag** points.
+
+The figure uses 150 training points on the unit square (circles are class 1, diamonds class 0). The true boundary is a wavy diagonal, and 10% of the labels were flipped at random. Watch tree 1 draw its sample: it takes 95 distinct points, draws 43 of them more than once (the count shows next to the point), and leaves 55 out, which are dimmed. The full-depth tree grown on that sample has a jagged, staircase boundary. Then it joins the vote, and the map on the left shows the fraction of trees voting for each class.
+
+<ForestBoost client:visible mode="bag" title="Eight trees, each grown on its own bootstrap sample" />
+
+As trees accumulate, the vote map loses its jaggedness. Tree 1 alone scores 94% on the training points it was built from but only 78% on 1000 validation points it never saw. Eight trees voting score 98% on training and 83% on validation. Averaging did not make any tree better; it made their disagreements cancel.
+
+<details>
+<summary>Show the math</summary>
+
+Suppose each of $B$ trees has prediction variance $\sigma^2$ and any two trees have correlation $\rho$. The variance of their average is
+
+$$\operatorname{Var}\!\left(\frac{1}{B}\sum_{b=1}^{B} T_b\right) = \rho\,\sigma^2 + \frac{1-\rho}{B}\,\sigma^2 .$$
+
+The second term vanishes as $B$ grows, so the floor is $\rho\sigma^2$. Averaging helps exactly as much as the trees are different, which is what the next step is about. Averaging leaves the bias of each tree unchanged, which is why bagging uses deep, low-bias trees.
+
+</details>
+
+</Step>
+
+<Step title="Random forests: make the trees even less alike">
+
+Bootstrap samples make trees differ, but not enough. If one feature is clearly the best, every tree splits on it first and the trees stay correlated, which keeps the floor $\rho\sigma^2$ high. A **random forest** adds a second source of randomness: at every split, the tree may only consider a random subset of the features. A common choice for classification is the square root of the number of features. With only two features here, each split sees one feature chosen at random.
+
+The figure grows two forests from exactly the same bootstrap samples. The only difference is the feature restriction. Under each map is the fraction of validation points on which two trees give different answers, averaged over all pairs of trees so far. With two trees the bagged pair disagrees on 15% of points and the random pair on 16%. With all 16 trees the averages are 17% and 19%: the restricted trees are less alike. Validation accuracy of the vote is 82% for bagged trees and 84% for the random forest.
+
+<ForestBoost client:visible mode="forest" title="Same samples, with and without random feature choice" />
+
+The gap in accuracy here is small, and on a two-feature toy it will not always favour the random forest. The reliable effect is the drop in correlation between trees; how much accuracy it buys depends on the data, and it matters most when there are many features and a few dominate.
+
+Because each tree never saw about a third of the points, every point has a set of trees that can vote on it without having been trained on it. The accuracy of those votes is the **out-of-bag score**, a free validation estimate that needs no held-out set.
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+
+def random_forest(X, y, n_trees=100, seed=0):
+    rng = np.random.default_rng(seed)
+    trees = []
+    for _ in range(n_trees):
+        idx = rng.integers(0, len(X), len(X))            # bootstrap: n draws with replacement
+        t = DecisionTreeClassifier(max_features="sqrt")  # each split sees a random feature subset
+        trees.append(t.fit(X[idx], y[idx]))
+    return trees
+
+def predict(trees, X):
+    votes = np.mean([t.predict(X) for t in trees], axis=0)
+    return (votes > 0.5).astype(int)
+```
+
+</details>
+
+</Step>
+
+<Step title="Boosting: each tree fixes what the last ones got wrong">
+
+Bagging trains its trees independently, all at once. **Boosting** trains them in sequence, and each new tree is asked to fix the errors of the ones before it. Switch to regression to see it cleanly: 40 points scatter around a curve, and we want a function that follows the curve.
+
+Start with the simplest model, the mean of $y$. Its **residual** at each point is $y - F(x)$, how far the prediction is from the target; the figure draws each residual as a vertical bar. Then fit a small tree (depth 2 by default) to the residuals, not to $y$. The tree outputs one number per leaf, a rough guess of how much to correct each region. Add a fraction of it to the prediction, and the residuals shrink. Repeat.
+
+Watch the first three rounds slowly, then the rest at speed. The prediction is a staircase because it is a sum of trees, and the training error (MSE, mean squared error) falls from 0.401 to 0.235 after one round, 0.149 after two and 0.103 after three. After 30 rounds it is 0.010. The dashed line in the top panel is where the prediction is about to move.
+
+<ForestBoost client:visible mode="boost" title="Each round fits a tree to the current residuals" />
+
+The fraction added each round is the **learning rate** $\nu$ (here 0.3). Drag it. At $\nu = 1$ the training error collapses in a few rounds (0.075 after one), but the error on 300 fresh points bottoms out at 0.124 after 3 rounds and then rises to 0.147 by round 30, because the model is chasing noise. At $\nu = 0.05$ the progress is slow (validation error still 0.153 after 30 rounds and falling) but steadier. A small learning rate needs more rounds and usually generalises better. The dotted line marks the noise floor, $0.3^2 = 0.09$: no model can do better than the noise in the labels.
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor
+
+def boost(x, y, rounds=30, lr=0.3, depth=2):
+    F = np.full(len(y), y.mean())                # start: predict the mean
+    trees = []
+    for _ in range(rounds):
+        resid = y - F                            # what is still wrong
+        t = DecisionTreeRegressor(max_depth=depth).fit(x[:, None], resid)
+        F += lr * t.predict(x[:, None])          # move a fraction of the way
+        trees.append(t)
+    return y.mean(), trees
+```
+
+</details>
+
+</Step>
+
+<Step title="Gradient boosting: gradient descent in function space">
+
+Why is fitting residuals a good idea? Take the squared-error loss for one point, $L = \tfrac12 (y - F)^2$, and treat the prediction $F$ at that point as a number you can change. Its derivative is
+
+$$\frac{\partial L}{\partial F} = -(y - F), \qquad\text{so}\qquad -\frac{\partial L}{\partial F} = y - F .$$
+
+The residual is the **negative gradient** of the loss with respect to the prediction. A normal gradient descent step moves a parameter along the negative gradient, $\theta \leftarrow \theta - \eta\,\nabla_\theta L$. Boosting does the same thing one level up: the "parameters" are the predictions $F(x_1), \dots, F(x_n)$ themselves, a whole function. The negative gradient is one number per point, the arrows in the figure. We cannot just add the arrows to $F$, because that would only fix the training points and say nothing about new ones. So we fit a tree to the arrows, which smooths them into a function defined everywhere, and step a fraction $\nu$ along it: $F \leftarrow F + \nu\,h$. That is **gradient boosting**: gradient descent where each step is a small tree.
+
+This view is what makes the method general. Any differentiable loss works; only the arrows change. Switch the loss to absolute error, $L = |y - F|$. Its negative gradient is $\operatorname{sign}(y - F)$, so every arrow has the same length and only the direction matters. The tree is then fitted to $+1$ and $-1$, which makes the fit less sensitive to a few large outliers than squared error is.
+
+<ForestBoost client:visible mode="gradient" title="Residuals are the negative gradient of the loss" />
+
+In the readout, the point with the largest arrow shows $y$, the current $F$ and $-\partial L / \partial F$. With squared loss, the last value is always exactly $y - F$.
+
+<details>
+<summary>Show the math</summary>
+
+Gradient boosting for a loss $L(y, F)$:
+
+1. Start with a constant, $F_0 = \arg\min_c \sum_i L(y_i, c)$.
+2. For $m = 1, \dots, M$: compute $g_i = -\left.\dfrac{\partial L(y_i, F)}{\partial F}\right|_{F = F_{m-1}(x_i)}$ for every point; fit a tree $h_m$ to the pairs $(x_i, g_i)$; set $F_m = F_{m-1} + \nu\,h_m$.
+
+This lesson uses the simplification that each leaf holds the mean of $g_i$. Production libraries such as XGBoost and LightGBM refine the leaf values with a line search or a second-order (Newton) step, and add regularisation of the leaves.
+
+</details>
+
+</Step>
+
+<Step title="Random forest or boosting?">
+
+Both combine hundreds of trees, but they attack different errors. A random forest uses deep trees with high variance and low bias, and averaging removes variance. Boosting uses shallow trees with high bias and low variance, and the sequence removes bias. So they fail differently: adding trees to a forest does almost nothing harmful, while adding rounds to a booster keeps fitting ever finer detail, noise included.
+
+The figure puts both on the same 40 points and measures the error on 300 fresh points as trees are added. The forest drops from 0.152 with one tree to 0.128 at 10 and 0.123 at 100, and it has flattened well before then. Boosting with a high learning rate (0.5) reaches its best error of 0.121 after only 5 trees, then gets worse: 0.147 at 100 trees, while its training error (dotted) has reached essentially zero. Boosting with a low rate (0.05) starts far behind, at 0.467 with one tree, but keeps improving for longer: its best is 0.123 at 61 trees, and it ends at 0.126.
+
+<ForestBoost client:visible mode="compare" title="Error on fresh data as trees are added" />
+
+On this small, noisy set the tuned methods end up about equal. In practice the trade-off looks like this:
+
+| | Random forest | Gradient boosting |
+|---|---|---|
+| Trees | deep, independent | shallow, in sequence |
+| Reduces | variance | bias (and variance, with a small rate) |
+| More trees | plateaus, rarely hurts | can overfit, so stop early |
+| Tuning | few knobs, good defaults | learning rate, depth, rounds all matter |
+| Training | parallel | sequential |
+
+Boosting, tuned well, usually wins on tabular data. The forest is the safer first try.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** a forest is many trees that each vote for the right answer. **Actually** each tree is individually mediocre and often wrong; the vote works because their mistakes are different.
+- **You might think** more trees in a random forest will eventually overfit. **Actually** the error flattens as trees are added; overfitting comes from each tree's depth, not from their number. Boosting is different: more rounds can overfit.
+- **You might think** the bootstrap sample is a smaller copy of the data. **Actually** it has the same size, with repeats; about a third of the points are simply absent.
+- **You might think** boosting fits the labels again and again. **Actually** each tree is fitted to the *residuals* (more generally, to the negative gradient), not to $y$.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>A bootstrap sample of 1000 points is drawn. Roughly how many distinct points does it contain?</summary>
+
+About $1000 \times (1 - 1/e) \approx 632$. The other 368 or so are out-of-bag.
+
+</details>
+
+<details>
+<summary>Why does a random forest restrict the features at each split?</summary>
+
+To make the trees less correlated. If one feature dominates, unrestricted trees all split on it first and look alike, which limits how much averaging can reduce variance.
+
+</details>
+
+<details>
+<summary>The current prediction is 1.2 for a point with target 2.0. With squared loss, what does the next tree try to predict there? With absolute loss?</summary>
+
+Squared loss: the residual, $2.0 - 1.2 = 0.8$. Absolute loss: the sign, $+1$. (The tree predicts one value per leaf, so it fits the average over the points in that leaf.)
+
+</details>
+
+<details>
+<summary>Validation error in a boosted model starts rising while training error keeps falling. What can you change?</summary>
+
+Stop at the round where validation error was lowest (early stopping), lower the learning rate and use more rounds, use shallower trees, or fit each tree on a random subsample of the data.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Breiman (1996), "Bagging predictors", *Machine Learning* 24: bootstrap aggregating.
+- Breiman (2001), "Random forests", *Machine Learning* 45: the random forest algorithm and out-of-bag estimates.
+- Freund and Schapire (1997), "A decision-theoretic generalization of on-line learning and an application to boosting": AdaBoost, the first practical boosting method.
+- Friedman (2001), "Greedy function approximation: a gradient boosting machine", *Annals of Statistics* 29: boosting as gradient descent in function space.
+- Chen and Guestrin (2016), "XGBoost: a scalable tree boosting system", KDD: second-order boosting as used in practice.
+- Hastie, Tibshirani and Friedman, [*The Elements of Statistical Learning*](https://hastie.su.domains/ElemStatLearn/), chapters 10 (boosting) and 15 (random forests).
+
+</Step>

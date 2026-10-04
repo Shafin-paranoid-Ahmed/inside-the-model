@@ -1,0 +1,187 @@
+---
+title: "Universal Approximation"
+summary: "A wide enough network with a non-linearity can approximate any reasonable continuous function."
+day: 4
+track: neural-networks
+order: 5
+level: advanced
+duration: 20
+prereqs: ["neural-networks/mlp"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import BumpBuilder from '../../../components/widgets/BumpBuilder/BumpBuilder.svelte';
+
+<Step title="Can a few simple units draw any curve?">
+
+A [multi-layer perceptron](/learn/neural-networks/mlp/) is a pile of small, nearly identical pieces: each hidden unit takes a weighted sum of its inputs and passes it through an activation function. It is not obvious that such a pile can imitate an arbitrary curve. This lesson shows that it can, by building the curve by hand. There is no training anywhere on this page. Every weight is set with a pencil.
+
+The trick is to make one **bump**: a function that is near 0 everywhere except on a chosen interval, where it is near 1. Watch the timeline. First, one sigmoid unit $\sigma(k(x - a))$ is a smooth step: close to 0 on the left of $a$, close to 1 on the right, and the **steepness** $k$ controls how abrupt the rise is. Then a second, shifted unit is subtracted. Where both have risen, they cancel, and only the stretch between the two steps survives. Finally $k$ grows and the bump's edges sharpen toward a flat-topped box.
+
+At $k = 16$ the bump built from steps at $0.35$ and $0.65$ peaks at 0.83. At $k = 80$ it peaks at 1.00 and its edges are almost vertical. Two hidden units and one output weight for the height: that is the whole construction.
+
+<BumpBuilder client:visible mode="bump" title="Two sigmoid units make a bump" />
+
+<details>
+<summary>Show the math</summary>
+
+One hidden unit computes $\sigma(w x + b)$. Writing the step as $\sigma(k(x-a))$ means the weight is $w = k$ and the bias is $b = -ka$, so the bias moves the step and the weight sharpens it. The network with two hidden units and output weights $+h$ and $-h$ is
+
+$$g(x) = h\,\big[\sigma(k(x-a)) - \sigma(k(x-b))\big], \qquad a < b.$$
+
+For large $k$ this is close to $h$ on $(a,b)$ and close to $0$ elsewhere. Here the bump is centred at $x = 0.5$ with $a = 0.35$ and $b = 0.65$, where $g = \sigma(0.15k) - \sigma(-0.15k)$, which is $0.83$ at $k = 16$.
+
+</details>
+
+</Step>
+
+<Step title="The same trick with ReLU units">
+
+Sigmoids are not special. A [ReLU](/learn/neural-networks/activation-functions/), $\max(0, z)$, is a ramp: flat, then rising with slope 1. The difference of two shifted ReLUs, divided by the gap $w$ between them,
+
+$$\frac{\operatorname{relu}(x - c + w/2) - \operatorname{relu}(x - c - w/2)}{w},$$
+
+rises from 0 to 1 over a width $w$ and then stays at 1. That is a step with straight edges. It costs two ReLUs where the sigmoid needed one, so a bump costs four. Subtract a shifted copy and you get a **trapezoid**: a flat top and linear sides. The figure starts with ReLUs selected (you can switch back to sigmoids under it). The steepness sweep is the same as before, with edge width $w = 4.4/k$, which matches the 10%-to-90% width of the sigmoid.
+
+Three ReLUs are enough for a triangular bump with a pointed top: $\operatorname{relu}(x-a) - 2\operatorname{relu}(x-m) + \operatorname{relu}(x-b)$ with $m$ halfway between $a$ and $b$. The trapezoid is easier to tile, so the rest of the lesson uses it.
+
+<BumpBuilder client:visible mode="bump" act="relu" title="Four ReLU units make a trapezoid bump" />
+
+</Step>
+
+<Step title="Add up bumps to draw any curve">
+
+Now the bumps do real work. Take a smooth target curve, drawn dashed. Cut the interval $[0, 1]$ into $N$ equal cells and put one bump on each. Give the bump on cell $i$ a height equal to the target's value at the middle of that cell. The sum of all the bumps is a staircase that follows the target. The output layer does the adding: it is a weighted sum of hidden units, with the bump heights as its weights.
+
+Press play. $N$ doubles from 1 to 32 (sigmoid units). At $N = 1$ the sum is one flat slab and the largest error is 0.52. At $N = 8$ it is 0.21, at $N = 32$ it is 0.06, and the mean squared error falls from 0.062 to 0.00009. Each bump uses two hidden units, so 32 bumps use 64 units. (Neighbouring bumps could share an edge unit, which would cut that to $N+1$. We keep two per bump so each bump is a visible, separate object.)
+
+Look at the error readout as well as the picture. It does not fall at every doubling: at $N = 4$ the maximum error (0.251) is slightly worse than at $N = 2$ (0.225). Heights are read off at cell middles, not optimised, so a coarse staircase can happen to line up badly. The trend is what matters. Narrower cells give a better answer, and the error can be made as small as you like by taking $N$ large enough.
+
+The widget measures its maximum error on 8,193 evenly spaced inputs. That is a numerical check of this construction, not a proof of a bound at every real-valued input. Its timeline traces each actual network curve; the unit counts and errors belong to that same curve.
+
+<BumpBuilder client:visible mode="sum" title="Adding bumps: the sum hugs the target" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+sigma = lambda z: 1 / (1 + np.exp(-z))
+x = np.linspace(0, 1, 2049)
+f = lambda x: 0.5 + 0.3 * np.sin(2 * np.pi * x)       # any continuous target
+
+N = 8
+k = 10 * N                                            # edges about a tenth of a cell wide
+edges = np.arange(N + 1) / N
+edges[0], edges[-1] = -1, 2                           # park the outer edges so the ends stay flat
+h = f((np.arange(N) + 0.5) / N)                       # output weights: target at each cell middle
+
+y = sum(h[i] * (sigma(k * (x - edges[i])) - sigma(k * (x - edges[i + 1]))) for i in range(N))
+print(np.abs(y - f(x)).max())                         # shrinks as N grows
+```
+
+</details>
+
+</Step>
+
+<Step title="What the theorem says, and what it does not">
+
+What we just did is the idea behind the **universal approximation theorem**. Cybenko (1989) proved it for sigmoidal activations: finite sums of the form $\sum_j c_j\,\sigma(w_j x + b_j)$ are dense in the continuous functions on the unit cube, meaning any continuous function can be matched to any accuracy $\varepsilon$ in the sup norm. Hornik (1991) showed that it is the layered architecture, not the particular sigmoid, that gives this power: it holds for any bounded, non-constant, continuous activation. Leshno, Lin, Pinkus and Schocken (1993) extended it to every locally bounded, piecewise continuous activation that is not a polynomial, which covers ReLU.
+
+Read the statement carefully, because it is narrower than "neural networks can learn anything".
+
+- **It is a statement of existence.** For every target and every $\varepsilon$ some weights exist. The theorem does not say gradient descent will find them. Whether training can reach them is a different question (see [hidden layers](/learn/neural-networks/hidden-layers/) and the optimisation lessons later).
+- **It says nothing about size.** "Enough hidden units" can be astronomically many. The figure below shows the cost directly.
+- **It covers continuous functions on a bounded region**, with error measured as the worst case over that region. It does not say the network extrapolates beyond that region, or that it generalises from finite noisy data.
+
+The figure uses a target with one narrow spike. The tolerance is a maximum error of 0.05. The smooth curve gets inside it with $N = 64$ bumps, 128 units. The spiky curve first gets inside it at $N = 1024$ bumps, 2048 units, sixteen times as many, because a bump only captures the spike once its width is about as small as the spike's. The error on the spiky target is not even a tidy curve: it is 0.28 at $N = 4$ and 0.46 at $N = 16$, because the cell middles at $N = 16$ happen to land on the spike's flank. Nothing is guaranteed until the bumps are narrower than the feature. The right-hand chart plots both targets (switch to ReLU under the figure to see that the picture does not depend on the activation).
+
+<BumpBuilder client:visible mode="limits" title="A sharp feature costs many units" />
+
+</Step>
+
+<Step title="Why depth can use fewer units">
+
+The bump construction uses one hidden layer and a huge number of units. Deep networks do much better on some functions, and a small example shows exactly why.
+
+A **tent** is the function $T(x) = 2x$ for $x \le 1/2$ and $2 - 2x$ after that. Two ReLUs make it: $T(x) = 2\operatorname{relu}(x) - 4\operatorname{relu}(x - 1/2)$ on $[0,1]$. Now feed the tent's output into another tent layer, and another. Each layer folds the interval in half again and doubles the number of linear pieces. After $k$ layers there are $2^k$ pieces, using only $2k$ hidden units in total. The figure counts the pieces from the sampled curve, not from the formula: 2, 4, 8, 16, then 32 from ten units.
+
+Compare this with one hidden layer of ReLUs. Each unit adds at most one kink, so $m$ units give at most $m + 1$ linear pieces. To draw the $k$-layer curve, which has $2^k$ pieces, a single hidden layer needs at least $2^k - 1$ units: 7 for $k = 3$, 15 for $k = 4$, 31 for $k = 5$. At $k = 3$ the deep network (6 units) is only just ahead; at $k = 5$ it needs 10 units where one layer needs at least 31, and the gap widens exponentially.
+
+This is the simplest case of a real theorem. Telgarsky (2016) showed that for functions built by this kind of repeated folding, a deep, narrow network cannot be matched by a much shallower one unless the shallower network is exponentially wide. The tent map is a toy: it shows that reuse by composition can be exponentially cheaper than summing separate bumps. It does not show that the functions we want to learn have this structure. In practice, networks are deep because layered features are reused, but that is an observation about data and training, not a consequence of this theorem.
+
+<BumpBuilder client:visible mode="depth" title="Stacking tent layers doubles the pieces" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+relu = lambda z: np.maximum(z, 0)
+tent = lambda x: 2 * relu(x) - 4 * relu(x - 0.5)      # one layer, two ReLUs
+
+x = np.linspace(0, 1, 2049)
+y = x
+for k in range(1, 6):
+    y = tent(y)                                       # stack one more layer
+    slopes = np.round(np.diff(y) / np.diff(x), 6)
+    pieces = 1 + np.count_nonzero(np.diff(slopes))
+    print(k, 2 * k, "units,", pieces, "pieces")       # 2^k pieces from 2k units
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** the theorem means a one-hidden-layer network can learn any task. **Actually** it says a good set of weights exists. It does not say training finds it, or how many hidden units it takes.
+- **You might think** the theorem is the reason deep networks work. **Actually** it is a statement about a single hidden layer, and it is about width. The case for depth is about efficiency, as with the tent example, and about what training can find.
+- **You might think** a network that fits the training points perfectly has approximated the function. **Actually** the theorem controls the worst-case error of the function itself over a region. Matching a finite sample says nothing about the points in between (see [overfitting](/learn/foundations/overfitting-bias-variance/)).
+- **You might think** the non-linearity can be anything. **Actually** it must not be linear, and by Leshno et al. (1993) it must not be a polynomial. Without a non-linearity, stacked layers collapse into a single linear map.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>Why do two shifted sigmoid units give a bump, and what sets its position and height?</summary>
+
+Subtracting a shifted step from a step makes the output close to zero outside the interval between their centres. Sigmoid tails approach zero; ReLU ramps cancel exactly outside their transition regions. The two biases set where the bump is, the steepness $k$ sets how sharp its edges are, and the output weight sets its height.
+
+</details>
+
+<details>
+<summary>The theorem says a network exists for every continuous function. Why can that still fail in practice?</summary>
+
+It is an existence result: it does not say how many units are needed, and it does not say that gradient descent will find the weights. The spike example needed sixteen times as many bumps as the smooth curve for the same tolerance.
+
+</details>
+
+<details>
+<summary>A tent layer uses 2 ReLUs. At least how many units does a one-hidden-layer network need to produce the output of 4 stacked tent layers?</summary>
+
+The deep curve has $2^4 = 16$ linear pieces. One hidden layer with $m$ ReLUs has at most $m+1$ pieces, so $m \ge 15$. The deep network uses 8 units.
+
+</details>
+
+<details>
+<summary>Why would a polynomial activation break the theorem?</summary>
+
+With a polynomial activation of degree $d$, a network with a fixed number of layers can only produce polynomials of bounded degree, so it cannot approximate every continuous function. Leshno et al. (1993) show that non-polynomial is exactly the condition.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Cybenko, [Approximation by superpositions of a sigmoidal function](https://doi.org/10.1007/BF02551274), Mathematics of Control, Signals and Systems 2 (1989): the original theorem for sigmoids.
+- Hornik, [Approximation capabilities of multilayer feedforward networks](https://doi.org/10.1016/0893-6080(91)90009-T), Neural Networks 4 (1991): the architecture, not the activation, is what matters.
+- Leshno, Lin, Pinkus and Schocken, [Multilayer feedforward networks with a nonpolynomial activation function can approximate any function](https://doi.org/10.1016/S0893-6080(05)80131-5), Neural Networks 6 (1993).
+- Telgarsky, [Benefits of depth in neural networks](https://arxiv.org/abs/1602.04485), COLT 2016: the depth-separation result.
+- Nielsen, [A visual proof that neural nets can compute any function](http://neuralnetworksanddeeplearning.com/chap4.html): the bump construction, with sliders.
+
+</Step>

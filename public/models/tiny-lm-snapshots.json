@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "name": "tiny-lm-snapshots",
+  "dtype": "float16",
+  "vocab": [
+    "[start]",
+    ".",
+    "this",
+    "that",
+    "a",
+    "these",
+    "those",
+    "the",
+    "small",
+    "big",
+    "red",
+    "old",
+    "cat",
+    "cats",
+    "dog",
+    "dogs",
+    "fox",
+    "foxes",
+    "bird",
+    "birds",
+    "sheep",
+    "apple",
+    "apples",
+    "seed",
+    "seeds",
+    "fish",
+    "sees",
+    "see",
+    "chases",
+    "chase",
+    "eats",
+    "eat",
+    "likes",
+    "like"
+  ],
+  "shape": [
+    34,
+    16
+  ],
+  "sha256": "f995d5d96c7f39fcba46a31cc9c5d26617fcb78785ebe50b0d4bb1f309f7bd24",
+  "checkpoints": [
+    {
+      "step": 0,
+      "byteOffset": 0
+    },
+    {
+      "step": 857,
+      "byteOffset": 1088
+    },
+    {
+      "step": 1714,
+      "byteOffset": 2176
+    },
+    {
+      "step": 2571,
+      "byteOffset": 3264
+    },
+    {
+      "step": 3429,
+      "byteOffset": 4352
+    },
+    {
+      "step": 4286,
+      "byteOffset": 5440
+    },
+    {
+      "step": 5143,
+      "byteOffset": 6528
+    },
+    {
+      "step": 6000,
+      "byteOffset": 7616
+    }
+  ],
+  "training": {
+    "seed": 9,
+    "steps": 6000,
+    "batch": 16,
+    "lr": 0.003,
+    "optimizer": "Adam beta1=0.9 beta2=0.999 epsilon=1e-8; global gradient clip=1",
+    "schedule": "100-update warmup; linear decay to 0.15*lr",
+    "objective": "sampled next-token cross-entropy, token-mean per batch",
+    "grammar": "two adjectives per noun phrase, three total; 34 words, max 10 tokens",
+    "evaluationSeed": 92026,
+    "generator": "scripts/train-models.ts",
+    "deterministicMath": "arithmetic exp/tanh; Adam running bias products",
+    "node": "v22.15.0"
+  }
+}

@@ -1,0 +1,175 @@
+---
+title: "What Hidden Layers Learn"
+summary: "Hidden layers re-represent the input so classes become separable; watch space fold."
+day: 4
+track: neural-networks
+order: 4
+level: core
+duration: 25
+prereqs: ["neural-networks/mlp"]
+status: draft
+---
+
+import Step from '../../../components/ui/Step.astro';
+import SpaceFolding from '../../../components/widgets/SpaceFolding/SpaceFolding.svelte';
+
+<details>
+<summary>Refresher: a hidden layer learns coordinates</summary>
+
+A hidden layer computes a new representation, $h = \tanh(Wx+b)$. The final classifier can make a straight cut in those coordinates even when its boundary in the original input is curved. Depth composes several such maps; it does not guarantee that training finds a good map.
+
+Prerequisite: [multi-layer perceptrons](/learn/neural-networks/mlp/). The figures below show actual trained toy networks, not a hand-drawn deformation.
+
+</details>
+
+<Step title="Can a straight line untangle two spirals?">
+
+Imagine trying to separate the two colors with one straight cut. The arms wind around each other: a line can cut across them, but it cannot follow the winding gap. The familiar sigmoid classifier still has a straight boundary because its score is a weighted sum of the original two coordinates.
+
+Watch the line train, then scrub to the end. Its accuracy is measured on these training points. A plateau here is a limitation of the representation, not proof that we need to train for longer.
+
+<SpaceFolding client:visible mode="spirals" title="A straight classifier meets interleaved spirals" />
+
+<details>
+<summary>Show the math</summary>
+
+The classifier predicts $p = \sigma(w_1x_1+w_2x_2+b)$. At the decision boundary $p=0.5$, so $w_1x_1+w_2x_2+b=0$: a line. The sigmoid changes the confidence, not the shape of that line.
+
+</details>
+
+</Step>
+
+<Step title="First change the coordinates">
+
+A hidden layer gives the output classifier different coordinates to work with. Start with a simpler tangled problem: **XOR**, where matching signs belong to class one and opposite signs belong to class zero. No single line can correctly separate all four ideal corners.
+
+The left panel keeps the original points. On the right, watch a trained two-unit layer move every point and every grid line. Scrub between **Input** and **Affine** first: multiplying by a matrix and adding a bias rotates, stretches, shears or shifts the plane. Straight grid lines remain straight during this stage.
+
+<SpaceFolding client:visible mode="fold" title="The same points, viewed through a learned coordinate map" />
+
+<details>
+<summary>Show the math</summary>
+
+Before its activation, the layer computes $z=Wx+b$. Here $x$ and $z$ each have two coordinates, $W$ is a two-by-two matrix and $b$ has two entries. This is an **affine map**. Composing affine maps still gives an affine map, so affine layers alone do not solve XOR.
+
+</details>
+
+</Step>
+
+<Step title="The activation bends the grid">
+
+Now scrub from **Tanh** to **Cut**. Each coordinate is squashed through tanh. The grid curves and compresses. The last panel state draws the output neuron's straight boundary in hidden coordinates; rings mark points on the wrong side.
+
+The weights stay fixed throughout this animation. You are following one forward pass through a trained map, not watching the model train. The intermediate deformations smoothly connect its exact stages. The camera also refits the view: movement on screen includes both the coordinate transformation and the change of scale.
+
+<SpaceFolding client:visible mode="fold" title="Nonlinearity makes a straight hidden-space cut useful" />
+
+Calling this “folding” is a useful visual shorthand, not a claim that tanh literally folds the plane onto itself. Tanh is monotonic in each coordinate. Its nonlinear compression, combined with learned affine maps, changes how a straight hidden-space cut looks back in the input plane.
+
+<details>
+<summary>Show the math</summary>
+
+The complete classifier is $h=\tanh(Wx+b)$, then $p=\sigma(v^\top h+c)$. Its cut is $v^\top h+c=0$, a line in the two hidden coordinates. Substituting the nonlinear expression for $h$ generally gives a curved boundary in $x$.
+
+</details>
+
+</Step>
+
+<Step title="A hidden unit is a learned feature">
+
+Return to the spirals with a wider layer. A **feature** is a numerical description of an input that helps make a prediction. Here each of six hidden units learns a different tilted, smoothly squashed response over the input plane.
+
+Watch training change those responses. Use the selector to inspect each unit, then look at the output on the right. A unit can be high in several regions occupied by different classes; it need not be a complete classifier on its own. The output combines all six responses with learned weights.
+
+<SpaceFolding client:visible mode="features" title="Six learned features combine into one curved boundary" />
+
+The heatmap shows the selected unit's actual tanh value. Points still sit at their original input coordinates here. These are feature-response maps, unlike the previous figure's transformed point positions.
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+# W: (6, 2), b: (6,), v: (6,), c: scalar
+def predict(x, W, b, v, c):
+    h = np.tanh(W @ x + b)
+    score = v @ h + c
+    return h, 1 / (1 + np.exp(-score))
+```
+
+Training adjusts $W$, $b$, $v$ and $c$ together to reduce binary cross-entropy. The widget uses full-batch Adam on a seeded tiny dataset and interpolates recorded parameter snapshots between epochs; the interpolated states are explanatory frames, not extra optimizer steps.
+
+</details>
+
+</Step>
+
+<Step title="Depth composes more transformations">
+
+One layer changes the representation once. Three hidden layers repeatedly apply an affine map followed by tanh. Scrub across the layer markers to watch the same spiral points pass through each map.
+
+<SpaceFolding client:visible mode="depth" title="One hidden layer and three: follow both learned maps" />
+
+These networks have two units per hidden layer, so we can draw their full hidden coordinates without projecting them. In these seeded runs, one hidden layer gets 61 of 80 training points right and three get all 80. The deeper network has 21 parameters; the shallower one has 9. This comparison shows what the learned maps do, but cannot isolate a benefit from depth alone. Other small widths, seeds and optimizers can get stuck. A two-unit bottleneck can also discard distinctions that later layers cannot recover.
+
+In real networks, hidden vectors usually have many more than two coordinates. A two-dimensional projection may hide class separation that exists in the full space. High training accuracy also does not establish accuracy on new data; that requires a separate test set.
+
+<details>
+<summary>Show the math</summary>
+
+With $h^{(0)}=x$, layer $\ell$ computes $h^{(\ell)}=\tanh(W^{(\ell)}h^{(\ell-1)}+b^{(\ell)})$. The output is an affine score of the last hidden vector followed by sigmoid. Every new nonlinearity lets the composition represent more than a single affine map, but representational capacity and successful optimization are different questions.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **“Hidden means we cannot inspect the values.”** Hidden means the intermediate values are not the supplied input or target. We can compute and inspect every one of them.
+- **“Each neuron learns one human concept.”** Some features are interpretable, but useful information can be spread across several units. The response maps here show numerical patterns, not named concepts.
+- **“Every layer must make the classes more separated.”** Training optimizes the final prediction. An intermediate layer may not be linearly separable, and a deeper trained model can do worse.
+- **“A straight output boundary means the whole network is linear.”** It is straight in the learned representation; the nonlinear map can give it a curved boundary in the original input.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. Would ten affine layers without activations solve XOR?</summary>
+
+No. Their composition is still affine. A sigmoid on the final score still gives a straight decision boundary.
+
+</details>
+
+<details>
+<summary>2. What are the axes in the final two-unit hidden-space panel?</summary>
+
+The two hidden activations, $h_1$ and $h_2$. They are learned features computed from both input coordinates, not the original $x_1$ and $x_2$.
+
+</details>
+
+<details>
+<summary>3. A single feature map overlaps both classes. Has that unit failed?</summary>
+
+Not necessarily. The final classifier uses a combination of all hidden units. A feature can help that combination without separating the classes by itself.
+
+</details>
+
+<details>
+<summary>4. The deeper demo gets more training points right. What would establish better generalization?</summary>
+
+Evaluate both models on held-out data under comparable training and tuning conditions. These figures reuse the training points and differ in parameter count, so their counts alone cannot establish a general advantage for depth.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Christopher Olah, [Neural Networks, Manifolds, and Topology](https://colah.github.io/posts/2014-03-NN-Manifolds-Topology/), visual explanations of learned coordinate transformations.
+- [TensorFlow Playground](https://playground.tensorflow.org/), inspect hidden-unit responses while changing width, depth and data.
+- [Deep Learning, Chapter 6: Deep Feedforward Networks](https://www.deeplearningbook.org/contents/mlp.html), a fuller treatment of learned representations and network capacity.
+
+Next: [universal approximation](/learn/neural-networks/universal-approximation/) explains what sufficiently wide networks can represent, and what that theorem does not promise about training.
+
+</Step>

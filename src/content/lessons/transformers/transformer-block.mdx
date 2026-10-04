@@ -1,0 +1,209 @@
+---
+title: "The Transformer Block"
+summary: "Attention, an MLP, residual connections and normalization make one repeatable block."
+day: 9
+track: transformers
+order: 6
+level: advanced
+duration: 35
+prereqs: ["transformers/multi-head-attention","neural-networks/normalization"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import BlockFlow from '../../../components/widgets/BlockFlow/BlockFlow.svelte';
+
+Stack the same block dozens of times and you have a modern language model.
+
+<Step title="One block, two sublayers">
+
+A transformer is built from one repeating unit, the **block**. A block does two jobs in turn. First **attention** lets each word look at the words before it and copy in what it needs. Then a small neural network, the **MLP** (multi-layer perceptron), processes each word on its own. Each job writes its result back by **adding** it to the word's vector, so every word keeps one vector that travels up through the whole model.
+
+TinyLM, the small model on these pages, has 2 blocks, $d = 16$ numbers per word, 2 attention heads and an MLP 64 units wide. GPT-2 small stacks 12 blocks. TinyLM reads a 34-word vocabulary to keep things small; real models feed [BPE tokens](/learn/transformers/tokenization/) instead.
+
+Watch the dots climb. Each column is one word, and the dot is its vector. In the attention bands, arcs link a word to earlier words (thicker means more attention, averaged over the two heads). In the MLP bands there are no arcs: each word stays in its own box. Attention is the only place where words exchange information.
+
+<BlockFlow client:visible mode="overview" title="Eight words climb through two blocks" />
+
+</Step>
+
+<Step title="Attention adds to the residual stream">
+
+Attention does not replace a word's vector. It computes an **update** and adds it to the vector that came in, so what the word already carried is kept. A shortcut that adds a layer's input to its output is a **residual connection**, the same idea as in [ResNets](/learn/cnns/resnets/). The running vector that every sublayer reads from and adds to is called the **residual stream**.
+
+Take block 2 and the word "sheep". The vector entering the block has length 12.39 (length means the usual Euclidean norm). Attention writes an update of length 8.42, and the sum has length 16.31. The sum is shorter than $12.39 + 8.42$ because the two vectors do not point the same way. Watch the update appear cell by cell, then land in the sum.
+
+In block 1 the vectors are much smaller, because embeddings start small: "sheep" enters with length 1.28 and attention writes 1.87. By block 2 the stream has grown to 12.39, because every sublayer adds to it. In the last segment, the update in block 2 is shorter than the incoming vector for six of the eight words.
+
+<BlockFlow client:visible mode="residual" layer={2} query="sheep" title="The update from attention is added to the vector, not swapped in" />
+
+<details>
+<summary>Show the math</summary>
+
+With the input vector $\mathbf x$ of one word,
+
+$$
+\mathbf x' = \mathbf x + \operatorname{MHA}\bigl(\operatorname{LN}(\mathbf x)\bigr),
+$$
+
+where $\operatorname{MHA}$ is multi-head attention (it also reads the other words) and $\operatorname{LN}$ is [layer normalization](/learn/neural-networks/normalization/), which rescales a vector to zero mean and unit spread before attention reads it. The stream itself is never normalized in this wiring; only the copy attention reads is.
+
+</details>
+
+</Step>
+
+<Step title="The position-wise MLP">
+
+After attention, each word's vector passes through the same two-layer network. **Position-wise** means it is applied to each word separately, with identical weights at every position, so no information moves between words here. The network first expands the 16 numbers into 64 **hidden units**, applies **ReLU** (which replaces every negative number by zero), and compresses back to 16 numbers that are added to the stream.
+
+Think of the hidden units as 64 detectors. ReLU leaves only the detectors that fired. In block 1, "sheep" keeps 24 of 64 units and "fox" keeps 30. Attention has already mixed context into each vector, and the MLP then works on that mixed result. Watch the orange cells fade to zero in the middle segment.
+
+Most of a block's weights live here. In TinyLM each block has 3,280 parameters: 1,088 in attention, 2,128 in the MLP (about two thirds) and 64 in the norms.
+
+<BlockFlow client:visible mode="mlp" layer={1} query="sheep" title="Sixty-four hidden units per word, and which ones ReLU keeps" />
+
+<details>
+<summary>Show the math</summary>
+
+$$
+\operatorname{MLP}(\mathbf x) = W_2\,\max(0,\; W_1\mathbf x + \mathbf b_1) + \mathbf b_2,
+\qquad W_1 \in \mathbb R^{4d\times d},\; W_2 \in \mathbb R^{d\times 4d}.
+$$
+
+The two matrices hold $8d^2$ of a block's roughly $12d^2$ weights, the other $4d^2$ being attention's $W_Q, W_K, W_V, W_O$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import torch.nn as nn
+
+mlp = nn.Sequential(
+    nn.Linear(d, 4 * d),   # expand: 16 -> 64 in TinyLM
+    nn.ReLU(),             # negatives become zero
+    nn.Linear(4 * d, d),   # contract back to d
+)
+```
+
+</details>
+
+</Step>
+
+<Step title="Normalization: before or after">
+
+Layer normalization can sit after each residual addition, as in the 2017 paper (**post-norm**), or before each sublayer, as in GPT-2 and most later models (**pre-norm**). The choice changes how gradients flow back through a deep stack. A **gradient** here is the signal telling each layer how to change; it is what training sends backward.
+
+We measured it once. The figure uses a random, untrained stack of 12 TinyLM-sized blocks (seed 91) and one sentence, and shows how large the gradient is on the residual stream after each block. Pre-norm gradients from block 1 to block 12 vary by a factor of 2.9, from 0.0692 down to 0.0242. Post-norm gradients vary by 7.9, from 0.0157 up to 0.1235, and are largest at the output end: at block 12 post-norm is 5.1 times larger than pre-norm. The faded bars at 0 are the embeddings, left out of those ranges.
+
+This is one initialization, a finding and not a law. The general claim, that post-norm needs a learning-rate warmup because gradients grow toward the output while pre-norm trains without it, is made and tested by Xiong et al. (2020).
+
+<BlockFlow client:visible mode="norm" title="Gradient size after each block, pre-norm versus post-norm" />
+
+</Step>
+
+<Step title="The residual stream as a shared workspace">
+
+Every sublayer reads the running vector and adds its own contribution, so the stream always holds the model's current best representation of that word. You can read a guess off it at any point: apply the final normalization and the output layer (the **unembedding**, which scores every vocabulary word) to the stream early. This is the **logit lens** (nostalgebraist, 2020).
+
+Here the stream is read at "sheep", predicting the next word after "these small sheep". We follow two verbs: plural "chase" and singular "chases". "These" makes the subject plural, so "chase" is correct. The embedding alone reads as "sheep" itself (0.897), and both verbs are below 0.0001. After attention 1 the plural verb already leads, 0.0049 against 0.0002, but the top guess is still "sheep" (0.462). After MLP 1 "chase" is the top word, 0.283. After MLP 2, the real output, "see" 0.259, "like" 0.252 and "chase" 0.247 are close, all plural verbs, while "chases" stays at 0.0002.
+
+The lens is rough: early stages were never trained to be read this way.
+
+<BlockFlow client:visible mode="stream" query="sheep" title="The next-word guess forms as the stream grows" />
+
+</Step>
+
+<Step title="Stacking blocks and counting parameters">
+
+A full model is an embedding table, a stack of identical blocks and an output layer, which here reuses the embedding table. Each block has its own weights; only the shape repeats. A block holds about $12d^2$ weights: $4d^2$ in attention and $8d^2$ in the MLP, plus small norms and biases. So the total is about $12Ld^2 + Vd$ for $L$ blocks, width $d$ and vocabulary size $V$.
+
+TinyLM has exactly 7,330 parameters: 704 in embeddings (34 words plus 10 positions, times 16), 2,176 in attention, 4,256 in the MLP and 194 in norms and the output bias. For GPT-2 small ($d = 768$, $L = 12$, $V = 50{,}257$, 1,024 positions) the exact count is 124,439,808; the approximation gives 123,532,032, 0.7 percent low. In GPT-2 XL ($d = 1600$, $L = 48$) embeddings are only 5.3 percent of 1,557,611,200 parameters, because blocks grow with $d^2$ and the embedding table only with $d$.
+
+Try the sliders: set $d$ to 768, note one block's parameters, then set $d$ to 1,536. The block grows from 7,087,872 to 28,331,520 parameters, about four times.
+
+<BlockFlow client:visible mode="count" title="Count the parameters of three models, then your own" />
+
+<details>
+<summary>Show the math</summary>
+
+Per block (pre-norm, MLP width $4d$, with biases): attention $4d^2 + 4d$, MLP $8d^2 + 5d$, two norms $4d$, so $12d^2 + 13d$. In total
+
+$$
+N = L\,(12d^2 + 13d) + (V + n_{\text{ctx}})\,d + 2d,
+$$
+
+with $n_{\text{ctx}}$ learned position vectors and a final norm of $2d$. TinyLM adds $V$ for an output bias. Kaplan et al. (2020) use the same approximation $N \approx 12Ld^2$ for non-embedding parameters.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think each block replaces the previous representation.** Actually blocks add to one shared residual stream; nothing is overwritten.
+
+**You might think the MLP mixes words.** Actually only attention moves information between positions. The MLP works on each position alone.
+
+**You might think attention holds most of a block's parameters.** Actually the MLP holds about two thirds: 8 of every 12 $d^2$ weights.
+
+**You might think the blocks in a stack are copies with shared weights.** Actually each block has its own weights; only its shape repeats.
+
+**You might think where normalization goes is a detail.** Actually it decides how gradients behave in a deep stack and whether training needs a warmup (Xiong et al. 2020).
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. Write the pre-norm block in two lines.</summary>
+
+$\mathbf x \leftarrow \mathbf x + \operatorname{MHA}(\operatorname{LN}_1(\mathbf x))$, then $\mathbf x \leftarrow \mathbf x + \operatorname{MLP}(\operatorname{LN}_2(\mathbf x))$.
+
+</details>
+
+<details>
+<summary>2. Roughly how many weights are in one block with d = 1,024?</summary>
+
+About $12 \times 1{,}024^2 \approx 12.6$ million.
+
+</details>
+
+<details>
+<summary>3. Why can a stack of MLP sublayers alone not use other words?</summary>
+
+An MLP is applied to each position separately, so no position ever sees another. Only attention moves information between positions.
+
+</details>
+
+<details>
+<summary>4. If a sublayer outputs nearly zero, what does the residual connection guarantee?</summary>
+
+The block passes its input through almost unchanged, since the output is the input plus a near-zero update.
+
+</details>
+
+<details>
+<summary>5. How would you read the model's current guess halfway through the stack?</summary>
+
+Take the residual stream at that point, apply the final normalization and the output layer to it (the logit lens), and look at the top words.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Vaswani et al., "Attention Is All You Need", 2017, [arXiv:1706.03762](https://arxiv.org/abs/1706.03762).
+- He et al., "Deep Residual Learning for Image Recognition", CVPR 2016, [arXiv:1512.03385](https://arxiv.org/abs/1512.03385).
+- Ba, Kiros and Hinton, "Layer Normalization", 2016, [arXiv:1607.06450](https://arxiv.org/abs/1607.06450).
+- Xiong et al., "On Layer Normalization in the Transformer Architecture", ICML 2020, [arXiv:2002.04745](https://arxiv.org/abs/2002.04745).
+- Radford et al., ["Language Models are Unsupervised Multitask Learners"](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) (GPT-2), 2019, which uses pre-norm.
+- Elhage et al., ["A Mathematical Framework for Transformer Circuits"](https://transformer-circuits.pub/2021/framework/index.html), 2021, on the residual stream.
+- nostalgebraist, ["interpreting GPT: the logit lens"](https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens), LessWrong, 2020.
+- Geva et al., "Transformer Feed-Forward Layers Are Key-Value Memories", EMNLP 2021, [arXiv:2012.14913](https://arxiv.org/abs/2012.14913).
+- Kaplan et al., "Scaling Laws for Neural Language Models", 2020, [arXiv:2001.08361](https://arxiv.org/abs/2001.08361).
+
+Next: [causal masking](/learn/transformers/causal-masking/).
+
+</Step>

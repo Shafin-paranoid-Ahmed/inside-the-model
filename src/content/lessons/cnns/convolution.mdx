@@ -1,0 +1,175 @@
+---
+title: "Convolution as a Sliding Filter"
+summary: "Slide a small filter over an image; each output is a dot product with a local patch."
+day: 7
+track: cnns
+order: 1
+level: core
+duration: 30
+prereqs: ["math/dot-product","neural-networks/mlp"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ConvSlider from '../../../components/widgets/ConvSlider/ConvSlider.svelte';
+
+<Step title="A small window, slid across a picture">
+
+A picture is a grid of brightness numbers. To find something in it, such as the edge of a shape, you do not need the whole picture at once. You need to look at a few neighbouring pixels and ask a simple question about them: is the right side brighter than the left?
+
+A **filter** (also called a **kernel**) is that question written as a small grid of numbers, here $3 \times 3$. Those numbers are **weights**, just like the weights of a neuron. To ask the question at one place, lay the filter over a $3 \times 3$ **patch** of the image, multiply each pixel by the weight above it, and add up the nine products. That is a [dot product](/learn/math/dot-product/) of two nine-number vectors, and it gives one number. Then slide the window one pixel over and ask again. The answers form a new grid, the **output map**.
+
+The filter below is $[-1, 0, 1]$ in every row: it subtracts the left column of the patch from the right column. The image is $12 \times 12$ with brightness from 0 to 9. Watch the boxed window sweep left to right, row by row. For each position the figure shows the patch, the filter, the nine products and their sum, and the sum lands in the boxed cell of the output map. Blue means a positive number and orange a negative one.
+
+Drag the timeline to 1.25 s, the window at row 2, column 1. It sits on the left edge of the bright square: the patch is dark on its left (1, 1, 2) and bright elsewhere (all 9s), so the products add up to $+23$. At 1.75 s, row 2, column 5, the window is on the square's right edge and the sum is $-22$. In between, at row 2, column 3, it is inside the square, where left and right columns match, and the sum is only $-2$. The map is $10 \times 10$ because a $3 \times 3$ window fits in $12 - 3 + 1 = 10$ positions along each row.
+
+<ConvSlider client:visible mode="slide" title="One filter, one window position at a time" />
+
+<details>
+<summary>Show the math</summary>
+
+With weights $w_{ij}$ and image pixels $x$, the output at row $r$, column $c$ is
+
+$$y_{r,c} = b + \sum_{i=0}^{2}\sum_{j=0}^{2} w_{ij}\, x_{r+i,\,c+j}.$$
+
+Here the bias $b$ is 0. For row 2, column 1 the three rows of the patch contribute $(9-1) + (9-1) + (9-2) = 23$. With input size $n$ and filter size $k$, each axis has $n - k + 1$ positions.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def conv2d(x, w, b=0.0):
+    k = w.shape[0]
+    n = x.shape[0] - k + 1
+    y = np.zeros((n, n))
+    for r in range(n):
+        for c in range(n):
+            y[r, c] = np.sum(x[r:r+k, c:c+k] * w) + b   # patch times filter, summed
+    return y
+```
+
+</details>
+
+</Step>
+
+<Step title="Hand-made filters: edges and blur">
+
+Change the nine weights and the same sliding procedure answers a different question. A **vertical-edge** filter compares left and right. A **horizontal-edge** filter, $[-1,-1,-1]$ on top and $[1,1,1]$ on the bottom, compares up and down. A **blur** filter gives every weight the value $1/9$, so each output is the average of its patch. A **sharpen** filter weights the centre pixel 5 and its four neighbours $-1$: it keeps the pixel and subtracts what surrounds it, which exaggerates steps.
+
+The figure runs the four filters one after another over the same image. Pick one from the menu and watch the output map fill in. The vertical-edge filter lights up only along the vertical sides of the shapes: positive on a left side, negative on a right side, close to zero in flat areas. Its strongest outputs are $+23$ and $-24$, on the bright square, and the dimmer bar gives smaller ones, around 13. The horizontal-edge filter does the opposite and finds the tops and bottoms. Blur keeps every output between the smallest and largest brightness nearby (here 0.78 to 8.89), so it smooths the grain. Sharpen reaches $+26$ and $-14$, stronger than any pixel in the picture.
+
+<ConvSlider client:visible mode="filters" title="Four hand-made filters on the same image" />
+
+</Step>
+
+<Step title="One set of weights, used everywhere">
+
+Why slide a small window instead of connecting every pixel to every output, as the [MLP](/learn/neural-networks/mlp/) does? Because the question "is there an edge here?" is the same question at every position. A convolution uses **weight sharing**: the same nine weights are reused at every window position, so there are only nine numbers to learn however large the image is. Each output also looks at only nine pixels, its neighbourhood, instead of all of them.
+
+Count it for this image. A dense layer from the 144 pixels to the 100 output cells has $144 \times 100 = 14{,}400$ weights plus 100 biases, 14,500 numbers. The convolution has 9 weights plus one bias, 10 numbers, about 1,450 times fewer. Watch the readout while the window sweeps: it makes 9 multiplications per position, 900 in all, yet the number of distinct weights stays at 9. A dense layer would do 14,400 multiplications. The bars use a log scale because the two counts differ by more than three powers of ten.
+
+Sharing has a second benefit beyond the count. The filter that finds the left edge of the square at row 2, column 1 (output $+23$) is the very same filter that finds the left edge of the dimmer bar at row 2, column 7 (output $+13$). A pattern learned once is recognised wherever it appears.
+
+<ConvSlider client:visible mode="sharing" title="Nine weights against fourteen and a half thousand" />
+
+<details>
+<summary>Show the math</summary>
+
+For an $n \times n$ image and a $k \times k$ filter there are $(n-k+1)^2$ outputs. A dense layer has $n^2 (n-k+1)^2$ weights plus $(n-k+1)^2$ biases; here $144 \times 100 + 100 = 14{,}500$. The convolution has $k^2 + 1 = 10$, independent of $n$. A dense layer could in principle represent this convolution by setting the right 900 weights equal and the other 13,500 to zero, but it would have to discover that on its own.
+
+</details>
+
+</Step>
+
+<Step title="Learned filters">
+
+Nobody has to design the filters by hand. The nine weights and the bias are parameters like any others: start them at random values, measure how far the output is from what you want, and follow the gradient downhill ([gradient descent](/learn/foundations/gradient-descent/)). The gradient reaches a shared weight by adding up its contribution from every window position.
+
+To see it work, give the learner a target: the output map of the vertical-edge filter. The loss is the mean squared difference between the map the learning filter produces and the target map. The filter starts as nine small random numbers, and the loss starts at 161.7. After 20 steps it has fallen to 2.2, after 100 to 0.20 and after 200 to 0.045. The loss axis is logarithmic because it falls through more than three powers of ten. At step 200 the nine weights are $-1.04, 0.08, 0.95$ in the top row, $-0.92, -0.15, 1.10$ in the middle row and $-1.05, 0.09, 0.94$ in the bottom row: the vertical-edge filter, recovered. Press the button to try another random start.
+
+In a real network there is no target map. The filter weights are trained by the loss of the whole task, such as classifying images, and the network finds whatever filters help. The first-layer filters of the AlexNet image classifier turned out to be oriented edges and colour blobs (Krizhevsky et al., 2012), much like the hand-made ones above.
+
+<ConvSlider client:visible mode="learn" title="Gradient descent finds an edge filter from a random start" />
+
+<details>
+<summary>Show the math</summary>
+
+With loss $L = \frac{1}{100}\sum_{r,c}(y_{r,c} - t_{r,c})^2$, the gradient for weight $w_{ij}$ sums over every position,
+
+$$\frac{\partial L}{\partial w_{ij}} = \sum_{r,c} \frac{\partial L}{\partial y_{r,c}}\, x_{r+i,\,c+j}, \qquad \frac{\partial L}{\partial y_{r,c}} = \frac{2}{100}(y_{r,c} - t_{r,c}),$$
+
+and each step is $w_{ij} \leftarrow w_{ij} - \eta\,\partial L/\partial w_{ij}$ with $\eta = 0.005$. The same sum appears in backpropagation through any convolution layer.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+w = rng.normal(0, 0.5, (3, 3)); b = 0.0
+for step in range(200):
+    y = conv2d(x, w, b)
+    g = 2 * (y - target) / y.size                 # dL/dy
+    gw = np.zeros_like(w)
+    for r in range(y.shape[0]):
+        for c in range(y.shape[1]):
+            gw += g[r, c] * x[r:r+3, c:c+3]       # every position adds to the same weights
+    w -= 0.005 * gw; b -= 0.005 * g.sum()
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** each output pixel depends on the whole image. **Actually** it depends only on the $3 \times 3$ patch under the window. Later layers see further by stacking.
+- **You might think** filters are programmed by an engineer. **Actually** hand-made ones such as edge and blur are historical; in a CNN the weights are learned from data by gradient descent.
+- **You might think** the output map is as large as the input. **Actually** without padding it shrinks: $12 \times 12$ became $10 \times 10$. [Padding and stride](/learn/cnns/channels-stride-padding/) control this.
+- **You might think** deep-learning "convolution" slides a flipped filter, as in the textbook definition. **Actually** libraries do not flip it (this operation is technically cross-correlation). Since the weights are learned, the flip makes no difference.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>A $28 \times 28$ image goes through a $5 \times 5$ filter with no padding and stride 1. How big is the output?</summary>
+
+$28 - 5 + 1 = 24$ along each axis, so $24 \times 24$.
+
+</details>
+
+<details>
+<summary>The vertical-edge filter $[-1,0,1]$ (in every row) sits on a patch whose left column is all 2s, middle column all 2s and right column all 8s. What is the sum?</summary>
+
+Each row gives $-2 + 0 + 8 = 6$, so the sum is $3 \times 6 = 18$, a positive response to a rising edge.
+
+</details>
+
+<details>
+<summary>How many numbers does a single $3 \times 3$ filter with a bias have on a $28 \times 28$ image, and how many would a dense layer to the $26 \times 26$ output have?</summary>
+
+The filter has $9 + 1 = 10$. The dense layer has $784 \times 676 = 529{,}984$ weights plus 676 biases, 530,660 numbers.
+
+</details>
+
+<details>
+<summary>Why does the blur filter never produce a value larger than the brightest pixel?</summary>
+
+Its weights are nine copies of $1/9$ and sum to 1, so each output is an average of nine pixels, which cannot exceed the largest of them.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- LeCun, Bottou, Bengio and Haffner (1998), "Gradient-based learning applied to document recognition", *Proceedings of the IEEE*: the LeNet-5 convolutional network.
+- Krizhevsky, Sutskever and Hinton (2012), "ImageNet classification with deep convolutional neural networks", *NeurIPS*: AlexNet and its learned first-layer filters.
+- Dumoulin and Visin (2016), [*A guide to convolution arithmetic for deep learning*](https://arxiv.org/abs/1603.07285): output sizes, padding and stride in pictures.
+- Next: [channels, stride and padding](/learn/cnns/channels-stride-padding/) extend one filter on one grey image to colour images and many filters.
+
+</Step>

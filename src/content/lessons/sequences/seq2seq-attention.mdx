@@ -1,0 +1,206 @@
+---
+title: "Seq2seq and the First Attention Mechanism"
+summary: "Encoder-decoder models, and how attention removed the fixed-size bottleneck."
+day: 8
+track: sequences
+order: 7
+level: advanced
+duration: 35
+prereqs: ["sequences/lstm-gru"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import Seq2SeqAttention from '../../../components/widgets/Seq2SeqAttention/Seq2SeqAttention.svelte';
+
+<Step title="One sequence in, another sequence out">
+
+Translation turns a sentence into another sentence, usually of a different length and with the words in a different order. The recurrent networks so far produce one output per input step, so they cannot do this directly.
+
+The fix, found independently by Sutskever, Vinyals and Le and by Cho and colleagues in 2014, is to use two RNNs. An **encoder** reads the whole input, one token at a time, as in the [RNN cell lesson](/learn/sequences/rnn-cell/). Its last hidden state is handed to a **decoder**, a second RNN that writes the output one token at a time. This is a **sequence-to-sequence** (seq2seq) or **encoder-decoder** model.
+
+The figure runs one on a toy task we can check by eye: reverse a string of the letters a to h. Both RNNs have 16 hidden units and were trained in your browser when the page loaded. Watch the encoder read "hdfab" into its states $\mathbf h_1 \dots \mathbf h_5$. Then the last one, $\mathbf h_5$, becomes the **context**: the decoder gets that same vector at every step, and from it writes "bafdh". The bottom row is the right answer; a wrong letter would be outlined in orange.
+
+<Seq2SeqAttention client:visible mode="encdec" sequence="hdfab" title="An encoder-decoder reversing “hdfab” through one vector" />
+
+<details>
+<summary>Show the math</summary>
+
+With one-hot or embedded letters $\mathbf x_j$, the encoder is a plain RNN, and the decoder is another RNN whose input at every step is the fixed context $\mathbf c = \mathbf h_L$:
+
+$$
+\mathbf h_j = \tanh(W_{xe}\mathbf x_j + W_{he}\mathbf h_{j-1} + \mathbf b_e), \qquad
+\mathbf s_0 = \mathbf h_L, \qquad
+\mathbf s_i = \tanh(W_{sd}\mathbf s_{i-1} + W_{cd}\,\mathbf c + \mathbf b_d),
+$$
+
+$$
+p(y_i \mid \mathbf x) = \operatorname{softmax}(W_o \mathbf s_i + W_{oc}\,\mathbf c + \mathbf b_o).
+$$
+
+Training minimises the cross-entropy of the correct letter at each output step, through both RNNs at once with backpropagation through time. Real translation decoders also take the word they just wrote as an input to the next step. This toy decoder does not need it, because the reversed string depends only on the input.
+
+</details>
+
+</Step>
+
+<Step title="The fixed-vector bottleneck">
+
+Everything the decoder knows about the input has to pass through one vector of 16 numbers. For a short string that is plenty. For a long one, the encoder has to squeeze in more letters than it can keep apart, and the letters it read first, which the decoder needs last, have been overwritten the most.
+
+The timeline sweeps the string length from 3 to 10. For each length, the chart shows the share of 60 test strings that the model reverses exactly, and above it one example. At length 3 it gets every string right. Then the curve falls: $88\%$ at 5, $60\%$ at 6, $38\%$ at 7, $17\%$ at 8, and not a single string at 9 or 10. In the examples, watch where the orange letters appear: near the end of the output, which is the start of the input. The model has not stopped working, it still gets $67\%$ of the individual letters right at length 10, but one vector cannot hold every letter.
+
+<Seq2SeqAttention client:visible mode="bottleneck" title="Reversed exactly, against string length, through a fixed vector" />
+
+This is the effect Cho et al. measured on real translation (2014): encoder-decoder models translate short sentences well and get steadily worse as sentences get longer. A bigger vector postpones the problem but does not remove it, because the size of the vector is fixed while sentences are not.
+
+</Step>
+
+<Step title="Bahdanau attention: let the decoder look back">
+
+Bahdanau, Cho and Bengio (2015) asked: why throw the encoder's other states away? The encoder has a state $\mathbf h_j$ for every input position, and each one holds information about its own letter. Keep them all, and let the decoder choose, at each output step, which ones to read.
+
+At output step $i$ the decoder does three things before it writes:
+
+1. **Score.** Compare its current state $\mathbf s_{i-1}$ with every encoder state $\mathbf h_j$ and get a number $e_{ij}$ for each: how useful does $\mathbf h_j$ look right now?
+2. **Weigh.** Turn the scores into **attention weights** $\alpha_{ij}$ with a [softmax](/learn/foundations/softmax-cross-entropy/), so they are positive and sum to 1.
+3. **Mix.** Build a fresh **context** $\mathbf c_i = \sum_j \alpha_{ij}\mathbf h_j$, a weighted average of the encoder states, and use it in place of the fixed vector.
+
+This is a new model of the same size, trained the same way. Watch the first output step on "cegbhadf". The scores go into the softmax, and $97\%$ of the weight lands on $\mathbf h_8$, the state that has just read "f", which is the letter the reversed string starts with. The thick line carries that state into $\mathbf c_1$, and the decoder writes "f". Scrub through the steps: the weight moves one position left each time.
+
+<Seq2SeqAttention client:visible mode="attention" sequence="cegbhadf" title="Score, weigh, mix, write: attention at each output step" />
+
+<details>
+<summary>Show the math</summary>
+
+Bahdanau et al. score with a small one-hidden-layer network, called **additive attention**:
+
+$$
+e_{ij} = \mathbf v^{\top}\tanh\bigl(W_a\mathbf s_{i-1} + U_a\mathbf h_j\bigr), \qquad
+\alpha_{ij} = \frac{\exp e_{ij}}{\sum_{k=1}^{L}\exp e_{ik}}, \qquad
+\mathbf c_i = \sum_{j=1}^{L}\alpha_{ij}\,\mathbf h_j .
+$$
+
+Then $\mathbf s_i = \tanh(W_{sd}\mathbf s_{i-1} + W_{cd}\,\mathbf c_i + \mathbf b_d)$ and $p(y_i\mid\mathbf x) = \operatorname{softmax}(W_o\mathbf s_i + W_{oc}\,\mathbf c_i + \mathbf b_o)$, exactly as before but with $\mathbf c_i$ in place of $\mathbf h_L$. Every step is differentiable, so $W_a$, $U_a$ and $\mathbf v$ are trained by the same gradient descent as everything else.
+
+In the original paper the encoder was a bidirectional RNN, so each $\mathbf h_j$ summarised the words on both sides of position $j$, and the cells were gated (GRU-like), as in the [last lesson](/learn/sequences/lstm-gru/).
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+One attention step in NumPy, for encoder states `Hs` of shape `(L, H)`:
+
+```python
+import numpy as np
+
+def attend(s_prev, Hs, Wa, Ua, v):
+    scores = np.tanh(s_prev @ Wa.T + Hs @ Ua.T) @ v   # (L,) one score per encoder state
+    w = np.exp(scores - scores.max())
+    alpha = w / w.sum()                               # attention weights, sum to 1
+    context = alpha @ Hs                              # (H,) weighted average of states
+    return context, alpha
+```
+
+</details>
+
+</Step>
+
+<Step title="Alignment plots: what the network looks at">
+
+Stack the attention weights of every output step into a matrix: one row per output letter, one column per input letter. That is an **alignment plot**. Bahdanau et al. drew them for English-to-French translation and found mostly diagonal patterns, with crossings where French puts words in a different order, as when "European Economic Area" becomes "zone économique européenne".
+
+Nobody told the network where to look. Its only training signal was "write the right letter". The figure replays training on "cegbhadf", one snapshot every 100 updates. Before training the weights are spread almost evenly, and $13\%$ of each row's weight is on the mirrored letter (one in eight). After 1000 updates it is $83\%$, and after 3000 it is $95\%$: a clean anti-diagonal, because reversal sends output position 1 to input position 8, 2 to 7, and so on. Type a string of your own to see its matrix.
+
+<Seq2SeqAttention client:visible mode="alignment" sequence="cegbhadf" title="The alignment emerges during training" />
+
+</Step>
+
+<Step title="Attention removes the bottleneck">
+
+Now compare the two models on the same test strings. The grey curve is the fixed-vector model from before; the coloured one has attention. Both have 16 hidden units and the same number of training updates.
+
+The attention model reverses $98\%$ or more of the strings at every length, including $98\%$ at length 10, where the fixed-vector model gets none. Its context is rebuilt at every step from all the encoder states, so a longer input gives it more states to choose from instead of more to cram into one vector. Bahdanau et al. found the same on real translation: their attention model, RNNsearch-50, did not lose quality as sentences grew to 50 words and beyond, while the fixed-vector model fell steadily.
+
+<Seq2SeqAttention client:visible mode="bottleneck" compare title="The same test, with and without attention" />
+
+</Step>
+
+<Step title="The path to the transformer">
+
+Attention was added to help a recurrent network, but it turned out to be the more important half.
+
+- **Simpler scores.** Luong, Pham and Manning (2015) replaced the small scoring network with a dot product, $e_{ij} = \mathbf s_i^{\top}\mathbf h_j$, which is cheaper and works as well.
+- **Attention without recurrence.** The encoder RNN still reads one token after another, so it cannot be parallelised across the sequence, and information between distant tokens still travels through many steps. Vaswani et al. (2017), in "Attention Is All You Need", removed the recurrence altogether. Every token attends directly to every other token of the same sequence (**self-attention**), with **queries**, **keys** and **values** generalising the decoder state, the encoder states and the vectors being mixed.
+- **Order from position codes.** Without recurrence a model does not know the order of its inputs, so transformers add [positional encodings](/learn/transformers/positional-encodings/).
+
+The score-weigh-mix pattern you just watched is the core of every transformer. Day 9 starts with it: [self-attention: queries, keys, values](/learn/transformers/self-attention/).
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think the encoder-decoder's problem was too few hidden units. Actually** a bigger vector only moves the point where accuracy collapses. Any fixed size is eventually too small for a long enough input; attention removes the fixed size.
+
+**You might think attention weights say which inputs "caused" an output. Actually** they say how much of each encoder state went into the context. Each state also carries information about its neighbours, so a weight on $\mathbf h_j$ is not a weight on letter $j$ alone. Alignment plots are a useful picture, not a proof of reasoning.
+
+**You might think attention was designed with hand-written alignment rules. Actually** the alignment is learned end to end from the output loss alone. In the figure it starts nearly uniform and becomes an anti-diagonal only because that reduces the loss.
+
+**You might think attention replaced RNNs in 2015. Actually** Bahdanau attention was a part added to an RNN encoder-decoder, and RNN models with attention were the standard for translation until transformers took over after 2017.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. In a fixed-vector encoder-decoder, which part of the input does the decoder see at its third output step?</summary>
+
+Only the last encoder state $\mathbf h_L$, the same vector it saw at every other step. It cannot look at any individual input position.
+
+</details>
+
+<details>
+<summary>2. Why did the fixed-vector model in the figure tend to get the end of its output wrong, not the start?</summary>
+
+The output is the reversed input, so the end of the output is the start of the input. Those letters were read first, and by the time the encoder reaches $\mathbf h_L$ they have been passed through the recurrence the most times, so they are the most blurred.
+
+</details>
+
+<details>
+<summary>3. The attention scores at one step are $e = (1, 3, 1)$. What are the weights, and what is the context if the encoder states are $\mathbf h_1, \mathbf h_2, \mathbf h_3$?</summary>
+
+Softmax: $e^1 = 2.72$, $e^3 = 20.1$, total $25.5$, so $\alpha \approx (0.11, 0.79, 0.11)$. The context is $\mathbf c \approx 0.11\,\mathbf h_1 + 0.79\,\mathbf h_2 + 0.11\,\mathbf h_3$.
+
+</details>
+
+<details>
+<summary>4. What would the alignment plot look like for a model that copies the string unchanged?</summary>
+
+A diagonal from top left to bottom right: output step $i$ attends to input position $i$.
+
+</details>
+
+<details>
+<summary>5. What does attention cost that the fixed vector did not?</summary>
+
+The decoder must score every encoder state at every output step, so the work grows with input length times output length, and all encoder states must be kept in memory. That quadratic cost is still the main expense of attention in transformers.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Ilya Sutskever, Oriol Vinyals and Quoc V. Le, "Sequence to Sequence Learning with Neural Networks", NeurIPS 2014 ([arXiv:1409.3215](https://arxiv.org/abs/1409.3215)). LSTM encoder-decoder for translation.
+- Kyunghyun Cho et al., "Learning Phrase Representations using RNN Encoder–Decoder for Statistical Machine Translation", EMNLP 2014 ([arXiv:1406.1078](https://arxiv.org/abs/1406.1078)).
+- Kyunghyun Cho, Bart van Merriënboer, Dzmitry Bahdanau and Yoshua Bengio, "On the Properties of Neural Machine Translation: Encoder–Decoder Approaches" (2014, [arXiv:1409.1259](https://arxiv.org/abs/1409.1259)). Measures how quality drops with sentence length.
+- Dzmitry Bahdanau, Kyunghyun Cho and Yoshua Bengio, "Neural Machine Translation by Jointly Learning to Align and Translate", ICLR 2015 ([arXiv:1409.0473](https://arxiv.org/abs/1409.0473)). The attention mechanism and the alignment plots.
+- Minh-Thang Luong, Hieu Pham and Christopher D. Manning, "Effective Approaches to Attention-based Neural Machine Translation", EMNLP 2015 ([arXiv:1508.04025](https://arxiv.org/abs/1508.04025)). Dot-product and other score functions.
+- Ashish Vaswani et al., "Attention Is All You Need", NeurIPS 2017 ([arXiv:1706.03762](https://arxiv.org/abs/1706.03762)).
+- Jay Alammar, [Visualizing A Neural Machine Translation Model](https://jalammar.github.io/visualizing-neural-machine-translation-mechanics-of-seq2seq-models-with-attention/) (2018). An illustrated walkthrough of seq2seq with attention.
+
+Next: Day 9, [tokenization](/learn/transformers/tokenization/).
+
+</Step>

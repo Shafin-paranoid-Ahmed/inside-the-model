@@ -1,0 +1,197 @@
+---
+title: "Regularization (L1 and L2)"
+summary: "Penalize large weights to trade a little bias for much less variance."
+day: 2
+track: foundations
+order: 6
+level: core
+duration: 25
+prereqs: ["foundations/overfitting-bias-variance"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import RegularizationPaths from '../../../components/widgets/RegularizationPaths/RegularizationPaths.svelte';
+
+<Step title="Make the model pay for big weights">
+
+The [previous lesson](/learn/foundations/overfitting-bias-variance/) showed that a flexible model can chase noise: it gets a tiny training error and a large error on new data. One cure is more data. Another is to make the model pay for complexity, so that it only uses a large weight when the data really justifies it.
+
+That is **regularization**. Instead of minimizing the loss alone, we minimize
+
+$$\text{loss}(\mathbf{w}) + \lambda \cdot \text{penalty}(\mathbf{w}),$$
+
+where the penalty measures how big the weights are and $\lambda \ge 0$ (lambda) sets how much we care. At $\lambda = 0$ we get the ordinary fit. As $\lambda$ grows, the weights are pulled toward zero.
+
+The figure below has three views of one experiment. Watch the timeline: $\lambda$ starts at zero and rises. Top right, six coefficient lines shrink. Bottom right, the error on new data first falls and then climbs. Left, a shaded region closes in on the loss minimum. We will unpack each view below.
+
+<RegularizationPaths client:visible title="Raising the penalty strength λ" />
+
+</Step>
+
+<Step title="Two ways to measure size: L1 and L2">
+
+There are two standard penalties.
+
+- **L2** (also called *ridge* regression or *weight decay*) adds the sum of squares, $\sum_j w_j^2$. Big weights are punished much more than small ones.
+- **L1** (the *lasso*) adds the sum of absolute values, $\sum_j |w_j|$. Every unit of weight costs the same, big or small.
+
+Both push weights toward zero. The difference is in *how* they get there, and the rest of this lesson is about that difference. In the figure, use the L1 and L2 buttons under the plot while it plays, and compare the coefficient lines.
+
+<RegularizationPaths client:visible title="L1 or L2: the same λ, two different paths" />
+
+<details>
+<summary>Show the math</summary>
+
+For a linear model with squared error, using the convention that the loss is $\tfrac12$ of the mean squared error over $n$ training points:
+
+$$J_{\text{L2}}(\mathbf{w}) = \frac{1}{2n}\lVert \mathbf{y} - X\mathbf{w}\rVert^2 + \frac{\lambda}{2}\lVert \mathbf{w}\rVert_2^2, \qquad J_{\text{L1}}(\mathbf{w}) = \frac{1}{2n}\lVert \mathbf{y} - X\mathbf{w}\rVert^2 + \lambda\lVert \mathbf{w}\rVert_1 .$$
+
+The factor $\tfrac12$ on the L2 penalty makes its gradient $\lambda \mathbf{w}$, so both penalties are on a comparable scale. The input columns are standardized (zero mean, unit variance) so that one penalty strength is fair to every feature. The intercept is not penalized.
+
+</details>
+
+</Step>
+
+<Step title="The picture: a loss bowl and a budget">
+
+Take a model with just two weights, $w_1$ and $w_2$. The loss is a bowl, drawn as contour ellipses around its minimum (the ringed diamond, at $w_1 = 1.6$, $w_2 = 0.7$). Without a penalty, that is where the fit lands.
+
+There is an equivalent way to see a penalty: as a **budget**. "Minimize the loss subject to $\lvert w_1\rvert + \lvert w_2\rvert \le s$" gives the same answers as the L1 penalty, with a smaller budget $s$ corresponding to a larger $\lambda$. For L2 the budget is $w_1^2 + w_2^2 \le s^2$. The shaded region is the set of weights we can afford. When the minimum lies outside it, the best affordable point is the one where a loss contour first touches the region's edge. That is the filled dot. Watch it slide inward as the budget shrinks.
+
+<RegularizationPaths client:visible penalty="l2" toggle={false} title="L2: a circular budget, the optimum slides toward the origin" />
+
+The L2 region is a circle. A contour touches a smooth circle at a generic point, so both weights get smaller together, and neither is exactly zero.
+
+</Step>
+
+<Step title="Why L1 lands exactly on an axis">
+
+Now the region is an L1 diamond. It has flat sides and sharp corners, and the corners sit exactly on the axes, where one weight is zero. A growing ellipse tends to touch a corner first, because a corner sticks out further than a flat side does.
+
+Watch the timeline in the figure. At about $\lambda = 1.12$ the optimum reaches the $w_1$ axis at $(0.90, 0)$, and from then on $w_2$ stays at exactly zero while $w_1$ keeps shrinking. That is not rounding: the solution really is zero, and the readout counts it. This is **sparsity**: L1 acts as an automatic feature selector.
+
+<RegularizationPaths client:visible penalty="l1" toggle={false} title="L1: a diamond budget, the optimum snaps onto an axis" />
+
+<details>
+<summary>Show the math</summary>
+
+Look at one weight with the others held fixed. Let $\rho_j$ be the value it would take with no penalty. Then the penalized optimum is
+
+$$\text{L2: } w_j = \frac{\rho_j}{1 + \lambda}, \qquad \text{L1: } w_j = \operatorname{sign}(\rho_j)\,\max(\lvert\rho_j\rvert - \lambda,\ 0).$$
+
+L2 divides by a constant, so a non-zero value stays non-zero. L1 subtracts $\lambda$ and clips at zero (the **soft threshold**): any weight whose pull $\lvert\rho_j\rvert$ is below $\lambda$ is set to exactly zero. Geometrically, the absolute value has a kink at zero, and a kink can hold a minimum; the square is smooth there and cannot. (These formulas are exact for one weight with standardized inputs. With several correlated features the lasso is solved by cycling through the weights repeatedly until nothing changes, called coordinate descent, which is what the figure does.)
+
+</details>
+
+</Step>
+
+<Step title="Reading a coefficient path">
+
+With six features we cannot draw the region, so we draw **coefficient paths**: each line is one weight, and the horizontal axis is $\lambda$. The data is simulated: only $x_1$, $x_2$ and $x_3$ truly affect $y$ (true effects $+2.5$, $-1.8$, $+1.2$). Features $x_4$, $x_5$ and $x_6$ have no effect at all, and $x_4$ is also correlated with $x_1$, which makes it a tempting decoy. With only 30 noisy training points, the unpenalized fit gives the decoys small non-zero weights.
+
+Play the L1 version. The dashed noise lines hit zero first: $x_4$ at $\lambda \approx 0.01$, $x_6$ at $0.08$ and $x_5$ at $0.37$. The three real features survive much longer: $x_3$ reaches zero at $1.86$, $x_2$ at $2.02$ and finally $x_1$ at $3.17$, where everything is zero. Then switch to L2: every line curves smoothly toward the axis, and at the right edge all six are still non-zero.
+
+<RegularizationPaths client:visible title="Coefficient paths for six features" />
+
+In real models, features are correlated and weights are not so cleanly separated. L1 often keeps one of two near-duplicate features and drops the other, and which one it keeps can change with the sample. Treat the selected set as a useful guess, not a proof.
+
+</Step>
+
+<Step title="Trading a little bias for less variance">
+
+Why does shrinking help? The previous lesson split error into bias and variance. An unpenalized fit on 30 noisy points has low bias but high variance: its weights swing with the particular noise in the sample. A penalty makes the fit a bit *wrong on purpose* (more bias, since weights are shrunk below their best-fit values) but much more stable (less variance).
+
+The bottom-right panel shows the result. The grey line is the training error, which can only rise as $\lambda$ grows, from $2.67$ at $\lambda = 0$ toward $18.1$ (all weights zero, for L1). The black line is the error on 400 fresh points, and it is **U-shaped**: it falls from $4.97$ to a minimum of $4.45$ near $\lambda = 0.41$ for L1 (for L2, $4.44$ near $0.29$) and then climbs again as the model becomes too rigid. The small diamond marks that minimum.
+
+This is the same picture as the model-complexity curve from last lesson, except that the dial is now $\lambda$ instead of polynomial degree. Larger $\lambda$ means a simpler model.
+
+<RegularizationPaths client:visible title="Training error rises, error on new data is U-shaped" />
+
+</Step>
+
+<Step title="Choosing λ">
+
+$\lambda$ is a **hyperparameter**: it is not learned from the training loss, because the training loss always prefers $\lambda = 0$. We choose it the way the [train/validation/test lesson](/learn/foundations/train-val-test/) prescribes: try a grid of values, train on the training set for each, measure error on a held-out validation set, and pick the $\lambda$ with the lowest validation error. In the figure, that is the diamond in the bottom panel.
+
+In practice:
+
+- Search $\lambda$ on a **log** grid (for example $10^{-4}, 10^{-3}, \dots, 10^{1}$), because the useful range spans orders of magnitude.
+- **Standardize** features first. Otherwise a feature measured in large units gets a small weight and escapes the penalty.
+- **Do not penalize the intercept.** Shifting all predictions up should not cost anything.
+- Once $\lambda$ is chosen, report performance on a separate **test** set. The validation set has been used to pick $\lambda$, so it is slightly optimistic.
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+from sklearn.linear_model import Lasso, Ridge
+from sklearn.preprocessing import StandardScaler
+
+scaler = StandardScaler().fit(X_train)
+Xt, Xv = scaler.transform(X_train), scaler.transform(X_val)
+
+grid = np.logspace(-3, 1, 30)
+best = {}
+for name, Model in [("l1", Lasso), ("l2", Ridge)]:
+    errs = [np.mean((Model(alpha=lam).fit(Xt, y_train).predict(Xv) - y_val) ** 2)
+            for lam in grid]
+    best[name] = grid[int(np.argmin(errs))]
+```
+
+`alpha` is $\lambda$ here. Scikit-learn scales its penalties slightly differently from this lesson, so numeric values of $\lambda$ are not interchangeable.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think regularization makes the model fit the training data better.** Actually it always fits the training data *worse* (the grey curve only rises). It helps because it fits *new* data better, up to a point.
+- **You might think L1 and L2 differ only in strength.** Actually they differ in kind. L2 shrinks all weights smoothly and keeps every feature. L1 sets weights exactly to zero. The geometry (a diamond with corners versus a circle) is the reason.
+- **You might think a bigger $\lambda$ is always safer.** Actually too much penalty underfits: at the far right of the figure every weight is zero or nearly so, and the error on new data is far worse than with no penalty.
+- **You might think L1 finds the true features.** Actually it finds a sparse model that predicts well. With correlated features it may pick the wrong twin, and the chosen set can change with a different sample.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. What happens to the training error as $\lambda$ increases, and why?</summary>
+
+It rises. The penalty forces the weights away from the values that minimize the training loss, so the fit to the training data can only get worse. Regularization is worth it only because the error on unseen data can improve.
+
+</details>
+
+<details>
+<summary>2. Why can an L1 solution have a weight exactly equal to zero, while an L2 solution almost never does?</summary>
+
+The L1 penalty $\lvert w\rvert$ has a kink at zero, and a kink can hold a minimum. Equivalently, the L1 region has corners on the axes, and loss contours often touch a corner first. L2 is smooth at zero, so the pull toward zero weakens as a weight gets small and it never quite gets there.
+
+</details>
+
+<details>
+<summary>3. One feature is measured in millimetres and another in kilometres. Why does that matter for L1 or L2?</summary>
+
+The weight on the millimetre feature is small and the one on the kilometre feature is large, so the penalty treats them unequally. Standardizing every feature first puts them on one scale so the same $\lambda$ is fair to all.
+
+</details>
+
+<details>
+<summary>4. Training error is lowest at $\lambda = 0$. Why can't we choose $\lambda$ by minimizing training error?</summary>
+
+Training error always prefers no penalty, which is exactly the overfitting we want to avoid. We must measure error on data the model was not trained on, that is, a validation set.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Tibshirani, R. (1996). [Regression Shrinkage and Selection via the Lasso](https://doi.org/10.1111/j.2517-6161.1996.tb02080.x). *Journal of the Royal Statistical Society B*. The original lasso paper.
+- Hoerl, A. and Kennard, R. (1970). [Ridge Regression: Biased Estimation for Nonorthogonal Problems](https://doi.org/10.1080/00401706.1970.10488634). *Technometrics*.
+- Hastie, Tibshirani and Friedman, [The Elements of Statistical Learning](https://hastie.su.domains/ElemStatLearn/), section 3.4 on shrinkage methods, with the coefficient-path and constraint-region figures this lesson is built on.
+- Friedman, Hastie and Tibshirani (2010). [Regularization Paths for Generalized Linear Models via Coordinate Descent](https://www.jstatsoft.org/article/view/v033i01). The algorithm used here to compute the lasso paths.
+- In deep learning, L2 regularization appears as **weight decay** in the optimizer.
+
+</Step>

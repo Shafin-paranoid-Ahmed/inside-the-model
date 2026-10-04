@@ -1,0 +1,77 @@
+---
+import Base from './Base.astro';
+import { lessonLd } from '../lib/seo';
+
+interface Ref { id: string; title: string }
+interface Props {
+  id: string;
+  title: string;
+  summary: string;
+  day: number | null;
+  track: string;
+  trackTitle?: string;
+  level: 'intro' | 'core' | 'advanced' | 'frontier';
+  duration: number;
+  prereqs?: string[];
+  status: 'stub' | 'draft' | 'done';
+  lastReviewed?: Date;
+  prev?: Ref;
+  next?: Ref;
+}
+const { id, title, summary, day, track, trackTitle, level, duration, prereqs = [], status, lastReviewed, prev, next } = Astro.props;
+const crumb = `${day ? `Day ${day}` : 'Math primer'} · ${trackTitle ?? track}`;
+---
+<Base title={title} description={summary} type="article" jsonLd={lessonLd({ id, title, summary, level, duration })}>
+  <article class="lesson wrap">
+    <header class="lesson-head">
+      <p class="crumb"><a href="/path">Path</a> / {crumb}</p>
+      <h1>{title}</h1>
+      <p class="meta"><span>{duration} min</span> <span>{level}</span>{lastReviewed && <span>reviewed {lastReviewed.toISOString().slice(0, 10)}</span>}</p>
+    </header>
+
+    {status === 'stub' && <p class="banner" role="note">This lesson is a stub. The outline is here, the interactive content is still being written.</p>}
+
+    <details class="refresher">
+      <summary>Refresher</summary>
+      <div class="refresher-body">
+        <p>{summary}</p>
+        {prereqs.length > 0 && (
+          <p class="ui">You need to know first: {prereqs.map((p, i) => <><a href={`/learn/${p}`}>{p.split('/').pop()?.replaceAll('-', ' ')}</a>{i < prereqs.length - 1 && ', '}</>)}</p>
+        )}
+        <slot name="refresher" />
+      </div>
+    </details>
+
+    <div class="steps prose" data-steps data-lesson={id}>
+      <slot />
+    </div>
+
+    <nav class="pager ui" aria-label="Lesson navigation">
+      {prev ? <a href={`/learn/${prev.id}`} rel="prev"><small>Previous lesson</small>{prev.title}</a> : <span />}
+      {next ? <a class="next" href={`/learn/${next.id}`} rel="next"><small>Next lesson</small>{next.title}</a> : <span />}
+    </nav>
+  </article>
+</Base>
+
+<style>
+  .lesson { padding-block: var(--s-6) 0; }
+  .lesson-head, .refresher, .banner { max-width: var(--measure); }
+  .crumb { font: var(--step--1) var(--font-ui); color: var(--text-muted); margin: 0 0 var(--s-3); }
+  .crumb a { color: inherit; }
+  h1 { font-size: var(--step-4); }
+  .meta { font: var(--step--1) var(--font-ui); color: var(--text-muted); display: flex; gap: var(--s-4); margin: var(--s-3) 0 var(--s-5); }
+  .banner { background: var(--warn-bg); color: var(--warn-text); padding: var(--s-3) var(--s-4); border-radius: var(--r-2); font: var(--step--1) var(--font-ui); }
+  .refresher { border: 1px solid var(--rule); border-radius: var(--r-2); background: var(--bg-raised); margin-bottom: var(--s-6); }
+  .refresher summary { cursor: pointer; padding: var(--s-3) var(--s-4); font: 600 var(--step--1) var(--font-ui); }
+  .refresher-body { padding: 0 var(--s-4) var(--s-4); }
+  .refresher-body > :first-child { margin-top: 0; }
+  .pager { display: flex; justify-content: space-between; gap: var(--s-4); margin-top: var(--s-7); padding-top: var(--s-5); border-top: 1px solid var(--rule); }
+  .pager a { display: flex; flex-direction: column; text-decoration: none; font-weight: 600; max-width: 45%; min-width: 0; overflow-wrap: anywhere; }
+  .pager small { font-weight: 400; color: var(--text-muted); }
+  .pager .next { text-align: right; margin-left: auto; }
+  @media (max-width: 400px) {
+    .pager { flex-direction: column; }
+    .pager a { max-width: 100%; }
+  }
+  .steps :global([data-step] + [data-step]) { margin-top: var(--s-7); padding-top: var(--s-6); border-top: 1px solid var(--rule); }
+</style>

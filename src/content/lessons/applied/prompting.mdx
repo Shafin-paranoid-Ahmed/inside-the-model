@@ -1,0 +1,165 @@
+---
+title: "Prompting Techniques That Actually Work"
+summary: "Clear instructions, examples, structure and reasoning steps improve reliability, and only testing tells you by how much."
+day: 14
+track: applied
+order: 3
+level: core
+duration: 25
+prereqs: ["llms/emergent-icl"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+Small changes in how you ask can change the result dramatically.
+
+<Step title="Same model, same task, different prompt">
+
+A model's answer depends on the exact text of the prompt, so two prompts that mean the same thing to a person can give very different results.
+
+{/*
+IDEA: hook, demonstrated on a REAL tiny model, never asserted about big ones. The tiny model is "PromptModel" (see plans/day-14.md): a small causal transformer trained offline on a synthetic task language (3-letter strings over a..h; tasks reverse, shift, sort, copy and two-step compositions; format "abc>cba;"). Say once, plainly, that it is a tiny model trained for this page and that the effects are then checked against published results on large models.
+WIDGET: PromptLab mode="format" task="reverse". Two prompts side by side: the trained delimiters (">" and ";") vs an unseen pair ("=" and "|"), same 4 examples. Each runs the real forward pass on 50 test strings; accuracy bars.
+MOTION over t: the two prompts are typed out, then the 50 test cases stream through each model call as small cells turning correct/incorrect, accuracy bars fill.
+TRY: hover a wrong cell to see the model's output and its top-3 next-token probabilities.
+QUOTE: both accuracies (from the shipped weights).
+LARGE-MODEL CLAIM (needs source): format sensitivity in large models, Sclar et al. 2023 "Quantifying Language Models' Sensitivity to Spurious Features in Prompt Design", arXiv:2310.11324 (VERIFY).
+*/}
+
+</Step>
+
+<Step title="Say what you want: task, context, format">
+
+A prompt that names the task, gives the needed context and states the output format leaves the model less to guess.
+
+{/*
+IDEA: specificity = removing ambiguity. In the tiny model this is literal: the same input string "abc>" is ambiguous between tasks; adding the task tag "[rev]" (seen in training half the time) names the task.
+WIDGET: PromptLab mode="specific" task="reverse". Prompt with no examples: bare input vs input with task tag. Shows the next-token distribution over the 8 letters for the first output position, then accuracy over 50 strings.
+MOTION over t: the distribution bars for the untagged prompt spread across the outputs of several tasks; the tag token is inserted and the bars re-settle onto the reverse answer.
+TRY: switch the tag to [shift] or [sort].
+QUOTE: probability of the correct first letter and zero-shot accuracy, without and with the tag.
+LARGE-MODEL CLAIM: vendor prompting guides recommend explicit task, context and format; cite the Anthropic and OpenAI prompt-engineering docs as guidance (VERIFY URLs and dates), not as measured results.
+*/}
+
+</Step>
+
+<Step title="Show it: few-shot examples">
+
+Examples of input and output in the prompt let the model infer the task without any change to its weights.
+
+{/*
+IDEA: in-context learning; link /learn/llms/emergent-icl/ and do not re-teach it. Here: accuracy as a function of the number of examples (0..8), untagged prompt.
+WIDGET: PromptLab mode="shots" task="shift". Chart: accuracy vs number of examples, 0 to 8, for two tasks (shift, sort); above it the prompt being built.
+MOTION over t: examples are added one per second; each addition reruns the 50-string test and adds a point to the curve; the attention of the last position onto the examples is shown as a thin strip (from the model's real attention weights) to show it reads them.
+TRY: scrub to 1 example and hover the wrong cells.
+QUOTE: accuracy at 0, 1, 2, 4, 8 examples for both tasks.
+LARGE-MODEL CLAIM: Brown et al. 2020, "Language Models are Few-Shot Learners", arXiv:2005.14165.
+*/}
+
+</Step>
+
+<Step title="Which examples, in which order">
+
+The choice and order of the examples matter too, so a prompt that works once may fail with a different set.
+
+{/*
+IDEA: example selection and order change results; examples should cover the cases and match the real inputs. Demonstrated by measuring the spread over orderings.
+WIDGET: PromptLab mode="order" task="sort" shots=4. Runs the same 4 examples in all 24 orders; dot strip of 24 accuracies, plus a second strip for 4 examples that all share a quirk (already sorted inputs).
+MOTION over t: the 24 permutations are run one by one, each dot drops into the strip; then the quirky set's strip fills.
+TRY: hover the best and the worst dot to see their order.
+QUOTE: min, median, max accuracy over the 24 orders; median for the quirky set.
+LARGE-MODEL CLAIMS: Zhao et al. 2021, "Calibrate Before Use", arXiv:2102.09690; Lu et al. 2022, "Fantastically Ordered Prompts and Where to Find Them", arXiv:2104.08786 (VERIFY both).
+*/}
+
+</Step>
+
+<Step title="Asking for intermediate steps">
+
+For problems that take several steps, letting the model write the intermediate result before the answer can make the answer more accurate.
+
+{/*
+IDEA: two-step task (shift then reverse). Direct answer "abc>dcb;" vs scratchpad "abc>bcd>dcb;" where the model writes the intermediate string. The training data contained both formats, so this tests the format, not a new skill. Explain why it helps: each written step is a new input the next tokens can attend to, so the model does one easy step per position instead of two at once.
+WIDGET: PromptLab mode="steps" task="shift-reverse". Two runs side by side over 50 strings: direct vs with intermediate step; per-position token probabilities shown as the output is written.
+MOTION over t: both outputs are generated token by token (greedy); confidence of each generated token shown as bar height; accuracy bars fill.
+TRY: hover a direct-answer error and compare with the same string's step-by-step run.
+QUOTE: direct vs step-by-step accuracy; mean probability of the first answer letter in each.
+LARGE-MODEL CLAIMS: Nye et al. 2021, "Show Your Work: Scratchpads", arXiv:2112.00114; Wei et al. 2022, "Chain-of-Thought Prompting", arXiv:2201.11903; Kojima et al. 2022, "Large Language Models are Zero-Shot Reasoners", arXiv:2205.11916. Add one line, sourced, that reasoning models now produce such steps themselves (link /learn/frontier/reasoning-models/).
+*/}
+
+</Step>
+
+<Step title="Structure the output, delimit the input">
+
+Delimiters mark where data starts and ends, and a fixed output format, enforced if needed, makes the answer usable by a program.
+
+{/*
+IDEA: (a) delimiters separate instructions from data; (b) a program needs parseable output; sampling can break format; constrained decoding (mask every token the format does not allow before sampling) guarantees it. The mask is the real mechanism behind JSON modes and grammar-constrained decoding.
+WIDGET: PromptLab mode="structured" task="reverse" temperature=1.2. 50 sampled outputs, unconstrained vs constrained (format: exactly 3 letters then ";"). Shows the probability bars at one position with the masked tokens greyed out and the remaining mass renormalised.
+MOTION over t: sampling proceeds token by token for one example; at each position the mask fades in over the disallowed tokens, the bars renormalise, a token is drawn; then the 50-sample tally of parseable outputs fills for both.
+TRY: lower the temperature to 0.5 and watch the unconstrained parse rate change.
+QUOTE: parseable share unconstrained vs constrained (constrained must be 50 of 50), and accuracy among parseable outputs.
+SHOW THE CODE: logits[~allowed] = -inf; probs = softmax(logits / T) in NumPy.
+LARGE-MODEL CLAIM: grammar-constrained decoding, e.g. Willard & Louf 2023, "Efficient Guided Generation for LLMs", arXiv:2307.09702 (VERIFY).
+*/}
+
+</Step>
+
+<Step title="Iterate and test on examples">
+
+The only reliable way to know whether a prompt change helps is to measure it on a set of test inputs, and small test sets mislead.
+
+{/*
+IDEA: prompt engineering is an experiment: fixed test set, compare variants, look at failures, repeat. With 5 test cases a better prompt often looks worse by chance; with 50 the ranking is stable.
+WIDGET: PromptLab mode="eval". Two prompt variants (2-shot vs 6-shot, task sort). Draw 200 seeded test sets of size 5 and of size 50 from a pool of 336 strings; histogram of "variant B minus variant A" accuracy for each size, with the true difference marked.
+MOTION over t: test sets are drawn one by one, each adds a tick to its histogram; the share of draws where B looks worse than A counts up.
+TRY: toggle test-set size between 5, 20 and 50.
+QUOTE: true difference; share of size-5 and size-50 test sets where B looks worse.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few beliefs about prompting that do not hold up.
+
+{/*
+NO WIDGET. Intended misconceptions:
+1. "There is a magic phrase." Effects depend on model and task; measure on your data.
+2. "A prompt that worked once works." Order, examples and format change results (order step).
+3. "Few-shot examples teach the model permanently." Nothing is stored; weights do not change.
+4. "Asking for steps always helps." It helped on the two-step task; on one-step tasks it adds tokens and cost (show the tiny model's one-step numbers if the sim confirms; otherwise drop).
+5. "Asking nicely for JSON guarantees JSON." Only constrained decoding or validation plus retry guarantees it.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Short questions to test the ideas above.
+
+{/*
+NO WIDGET. Questions:
+1. A prompt scores 4 of 5 and another 3 of 5. What can you conclude?
+2. Why does masking tokens guarantee valid format but not a correct answer?
+3. Name two parts of a specific prompt.
+4. Why might intermediate steps help a model that computes a fixed amount per token?
+5. You change delimiters and accuracy drops. What does that suggest about the training data?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources for going further.
+
+{/*
+NO WIDGET. Cite (all VERIFY before writing):
+- Brown et al. 2020, arXiv:2005.14165.
+- Zhao et al. 2021, arXiv:2102.09690; Lu et al. 2022, arXiv:2104.08786.
+- Nye et al. 2021, arXiv:2112.00114; Wei et al. 2022, arXiv:2201.11903; Kojima et al. 2022, arXiv:2205.11916.
+- Sclar et al. 2023, arXiv:2310.11324.
+- Willard & Louf 2023, arXiv:2307.09702.
+- Anthropic prompt engineering documentation and OpenAI prompt engineering guide (VERIFY URLs, cite with access date).
+*/}
+
+</Step>

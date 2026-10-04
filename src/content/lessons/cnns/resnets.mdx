@@ -1,0 +1,199 @@
+---
+title: "Classic Architectures and ResNets"
+summary: "From LeNet and AlexNet to VGG and ResNet: how skip connections made very deep nets trainable."
+day: 7
+track: cnns
+order: 4
+level: advanced
+duration: 30
+prereqs: ["cnns/receptive-fields","neural-networks/vanishing-exploding-gradients"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ResidualTrainer from '../../../components/widgets/ResidualTrainer/ResidualTrainer.svelte';
+
+The three lessons before this one built the parts of a convolutional network: [convolution](/learn/cnns/convolution/), [channels, stride and padding](/learn/cnns/channels-stride-padding/), and [receptive fields](/learn/cnns/receptive-fields/). This lesson is about what happened when people stacked those parts higher and higher, and about the one-line idea that let them keep going: **adding a layer's input back onto its output**.
+
+<Step title="Going deeper, 1998 to 2015">
+
+Every landmark image network in this story is a stack of layers with learned weights, and the main thing that changed between them was how many layers were stacked.
+
+**LeNet-5** (LeCun and colleagues, 1998) read handwritten digits with 7 layers. **AlexNet** (Krizhevsky, Sutskever and Hinton, 2012) had 8: five convolutional and three fully connected. On the ImageNet challenge it reached a top-5 test error of 15.3%, against 26.2% for the runner-up. (**Top-5 error** counts a prediction as wrong only when the true class is missing from the model's five best guesses.) **VGG** (Simonyan and Zisserman, 2014) showed that depth itself was the lever: build everything from small 3×3 filters and stack 16 or 19 layers, and the top-5 error of their challenge entry fell to 7.3%. A year later **ResNet** (He, Zhang, Ren and Sun, 2015) used 152 layers and reached 3.57%.
+
+Press play. Each network appears with its layer count on top and its error below. From AlexNet to ResNet-152 the depth grew nineteenfold (8 to 152 layers) while the error fell from 15.3% to 3.57%. Depth was clearly paying off, so the obvious plan was to keep adding layers. The next step shows why that plan did not work with the networks of the time.
+
+<ResidualTrainer client:visible mode="history" title="Depth and ImageNet error, 1998 to 2015" />
+
+<details>
+<summary>Show the numbers and where they come from</summary>
+
+Layer counts are layers with learned weights, as each paper counts them. The errors are top-5 test errors on the ImageNet (ILSVRC) classification task, for the entry each paper submitted: AlexNet 15.3% (ILSVRC 2012), VGG 7.3% (ILSVRC 2014, an ensemble of networks of 16 and 19 layers, second place in classification), ResNet 3.57% (ILSVRC 2015, an ensemble). LeNet-5 is left without an error because it was built for digits, not ImageNet. Each paper is cited in the references at the bottom.
+
+</details>
+
+</Step>
+
+<Step title="The surprise: deeper networks trained worse">
+
+A deeper network can compute everything a shallower one can. Take a good shallow network and add layers that simply copy their input forward unchanged: you now have a deeper network that makes exactly the same predictions. So a deeper network should always be able to match the shallow one, and training should be able to find at least that.
+
+In practice it did not. He and colleagues found that once plain stacks grew past a certain depth, the **training** loss got worse, not just the loss on new data. This is the **degradation problem**. It is not overfitting: overfitting means a low training loss with a high test loss, and here even the training loss is high. (Their Figure 1 shows this on CIFAR-10 with 20 and 56 layers.)
+
+The figure below runs the experiment on a small task: 120 points on two interleaved spirals, which a network must separate. Three networks, all built from tanh layers of 10 units, train with the same optimizer (Adam), the same learning rate (0.01) and the same 800 steps, each from its own random start:
+
+- a **plain** network with 4 hidden layers (each layer feeds only the next);
+- a **plain** network with 20 hidden layers;
+- a 20-layer network with **skip connections**, the idea of the next step.
+
+The vertical axis is the training loss on a log scale, so each gridline is ten times lower than the one above. The dashed line at 0.693 is the loss of guessing 50/50 on every point. Watch the grey line for the 20-layer plain network. From the first steps to the last it stays between about 0.63 and 0.70, right beside the coin-flip line. At step 400 the 4-layer network is at about 0.013, and at step 800 it is near 0.001 (written 1e−3 in the readout). The decision maps underneath show why: the shallow network has wrapped its boundary around the spirals, and the deep plain one is still a blur.
+
+<ResidualTrainer client:visible mode="degradation" title="Same task, same optimizer: only the depth and the skips differ" />
+
+The third network is the same 20 layers with skip connections, and it trains fastest of all. It starts higher (loss 1.67, because each block adds its output onto the signal), but by step 100 it is down to about 0.1, a level the 4-layer net has not reached by step 200 (about 0.15). Use the button under the figure to train again from other random starts; the ordering stays the same.
+
+The authors saw this with batch normalization, which keeps signals at a healthy size, and said they thought the cause was unlikely to be vanishing gradients; they conjectured that very deep plain stacks are simply hard for the optimizer to solve. In our run the gradient reaching the first hidden layer at the start is still about a fifth of the one at the last, nothing like the collapse of the [vanishing gradients lesson](/learn/neural-networks/vanishing-exploding-gradients/), yet the network does not learn. Depth made the problem hard even without a catastrophic gradient. (Here the deep plain network fails completely, while in their Figure 1 the deeper plain network does train, just to a visibly higher training error; the toy exaggerates the same effect, and it does not mean 20 plain layers can never learn.)
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import torch.nn as nn
+
+def plain(depth, width=10):
+    layers = [nn.Linear(2, width), nn.Tanh()]
+    for _ in range(depth):
+        layers += [nn.Linear(width, width), nn.Tanh()]
+    return nn.Sequential(*layers, nn.Linear(width, 1))
+
+# same data, same Adam(lr=0.01), same 800 full-batch steps for plain(4) and plain(20)
+```
+
+</details>
+
+</Step>
+
+<Step title="The fix: learn the change, not the whole function">
+
+A **residual block** keeps the input and adds a correction to it. If $x$ is the block's input, the block outputs
+
+$$y = x + F(x),$$
+
+where $F$ is a few ordinary layers, called the **branch**. The path that carries $x$ straight to the sum is the **skip connection** (or identity road). A plain layer must produce $y$ entirely from its weights. A residual block only has to produce the *difference* from its input.
+
+That changes what "doing nothing" costs. For a plain layer to pass its input through unchanged, its weights must be set to exactly the identity matrix, a very specific setting that training has to discover. For a residual block, doing nothing means setting the branch weights to zero, because then $F(x)=0$ and $y=x$. Zero is where weights are easiest to move to.
+
+The figure shows one block with 8 numbers flowing through. The top row is a plain layer with the same weights; the bottom row is the residual block. The short ticks on the output bars mark the input. Over the first 3 seconds the signal flows and the two outputs differ from the input: at full weights the plain layer's output is 1.37 away from $x$ and the residual block's is 0.77 away. Then the weights shrink toward zero. At weights ×0.65 the plain output is still 1.29 away from the input, but the residual block is 0.32 away. At zero both have the same weights, and the results are very different: the plain layer returns all zeros (distance 1.32 from $x$, its whole length), and the residual block returns $x$ exactly (distance 0.00).
+
+<ResidualTrainer client:visible mode="block" title="Zero weights: erased signal, or the identity" />
+
+This is why adding blocks cannot make the best achievable fit worse: any extra block can be set to zero and then does nothing. It does not guarantee that training finds the best fit, but it removes the obstacle you saw in the last step: stacking more layers no longer asks the optimizer to build the identity first.
+
+The backward pass benefits too. The gradient of $x + F(x)$ with respect to $x$ is $I + F'(x)$, so part of the gradient travels straight down the identity road without being multiplied by the layers of the branch. That is the "highway" you saw in [vanishing and exploding gradients](/learn/neural-networks/vanishing-exploding-gradients/) (the residual toggle on the sigmoid network), and [loss landscapes](/learn/neural-networks/loss-landscapes/) shows the same effect on the sensitivity through plain and skip blocks. Here we saw the forward half of the story, and the training result.
+
+<details>
+<summary>Show the math</summary>
+
+For a stack of $L$ blocks, $x_{l+1}=x_l+F_l(x_l)$ unrolls to
+
+$$x_L = x_0 + \sum_{l=0}^{L-1} F_l(x_l),$$
+
+and by the chain rule
+
+$$\frac{\partial x_L}{\partial x_0} = I + \frac{\partial}{\partial x_0}\sum_{l=0}^{L-1} F_l(x_l),$$
+
+which contains the identity matrix no matter how deep the stack is. A plain stack has instead a product of Jacobians, as in the vanishing-gradients lesson. This is the analysis in He et al. (2016b).
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import torch.nn as nn
+
+class Block(nn.Module):
+    def __init__(self, width):
+        super().__init__()
+        self.f = nn.Sequential(nn.Linear(width, width), nn.Tanh(), nn.Linear(width, width))
+
+    def forward(self, x):
+        return x + self.f(x)          # y = x + F(x)
+```
+
+</details>
+
+</Step>
+
+<Step title="Residual blocks in a real image network">
+
+The demo uses small fully connected layers so that it trains in a couple of seconds in your browser. Real ResNets use the same idea with convolutions. A block in ResNet-34 is two 3×3 [convolutions](/learn/cnns/convolution/) with batch normalization and a ReLU between them; its output is added to the block's input, and a ReLU follows. The deeper ResNet-50, 101 and 152 use a "bottleneck" branch (1×1, then 3×3, then 1×1 convolution) to keep the cost down.
+
+Adding $x$ to $F(x)$ requires both to have the same shape. Where the next stage [halves the image with a stride of 2 and doubles the channels](/learn/cnns/channels-stride-padding/), the skip path uses a 1×1 convolution with stride 2 to match the shapes; everywhere else it is a plain copy with no weights at all.
+
+The stack ends in global average pooling and one linear layer. Because the skip paths add no parameters and the 3×3 convolutions keep widths modest, a 34-layer ResNet needs 3.6 billion multiply-adds per image, against 19.6 billion for VGG-19. The same trick, $x + F(x)$ around each sub-layer, appears again in transformers.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think a deeper network that does worse must be overfitting. Actually** in the degradation problem the *training* loss is higher. The deep plain network in the figure never fits the 120 points it is shown (loss near 0.69 after 800 steps).
+
+**You might think skip connections give the network extra parameters or extra power. Actually** the identity road has no weights at all. What changes is how easily the optimizer can use the layers it already has, including setting a block to do nothing.
+
+**You might think a residual network is just a shallow network in disguise. Actually** the blocks do real work once trained; skips only make it cheap for a block to contribute nothing, and easy for gradients to reach early layers.
+
+**You might think skip connections remove the need for good initialization. Actually** they help, but not for free: in the figure the 20-layer skip network starts at loss 1.67 because the branch outputs pile up. Real ResNets keep this in check with normalization layers.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. In the degradation figure the 20-layer plain network ends at a higher training loss than the 4-layer one. Why does that rule out overfitting?</summary>
+
+Overfitting means fitting the training set well while doing worse on new data. Here the network does not even fit the training set (loss near 0.69, against about 0.001 for the shallow one).
+
+</details>
+
+<details>
+<summary>2. A residual block has branch weights of exactly zero. What does it output, and what does the same layer output without the skip?</summary>
+
+With the skip it outputs $x + 0 = x$, its input. Without the skip it outputs $F(x)=0$, erasing the signal.
+
+</details>
+
+<details>
+<summary>3. Does the identity argument prove a deep residual network will train at least as well as a shallow one?</summary>
+
+No. It shows that a good solution exists (set the extra blocks to zero), so the deep model is no worse in what it can represent. Whether the optimizer finds a solution is an empirical matter; the figure shows it does here, and He et al. report it on ImageNet.
+
+</details>
+
+<details>
+<summary>4. The chain rule gives $\partial(x+F(x))/\partial x = I + F'(x)$. What does the $I$ do during backpropagation?</summary>
+
+It passes the incoming gradient to the block's input unchanged, in addition to whatever flows through the branch, so a long stack still has a direct route from the loss to early layers.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- He, Zhang, Ren and Sun, [Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385) (CVPR 2016): the degradation problem and ResNet.
+- He, Zhang, Ren and Sun, [Identity Mappings in Deep Residual Networks](https://arxiv.org/abs/1603.05027) (ECCV 2016): why a clean identity path matters and the ordering of normalization and activation inside the block.
+- Veit, Wilber and Belongie, [Residual Networks Behave Like Ensembles of Relatively Shallow Networks](https://arxiv.org/abs/1605.06431) (NeurIPS 2016).
+- Li, Xu, Taylor, Studer and Goldstein, [Visualizing the Loss Landscape of Neural Nets](https://arxiv.org/abs/1712.09913) (NeurIPS 2018): how skip connections change the loss surface.
+- Simonyan and Zisserman, [Very Deep Convolutional Networks for Large-Scale Image Recognition](https://arxiv.org/abs/1409.1556) (ICLR 2015).
+
+</Step>
+
+<Step title="References">
+
+1. LeCun, Bottou, Bengio and Haffner, "Gradient-based learning applied to document recognition", *Proceedings of the IEEE* 86(11), 1998.
+2. Krizhevsky, Sutskever and Hinton, "ImageNet Classification with Deep Convolutional Neural Networks", *NeurIPS* 2012 (15.3% top-5 test error in ILSVRC 2012; 8 layers).
+3. Simonyan and Zisserman, "Very Deep Convolutional Networks for Large-Scale Image Recognition", *ICLR* 2015, arXiv:1409.1556 (16 and 19 weight layers; 7.3% top-5 test error for the ILSVRC 2014 entry).
+4. He, Zhang, Ren and Sun, "Deep Residual Learning for Image Recognition", *CVPR* 2016, arXiv:1512.03385 (152 layers; 3.57% top-5 test error; degradation on CIFAR-10, 3.6 versus 19.6 billion multiply-adds).
+5. He, Zhang, Ren and Sun, "Identity Mappings in Deep Residual Networks", *ECCV* 2016, arXiv:1603.05027.
+
+</Step>

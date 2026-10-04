@@ -1,0 +1,145 @@
+---
+title: "Classic ML vs Deep Learning"
+summary: "A practical guide to choosing between tree ensembles and neural networks."
+day: 3
+track: classic-ml
+order: 7
+level: intro
+duration: 15
+prereqs: ["classic-ml/ensembles"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ModelChooser from '../../../components/widgets/ModelChooser/ModelChooser.svelte';
+
+<Step title="Does a bigger model always win?">
+
+Deep learning gets the headlines, so it is easy to assume it is the right tool for every problem. It is not. Knowing when a neural network is the wrong choice is a practical skill, and this lesson builds it by running a small contest.
+
+The contestants are two models you can train in seconds. **Gradient-boosted trees** are the [ensembles](/learn/classic-ml/ensembles/) idea taken further: 40 tiny decision trees, each one fixing the mistakes of those before it. The other is a **small neural network** with 16 hidden units. Both are trained from scratch in your browser, on the same data, by the code behind the figure.
+
+The data is a pretend spreadsheet with four columns. Only two of them, call them age and income, decide the class, and they do it with sharp rules such as "age above 0.6 and income below 0.7". The other two columns are noise. Six percent of the labels are flipped at random, so even a perfect model scores at most 92.5% on fresh rows.
+
+Watch the timeline. It grows the training set from 16 rows to 1024, retrains both models at each size, and plots accuracy on 600 rows neither has seen. The two small squares show what each model has learned: blue where it predicts class 1, orange where it predicts class 0. With 16 rows the trees score 64.7% and the net 60.9%. At 128 rows it is 87.1% against 76.0%. At 1024 rows the trees reach 91.9%, within a point of the ceiling, and the net sits at 87.7%.
+
+<ModelChooser client:visible title="Learning curves on spreadsheet-like data" />
+
+This matches what researchers keep finding on real tables. Grinsztajn, Oyallon and Varoquaux (2022) benchmarked tree-based models and neural networks on many tabular datasets and found trees still ahead on medium-sized ones, about ten thousand rows. Their explanations resemble the toy: networks tend to learn overly smooth functions, they are hurt by uninformative columns, and tabular columns are not interchangeable the way pixels are. "Often wins" is the honest wording: it is an empirical pattern, not a law, and it depends on the dataset.
+
+<details>
+<summary>Show the code</summary>
+
+```python
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.neural_network import MLPClassifier
+
+trees = HistGradientBoostingClassifier(max_depth=2, max_iter=40, learning_rate=0.3)
+net = MLPClassifier(hidden_layer_sizes=(16,), activation="tanh", max_iter=250)
+for model in (trees, net):
+    model.fit(X_train, y_train)
+    print(model.score(X_test, y_test))
+```
+
+</details>
+
+</Step>
+
+<Step title="Unstructured data: where the network pulls ahead">
+
+The next figure starts on a different pattern: diagonal stripes. No single column explains them. Only the combination of the two coordinates does, which is the situation in an image, where one pixel means little and the pattern across many pixels means a lot.
+
+A tree can only cut parallel to an axis, so a diagonal edge becomes a staircase. Each step costs more splits, and our 40 small trees run out of room. A neuron computes a weighted sum of all its inputs, so one neuron can tilt its cut to any angle. The result reverses the last figure. With 16 rows the net scores 65.0% and the trees 54.4%. At 128 rows it is 83.8% against 65.7%. At 1024 rows the net reaches 89.8% while the trees are at 74.4%, far below the 92.2% ceiling.
+
+<ModelChooser client:visible dataset="pixels" switcher={false} title="Learning curves on a tilted pattern" />
+
+Two caveats keep this honest. First, stripes are a stand-in for pixels, not pixels: a real image model also uses [convolutions](/learn/cnns/convolution/), which share weights across positions, and often pretraining. Second, trees are not hopeless here; with many more rounds and greater depth they would keep improving. The point is the match between a model's built-in habits and the structure of the data. On raw images, text and audio, deep networks learn features that hand-made columns cannot easily express, and that is where they win by a wide margin.
+
+</Step>
+
+<Step title="Interpretability: rules or weights">
+
+A trained tree can be read aloud. The figure fits one tree, three levels deep, to 400 rows of the spreadsheet data and lays it out as questions. Watch it split: the root asks about age, then each branch asks again. For example, "age at most 0.25 and income above 0.46" is a rule that covers 46 rows, 44 of them class 1. On held-out rows this small tree scores 91.5%, and each of its 7 rules can be checked by a person.
+
+The network trained on the same rows reaches 82.7% and offers nothing like that. Its first layer holds 64 weights, four for each of 16 hidden units, shown as the colored grid. Each hidden unit blends all four columns, so no cell says "age matters when income is low". The loss falls from 0.707 at the start to 0.123 after 250 epochs, but what the hidden units mean is left to the reader. Tools exist to probe networks (saliency, feature attribution), but they explain afterwards and approximately.
+
+Reading a tree is not always flattering. This one also contains a split on col D, a noise column, that isolates 7 rows, and a cut at age 0.99 that isolates 2. A tree shows its mistakes as plainly as its insights, which is why it is useful to auditors. Boosted ensembles of hundreds of trees give up some of this readability in return for accuracy, so "trees are interpretable" is strongest for a single small tree.
+
+<ModelChooser client:visible mode="inspect" title="A tree you can read, a net you cannot" />
+
+</Step>
+
+<Step title="Compute and data: what the accuracy costs">
+
+Accuracy is only half of a model's price. The same runs as before are replotted with training work on the horizontal axis. Work is counted as basic operations: comparisons while searching for splits for the trees, multiply-adds for the net's forward and backward passes. It is a count from the code, not a stopwatch, so it does not depend on your laptop.
+
+On the spreadsheet data the trees reach 87.1% with 358 thousand operations (128 rows). The net first reaches 87.0% at 512 rows and 31 million operations, about 86 times more work for the same accuracy, and it still ends behind. The net also has 97 numbers to tune against the trees' few hundred thresholds and leaf values, and it needs choices the trees mostly do not: learning rate, epochs, scaling of the inputs. Flip to the stripes with the switch under the figure and the picture reverses. The net's 4.6 million operations at 128 rows buy 83.8%, a level the trees never reach in this experiment, even with 2.0 million operations at 1024 rows.
+
+Data size matters in both directions. Small data favors models with strong built-in assumptions, such as trees on tables or pretrained networks on images. Enormous data favors flexible models that can learn their own features. Compute matters at prediction time too: a few dozen small trees answer in microseconds on a CPU, while large networks may need a GPU.
+
+<ModelChooser client:visible xAxis="work" title="Accuracy against training work" />
+
+</Step>
+
+<Step title="A decision checklist">
+
+Put it together. Answer the four questions and watch the path light up: what kind of data, how many labelled rows, whether you must explain predictions, and how tight your latency budget is. Questions that cannot change the answer are marked as not needed.
+
+<ModelChooser client:visible mode="checklist" title="Which model should I try first?" />
+
+Treat the verdict as a first choice to beat, not a final answer. Gradient boosting (XGBoost, LightGBM, CatBoost) is a strong baseline on tables. A linear model or single tree is the baseline when explanations matter. A pretrained neural network is the baseline for images, text and audio. Always compare against the simplest baseline on your own data. If a neural network cannot beat it by enough to justify its cost, use the baseline.
+
+In real projects there are other inputs: how many columns are categorical, whether the data has a time order, how often the model is retrained, and what your team can maintain. This checklist covers only the four that matter most here.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** deep learning is always more accurate because it is newer and bigger. **Actually** on tabular data, tuned tree ensembles are at least competitive and often better, especially with thousands to tens of thousands of rows.
+- **You might think** a neural network needs no feature engineering. **Actually** that holds for raw media, where it learns the features. On a table with good columns, engineered features help every model.
+- **You might think** trees are obsolete. **Actually** gradient-boosted trees are a default choice for many industry tables and competitions, and they train on a laptop.
+- **You might think** more data always favors the neural network. **Actually** more data helps both; in our tabular run the gap shrank from 11.1 points at 128 rows to 4.2 at 1024 rows, yet the trees stayed ahead.
+- **You might think** the results here prove a rule. **Actually** this is a small, controlled demo with one data generator per case. It shows mechanisms, and real benchmarks vary by dataset.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>Why can a tree only approximate a diagonal boundary?</summary>
+
+Each split tests one column against a threshold, so every boundary is parallel to an axis. A diagonal edge must be built from many small steps.
+
+</details>
+
+<details>
+<summary>In the spreadsheet figure, why do two noise columns hurt the net more than the trees?</summary>
+
+A tree picks the column with the best split at each node, so it mostly ignores columns that do not help. The net mixes every input into every hidden unit, so it must learn weights near zero for noise columns, which takes data.
+
+</details>
+
+<details>
+<summary>You must justify each loan decision to a regulator. Which model do you try first?</summary>
+
+A linear model or a small decision tree, because each prediction can be traced to a few readable weights or rules. You may test a boosted model as well, but then pair it with explanation tools and document the trade-off.
+
+</details>
+
+<details>
+<summary>You have 2000 labelled photos. Train a network from scratch?</summary>
+
+Usually not. Fine-tune a pretrained network, which brings learned features that 2000 images could not teach.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Grinsztajn, Oyallon and Varoquaux (2022), ["Why do tree-based models still outperform deep learning on typical tabular data?"](https://arxiv.org/abs/2207.08815), NeurIPS Datasets and Benchmarks.
+- Shwartz-Ziv and Armon (2022), ["Tabular data: Deep learning is not all you need"](https://arxiv.org/abs/2106.03253), *Information Fusion* 81.
+- Friedman (2001), "Greedy function approximation: a gradient boosting machine", *Annals of Statistics* 29(5): the original gradient boosting paper.
+- Chen and Guestrin (2016), ["XGBoost: a scalable tree boosting system"](https://arxiv.org/abs/1603.02754), KDD.
+- Related: [Ensembles](/learn/classic-ml/ensembles/) and [Overfitting and bias-variance](/learn/foundations/overfitting-bias-variance/).
+
+</Step>

@@ -1,0 +1,190 @@
+---
+title: "Receptive Fields"
+summary: "The patch of the input that can influence one unit grows with depth, jumps with stride and pooling, and in practice concentrates in the middle."
+day: 7
+track: cnns
+order: 3
+level: advanced
+duration: 20
+prereqs: ["cnns/channels-stride-padding"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ReceptiveField from '../../../components/widgets/ReceptiveField/ReceptiveField.svelte';
+
+<Step title="One unit, one patch">
+
+In [Convolution](/learn/cnns/convolution/) a 3×3 filter slid over an image and wrote one number for each position. Each of those numbers is the output of one **unit**, and each unit looked at exactly nine input pixels: the patch under the filter. Nothing else in the image could change it. The set of input pixels that can change a unit is called its **receptive field**. The term comes from neuroscience, where the receptive field of a cell is the patch of the visual world that makes it respond (Hubel and Wiesel, 1962, studied it in the cat's visual cortex).
+
+The figure has two views of the same thing. The rows on the left are one line of pixels through the image and the unit layer above it. The square on the right is the whole input image. The chosen unit is in the top row. Press play: the figure follows its three connections down to the input and marks the pixels they land on. The unit's receptive field is a **3 × 3 patch, 9 pixels**. Change a pixel inside it and the unit changes. Change any other pixel and the unit stays exactly the same.
+
+<ReceptiveField client:visible mode="one" title="One 3×3 layer: each output unit sees a 3×3 patch" />
+
+That is a very small view. A 3×3 patch can hold an edge or a corner, but not an eye or a wheel. Recognising bigger things needs units that see more of the picture, and the rest of this lesson is about how a network gets there without ever using a large filter.
+
+Click a different unit in the top row, or a spot on the image, and watch the patch move with it. Every unit has its own patch, and all the patches have the same size. That is weight sharing from the last lesson, seen from the input side.
+
+</Step>
+
+<Step title="Stack layers and the field grows by 2 each time">
+
+Now put a second 3×3 layer on top of the first. A unit of the second layer reads a 3×3 patch of the first layer's units, and each of those units reads its own 3×3 patch of the input. Neighbouring units read overlapping patches, so together the nine of them cover a **5 × 5** patch of the input, not 9 × 9. A unit of a third layer reads three second-layer units that each see 5 pixels, again overlapping, and reaches 7. Each extra 3×3 layer adds one pixel on each side: **2 more pixels per layer**.
+
+For $L$ stacked 3×3 layers with stride 1:
+
+$$\text{receptive field} = 1 + L\,(k - 1) = 1 + 2L \quad\text{pixels per side}.$$
+
+The figure builds six such layers. Watch the numbers on the right of the rows, the count of cells that the chosen unit depends on in each row: 1, 3, 5, 7, 9, 11 and finally 13 on the input. At the end the readout says $1 + 6 \times 2 = 13$, and the image shows a 13 × 13 square, 169 pixels, feeding one number.
+
+<ReceptiveField client:visible mode="stack" title="Six 3×3 layers: 3, 5, 7, 9, 11, 13" />
+
+This is how a CNN gets a large view from small filters, and it is cheaper than one large filter. Three 3×3 layers see 7 × 7, just like one 7×7 filter, but with 3 × 9 = 27 weights per pair of channels instead of 49 (Simonyan and Zisserman, 2015, built VGG on this observation). It also puts a nonlinearity between the layers, so the stack can compute more than the single filter.
+
+Padding does not change this count. It only decides what happens at the border: a unit near the edge has part of its field outside the image, filled with zeros. The size of the field is the same.
+
+<details>
+<summary>Show the math</summary>
+
+Let $r_l$ be the receptive field of a layer-$l$ unit, measured in input pixels, with $r_0 = 1$ (an input pixel sees itself). A layer-$l$ unit reads $k_l$ neighbouring units of layer $l-1$. With stride 1 those units are 1 pixel apart, so the first and the last are $k_l - 1$ pixels apart, and the field grows by that much:
+
+$$r_l = r_{l-1} + (k_l - 1).$$
+
+With $k_l = 3$ each layer adds 2, so $r_L = 1 + 2L$. The next step generalises this to strides other than 1.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def receptive_field(layers):          # layers = [(kernel, stride), ...] from input to output
+    r, jump = 1, 1                    # field size, and spacing of this layer's units on the input
+    for k, s in layers:
+        r += (k - 1) * jump
+        jump *= s
+    return r
+
+receptive_field([(3, 1)] * 6)         # 13
+```
+
+</details>
+
+</Step>
+
+<Step title="Stride and pooling make the field grow faster">
+
+The count above assumed that neighbouring units sit one pixel apart. After a **stride-2** layer or a **2×2 pooling** layer (see [Channels, Stride and Padding](/learn/cnns/channels-stride-padding/)) they sit two pixels apart, because the layer kept only every second position. A 3×3 layer after it reads three units that are now 2 pixels apart, so each step outward is worth 2 pixels instead of 1. Every later layer takes bigger steps across the image: its step is multiplied by the product of all the strides before it.
+
+In symbols, with $j_l$ the spacing of layer-$l$ units on the input ($j_0 = 1$, $j_l = j_{l-1}\,s_l$):
+
+$$r_l = r_{l-1} + (k_l - 1)\,j_{l-1}.$$
+
+The figure shows five layers: a 3×3 conv, a 2×2 pooling, then three more 3×3 convs. Look at the line under the figure, "field r after each layer": 3, 4, 8, 12, 16. The first conv adds 2. The pooling adds 1, because its window is 2 wide. After it every conv adds $2 \times 2 = 4$ instead of 2. The dashed square on the image is the same five layers with the pooling replaced by a plain 3×3 conv, which reaches only $1 + 5 \times 2 = 11$. Tick the box under the figure to switch between the two.
+
+<ReceptiveField client:visible mode="stride" title="A pooling layer after the first conv: the field reaches 16 instead of 11" />
+
+So with the same number of layers, one pooling layer turns an 11 × 11 field into a 16 × 16 one. The cost is that the units after the pool sit every second pixel: they see more, but they report their position less precisely. That is the trade every CNN makes as it goes deeper: fewer units, each looking at more.
+
+<details>
+<summary>Show the math</summary>
+
+Unit $i$ of layer $l$ reads units $i s_l, \dots, i s_l + k_l - 1$ of layer $l-1$, which sit $j_{l-1}$ input pixels apart. The first and the last of them are $(k_l - 1)\,j_{l-1}$ pixels apart, and one unit's field extends $r_{l-1}$ pixels, so $r_l = r_{l-1} + (k_l - 1)\,j_{l-1}$. Units of layer $l$ are $s_l\,j_{l-1} = j_l$ pixels apart. Araujo, Norris and Sim (2019) derive the same recurrences, with padding offsets, for arbitrary networks.
+
+</details>
+
+</Step>
+
+<Step title="The effective receptive field is smaller than the theoretical one">
+
+Everything so far counted which pixels **can** change a unit. That is the **theoretical receptive field**: a square in which every pixel counts equally. But a pixel can be inside the square and still matter very little. To measure how much each pixel matters we use the **gradient**: how much the unit's value changes if one input pixel changes a little (the gradient that backpropagation computes, as in [Backpropagation Through an MLP](/learn/neural-networks/backprop-mlp/)). The map of those gradients over the input is the **effective receptive field** (Luo, Li, Urtasun and Zemel, 2016).
+
+The figure builds a real stack of 3×3 conv and ReLU layers with random weights, 4 channels per layer. It sets the gradient of one centre output unit to 1 and backpropagates it through the layers to the input, averaging the size of the result over six random input images. Brighter pink means a stronger influence (drawn on a square-root scale so that faint pixels stay visible). The dashed square is the theoretical field. The solid square is the smallest centred square that holds 90 percent of all the gradient. The plot on the right adds up each column.
+
+Drag the timeline to the end, 12 layers. The theoretical field is 25 × 25 = 625 pixels. The solid square is 15 × 15 = 225 pixels, 36 percent of that area, and it already holds 90 percent of the gradient. The column plot is a bell, tallest at the centre and thin near the dashed lines. Now go back to 4 layers, where the two squares coincide (both 9 × 9). The gap opens as layers are added, because each new layer adds a ring to the dashed square but only a thin extra tail to the bell.
+
+<ReceptiveField client:visible mode="effective" title="A real 12-layer stack: the gradient fills the middle of the field, not all of it" />
+
+Why? A pixel at the very edge of the field reaches the unit through a single route in the stack: every layer has to step outward. A pixel in the middle is reached by many routes, because steps outward and inward can cancel in many orders. Adding up many small contributions makes a bell shape. Luo et al. derived this for stacks of linear conv layers and observed it with ReLUs: the gradient follows a Gaussian whose width grows like the square root of the number of layers, while the theoretical field grows in proportion to the number of layers. They also found that training changes the shape.
+
+The practical lesson: a network does not use its whole theoretical field equally. If an object has to be recognised from context near the border of the field, a depth that is "big enough" on paper may be too shallow in practice.
+
+<details>
+<summary>Show the code</summary>
+
+```python
+x = torch.randn(1, 1, 33, 33, requires_grad=True)
+y = net(x)                            # net: conv3x3 + ReLU layers with padding 1
+y[0, 0, 16, 16].backward()            # gradient of one centre output unit
+erf = x.grad.abs()[0, 0]              # the effective receptive field
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think a unit in the last layer sees only the units directly below it. Actually** it depends on as much of the input as its field says: 13 × 13 pixels after six 3×3 layers, even though each layer looked at only 3 × 3 neighbours.
+
+**You might think a bigger filter is the only way to see more. Actually** depth, stride and pooling all widen the field. Three 3×3 layers have the 7 × 7 field of one 7×7 filter with fewer weights.
+
+**You might think padding enlarges the receptive field. Actually** padding keeps the output the same size as the input and changes what border units see. It does not change how many pixels a unit reaches.
+
+**You might think every pixel in the field matters equally. Actually** the effective receptive field is concentrated near the middle: in the 12-layer stack, 90 percent of the gradient lay in 36 percent of the field's area.
+
+**You might think the field depends on the weights. Actually** the theoretical field depends only on kernel sizes and strides. The weights and the input decide the effective field.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. A stack has five 3×3 stride-1 conv layers. How big is the receptive field of one output unit?</summary>
+
+$1 + 5 \times 2 = 11$, so 11 × 11 pixels.
+
+</details>
+
+<details>
+<summary>2. Two 3×3 convs, then a 2×2 pooling, then another 3×3 conv. What is the field of the last unit?</summary>
+
+After the two convs, $r = 5$ and the spacing is 1. The pooling adds $(2-1) \times 1 = 1$, giving 6, and the spacing becomes 2. The last conv adds $(3-1) \times 2 = 4$, giving $r = 10$.
+
+</details>
+
+<details>
+<summary>3. How many 3×3 layers are needed to see a 7 × 7 patch, and how many weights do they use compared with one 7×7 filter, per pair of channels?</summary>
+
+$1 + 2L = 7$ gives $L = 3$. Three layers use $3 \times 9 = 27$ weights, one 7×7 filter uses 49.
+
+</details>
+
+<details>
+<summary>4. An image is 224 × 224. With only stride-1 3×3 convs, how many layers would a unit need to see the whole image? Why do real networks not do this?</summary>
+
+$1 + 2L \ge 224$ gives $L = 112$ layers. That is far deeper than is practical, so networks downsample with stride or pooling, which makes the field grow much faster, as in the figure with the pooling layer.
+
+</details>
+
+<details>
+<summary>5. The theoretical field of a unit is 25 × 25. Does that mean all 625 pixels influence it about equally?</summary>
+
+No. The theoretical field says which pixels can change the unit. The effective field measures how much, and in the 12-layer stack, 90 percent of the gradient lay in the middle 15 × 15 pixels.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Hubel and Wiesel, "Receptive fields, binocular interaction and functional architecture in the cat's visual cortex", *The Journal of Physiology* 160(1), 106-154 (1962). Where the term comes from.
+- Luo, Li, Urtasun and Zemel, "Understanding the effective receptive field in deep convolutional neural networks", *NeurIPS* (2016). The Gaussian shape and square-root growth of the effective receptive field.
+- Araujo, Norris and Sim, "Computing receptive fields of convolutional neural networks", *Distill* (2019). The recurrences with padding, for general networks.
+- Simonyan and Zisserman, "Very deep convolutional networks for large-scale image recognition", *ICLR* (2015). Stacks of 3×3 filters instead of large ones.
+- Yu and Koltun, "Multi-scale context aggregation by dilated convolutions", *ICLR* (2016). A way to grow the field without pooling.
+
+Next: [ResNets](/learn/cnns/resnets/), where skip connections let networks get much deeper.
+
+</Step>

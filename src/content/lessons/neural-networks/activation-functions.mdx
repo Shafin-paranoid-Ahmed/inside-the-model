@@ -1,0 +1,184 @@
+---
+title: "Activation Functions"
+summary: "Step, sigmoid, tanh, ReLU and GELU, and why non-linearity is essential."
+day: 4
+track: neural-networks
+order: 2
+level: core
+duration: 25
+prereqs: ["neural-networks/neuron"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ActivationLab from '../../../components/widgets/ActivationLab/ActivationLab.svelte';
+
+<Step title="A hundred linear layers are just one layer">
+
+In [the neuron](/learn/neural-networks/neuron/) we computed a weighted sum $z = \mathbf{w}\cdot\mathbf{x} + b$ and then passed it through an **activation function**. It is fair to ask whether that second part matters. Suppose we skip it and stack layers that only do weighted sums. For a layer of two neurons reading two inputs, the weights form a $2\times 2$ matrix, and each layer is a matrix acting on the plane, as in [matrices](/learn/math/matrices/).
+
+The figure follows a square grid of points through three such layers with fixed weights $W_1$, $W_2$, $W_3$ and no activation. Each layer turns and stretches the grid. Look at what never happens: the lines stay straight and stay parallel. The dot $p = (1, -1)$ rides along. At the end a dashed outline appears: the single matrix $W_3 W_2 W_1$, multiplied out once. It lands exactly on top of the grid, and the readout shows that the one matrix and the three layers send $p$ to the same point, $(1.86, -0.08)$.
+
+<ActivationLab client:visible mode="collapse" activation="none" title="Three linear layers equal one matrix" />
+
+That is the whole problem. A matrix times a matrix is a matrix, so $W_3(W_2(W_1\mathbf{x})) = (W_3W_2W_1)\mathbf{x}$. A hundred linear layers can do nothing a single layer cannot, however many parameters you spend. To get something richer, each layer needs a bend in it, and the bend is the activation function.
+
+<details>
+<summary>Show the math</summary>
+
+With no activation, layer $k$ computes $\mathbf{h}_k = W_k \mathbf{h}_{k-1}$. Substituting repeatedly,
+
+$$\mathbf{h}_3 = W\mathbf{x}.$$
+
+Here the combined weights are $W = W_3 W_2 W_1$.
+
+Here $W_1 = \begin{bmatrix}1.1 & -0.8\\ 0.7 & 0.9\end{bmatrix}$, $W_2 = \begin{bmatrix}0.8 & 0.6\\ -0.5 & 1.0\end{bmatrix}$, $W_3 = \begin{bmatrix}1.0 & -0.4\\ 0.6 & 0.8\end{bmatrix}$, and the product is $W = \begin{bmatrix}1.24 & -0.62\\ 0.90 & 0.98\end{bmatrix}$. Biases do not rescue this: adding a bias at each layer only makes the composite map $W\mathbf{x} + \mathbf{c}$, still one affine map. In real networks the matrices are far larger, but the algebra is identical.
+
+</details>
+
+</Step>
+
+<Step title="Squashing the score: step, sigmoid and tanh">
+
+An early activation was the **step**: output 1 if $z > 0$, else 0, a neuron that simply fires or stays silent. It is the cleanest picture of a decision, but its slope is zero away from the jump (and undefined at the jump), so ordinary gradient descent gets no useful slope for nudging a weight.
+
+The smooth replacements are the **sigmoid**, $\sigma(z) = 1/(1 + e^{-z})$, which squeezes any score into $(0, 1)$ and which you met in [logistic regression](/learn/foundations/logistic-regression/), and **tanh**, which does the same into $(-1, 1)$ and is centred on zero. Watch the probe $z$ sweep from $-6$ to $6$ with a dot riding each curve.
+
+<ActivationLab client:visible mode="saturation" title="Three squashing functions, and where they go flat" />
+
+The grey bands mark **saturation**: where the slope drops below 0.05. For the sigmoid that is beyond $|z| \approx 2.94$, for tanh beyond $|z| \approx 2.18$, and for the step it is everywhere. Out there the output hardly responds to the input, so a small change to a weight upstream barely changes anything downstream. That has a price, which we collect in the last step.
+
+Sigmoid and tanh are closely related: $\tanh(z) = 2\sigma(2z) - 1$, the same S-shape stretched to run from $-1$ to $1$.
+
+</Step>
+
+<Step title="ReLU: keep the positive half">
+
+The workhorse of modern networks is far simpler: the **rectified linear unit**, $\mathrm{ReLU}(z) = \max(0, z)$. Negative scores become 0 and positive scores pass through unchanged. It is cheap to compute, and on the positive side it never saturates: the slope is exactly 1 however large $z$ gets.
+
+The cost is the left half. For $z < 0$ the output is 0 and so is the slope, and a neuron whose score is negative for every input stops learning, since no gradient reaches its weights. Such a neuron is called **dead**. **Leaky ReLU** repairs this by keeping a small slope $\alpha$ on the left, $\max(z, \alpha z)$. Drag the slider to change $\alpha$, and watch the left half of the second curve tilt while the first stays flat.
+
+<ActivationLab client:visible mode="relu-family" title="ReLU is flat for negative z; leaky ReLU keeps a slope" />
+
+Both are still a single bend: two straight pieces joined at $z = 0$. As the next steps show, a bend is all a network needs.
+
+</Step>
+
+<Step title="GELU: a smooth ReLU">
+
+**GELU**, the Gaussian error linear unit, is a smooth activation used in transformer networks. It scales the input by the probability that a standard normal variable falls below it: $\mathrm{GELU}(z) = z\,\Phi(z)$. The figure uses the common tanh approximation,
+
+$$u = \sqrt{2/\pi}\,(z + 0.044715 z^3),$$
+
+$$\mathrm{GELU}(z) \approx 0.5z\,(1 + \tanh(u)).$$
+
+Compare it with ReLU in the figure. They approach the same values in the far tails; at $z = 3$ the displayed outputs both round to 3.00. The difference is at the corner: GELU rounds it off, and just left of zero it dips below zero, to about $-0.17$ at $z = -0.75$, before returning toward 0 on the far left. Small negative scores are therefore not thrown away entirely.
+
+<ActivationLab client:visible mode="gelu" title="GELU follows ReLU but rounds the corner and dips below zero" />
+
+The dashed curve is **SiLU** (also called Swish), $z\,\sigma(z)$, a smooth sibling built from the sigmoid; its dip is deeper and further left. Like GELU, it has no sharp corner, which gives gradients a smoother surface to follow.
+
+</Step>
+
+<Step title="Proof by picture: add a bend and the grid bends">
+
+Return to the three-layer grid from the first step, this time with an activation after each layer. Switch between the buttons below. With tanh every point is squashed toward a box of side 2; with ReLU every point is pulled into the upper-right quadrant, folding the grid along the axes.
+
+<ActivationLab client:visible mode="collapse" activation="tanh" title="With an activation between layers, the grid bends and the single matrix no longer matches" />
+
+Now the dashed outline, the single matrix $W_3W_2W_1$, no longer lands on the grid. The dot makes it concrete: one matrix sends $p = (1, -1)$ to $(1.86, -0.08)$, but three layers with tanh send it to $(0.67, -0.13)$, and with ReLU to $(1.52, 0.91)$. No single matrix reproduces what the stack does, because a matrix cannot bend. This is where depth pays off: each bend gives the next layer something new to cut and combine.
+
+In real models you have thousands of dimensions rather than two and the bends are subtler, but the principle is the same. Linear layers can only rotate, stretch and shear the space; the activation function is what lets a network carve it into curved regions.
+
+</Step>
+
+<Step title="Slopes: a preview of backprop">
+
+Training will need the **derivative** of every activation, because the gradient flowing backward through a neuron is multiplied by the slope of its activation at the score it saw going forward. The figure puts each function's curve above its slope, with the same probe sweeping across.
+
+<ActivationLab client:visible mode="derivatives" title="Each function (top) and its slope (below)" />
+
+Two things stand out. First, the sigmoid's slope is $\sigma'(z) = \sigma(z)(1 - \sigma(z))$, which peaks at only $0.25$ at $z = 0$, while tanh's, $1 - \tanh^2(z)$, peaks at 1. Out in the grey bands both are nearly zero. Second, ReLU's slope is exactly 1 for positive $z$ and exactly 0 for negative $z$; GELU's slope rises to about 1.13 near $z = 1.4$.
+
+Consider only the activation factors along a path through a deep stack. Each sigmoid contributes at most 0.25, so their product after five layers is at most $0.25^5 \approx 0.001$, and after ten, under $10^{-6}$. The full gradient also includes weights and sums over paths, so this is not a bound on the entire network's gradient. It shows why sigmoid activations can shrink the learning signal reaching early layers: one source of the **vanishing gradient problem**. We study it properly in [vanishing and exploding gradients](/learn/neural-networks/vanishing-exploding-gradients/).
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+relu    = lambda z: np.maximum(0, z)
+gelu    = lambda z: 0.5 * z * (1 + np.tanh(np.sqrt(2 / np.pi) * (z + 0.044715 * z**3)))
+
+# derivatives
+d_sigmoid = lambda z: sigmoid(z) * (1 - sigmoid(z))   # max 0.25 at z = 0
+d_tanh    = lambda z: 1 - np.tanh(z) ** 2             # max 1 at z = 0
+d_relu    = lambda z: (z > 0).astype(float)           # 0 or 1
+
+# check one derivative against a finite difference
+z, h = 0.7, 1e-6
+print(d_sigmoid(z), (sigmoid(z + h) - sigmoid(z - h)) / (2 * h))
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** more layers always means a more powerful model. **Actually** without activation functions any number of layers collapses to one matrix; the bends are what make depth useful.
+- **You might think** the activation function is a minor detail. **Actually** it decides whether gradients survive: a saturated sigmoid and a dead ReLU both stop learning in their flat regions.
+- **You might think** ReLU is not differentiable and so cannot be trained. **Actually** it is differentiable everywhere except exactly at 0. Software chooses a convention at that point; this widget uses slope 0 there.
+- **You might think** the "best" activation is a settled fact. **Actually** the choice is mostly empirical: ReLU is the cheap default, and GELU and SiLU are common in transformers and recent convolutional networks.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>Why can't a network of only linear layers represent a curved decision boundary?</summary>
+
+Composing linear maps gives one linear map, $W_3W_2W_1$, so the whole network is equivalent to a single layer and has a flat boundary.
+
+</details>
+
+<details>
+<summary>What is the largest slope the sigmoid ever has, and where?</summary>
+
+$0.25$, at $z = 0$.
+
+</details>
+
+<details>
+<summary>A ReLU neuron has score $z = -3$ for every training example. What happens to its weights?</summary>
+
+The slope at $z = -3$ is 0, so this neuron contributes no data-loss gradient to its input weights. It is dead on these examples. Weight decay, momentum from earlier updates, or changing inputs can still change its weights or score; the activation itself blocks the current gradient.
+
+</details>
+
+<details>
+<summary>How does leaky ReLU avoid that?</summary>
+
+It keeps a small slope $\alpha$ for negative $z$, so a little gradient always flows.
+
+</details>
+
+<details>
+<summary>How is GELU different from ReLU near zero?</summary>
+
+GELU is smooth there, with no corner, and dips slightly below 0 (to about $-0.17$ at $z = -0.75$) before rising.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Hendrycks and Gimpel (2016), [Gaussian Error Linear Units (GELUs)](https://arxiv.org/abs/1606.08415): the paper that introduced GELU and the tanh approximation.
+- Glorot, Bordes and Bengio (2011), "Deep sparse rectifier neural networks", *AISTATS*: why ReLU works well in deep networks.
+- Ramachandran, Zoph and Le (2017), [Searching for Activation Functions](https://arxiv.org/abs/1710.05941): the Swish / SiLU function found by search.
+- Goodfellow, Bengio and Courville, [*Deep Learning*](https://www.deeplearningbook.org/), section 6.3 on hidden units.
+- Related: [The neuron](/learn/neural-networks/neuron/), [Multi-layer perceptrons](/learn/neural-networks/mlp/) and [Vanishing and exploding gradients](/learn/neural-networks/vanishing-exploding-gradients/).
+
+</Step>

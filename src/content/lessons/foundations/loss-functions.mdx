@@ -1,0 +1,167 @@
+---
+title: "Loss Functions"
+summary: "A loss turns \"how wrong is the model?\" into a single number to minimize."
+day: 1
+track: foundations
+order: 3
+level: intro
+duration: 20
+prereqs: ["foundations/data-features-labels","math/vectors"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import LossPlayground from '../../../components/widgets/LossPlayground/LossPlayground.svelte';
+
+<Step title="How wrong is this line?">
+
+You can look at a line through a cloud of points and say "that is a bad fit". A computer cannot look. To improve a model automatically, we first need a *number* that says how badly it is doing, so that "better" can mean "the number went down".
+
+That number is called the **loss**. Start with a single prediction. Each vertical segment in the figure is the gap between what a point really is and what the line predicted for it. Blue segments are points above the line, orange are points below.
+
+Watch the timeline tilt the line away from the best fit and back. Long segments mean a bad fit, and they shrink as the line settles. You can also grab either round handle and drag the line yourself.
+
+<LossPlayground client:visible loss="mae" title="Residuals: the gap between each point and the line" />
+
+</Step>
+
+<Step title="Error of one prediction: the residual">
+
+For one example with true label $y$ and prediction $\hat y$, the **residual** is the signed gap:
+
+$$r = y - \hat y.$$
+
+It is positive when the model predicted too low (the point is above the line) and negative when it predicted too high. The sign tells you which way you missed. For a *score* of wrongness we usually do not care about direction, only about size, so we throw the sign away in one of two ways.
+
+The first is the **absolute error**, $|r|$. The second is the **squared error**, $r^2$. Both are zero for a perfect prediction and grow as the miss grows, but they grow differently: a residual of 2 costs 2 under the absolute error and 4 under the squared error, while a residual of 10 costs 10 versus 100. Squaring punishes large misses much more than small ones.
+
+</Step>
+
+<Step title="Mean squared error, with actual squares">
+
+To score a whole dataset, average the per-example losses. Averaging the squared errors gives the **mean squared error** (MSE); averaging the absolute errors gives the **mean absolute error** (MAE).
+
+The figure now draws each squared error as a real square, with side length equal to the residual. Its area is $r^2$. The MSE is the average area of these squares, so a line is a good fit when the squares are small. The figure's readout shows the MSE and MAE for the current line. For the best line here (slope 0.6, intercept 1.0) the MSE is 0.135 and the MAE is 0.35.
+
+<LossPlayground client:visible loss="mse" title="MSE: the average area of the squares" />
+
+<details>
+<summary>Show the math</summary>
+
+With $n$ examples $(x_i, y_i)$ and a model $\hat y_i = w x_i + b$:
+
+$$\text{MSE} = \frac{1}{n}\sum_{i=1}^{n} (y_i - \hat y_i)^2, \qquad \text{MAE} = \frac{1}{n}\sum_{i=1}^{n} |y_i - \hat y_i|.$$
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def mse(y, y_hat): return np.mean((y - y_hat) ** 2)
+def mae(y, y_hat): return np.mean(np.abs(y - y_hat))
+```
+
+</details>
+
+</Step>
+
+<Step title="Loss as a function of the knobs">
+
+Here is the idea that the whole rest of the course is built on. The data is fixed. So the loss depends only on the model's knobs: change $w$ and $b$ and the loss changes. The loss is a *function of the parameters*, written $L(w, b)$.
+
+The small chart on the right of the figure shows this for one knob. It plots the loss as $w$ sweeps from left to right while $b$ is held fixed. The accent dot is where the current line sits on that curve. The green diamond marks the lowest point, the best $w$ for this $b$. Drag the line's handles and watch the dot slide along the curve; the bottom of the bowl is where the line fits best.
+
+<LossPlayground client:visible loss="mse" title="The loss as a function of the slope" />
+
+Training will mean exactly this: find the knob values at the bottom of the curve. The next two lessons show how to find them without looking at a plot.
+
+</Step>
+
+<Step title="Why squared error, and what an outlier does to it">
+
+Why square rather than take absolute values? Squared error is smooth, so it has a slope everywhere (which gradient descent will need). It also has a clean closed-form minimum for a line, which you will meet in the linear-regression lesson. And it corresponds to a specific statistical assumption: if the noise in the labels is Gaussian, minimizing squared error is the maximum-likelihood fit.
+
+The price is sensitivity to **outliers**, points that do not follow the pattern. Watch the timeline slide one point far below the trend while the line stays exactly where it was. The MSE jumps from 0.135 to 3.48, about 26 times larger. The MAE goes from 0.35 to 0.92, about 2.6 times larger. Because the squares of big misses are huge, one bad point can dominate the whole MSE.
+
+That also changes where the bottom of the curve is. With the intercept held at 1.0, the MSE curve's best slope moves from 0.58 to 0.24 when the outlier appears: the line is dragged toward the outlier. The MAE curve's best slope stays at 0.51. Try switching between the two losses under the figure.
+
+<LossPlayground client:visible loss="mse" title="One outlier: MSE panics, MAE barely notices" />
+
+Neither is "right". If big misses really are much worse than small ones, use squared error. If a few wild points are noise you would rather ignore, use absolute error. (A popular compromise, the Huber loss, is squared for small misses and absolute for large ones.)
+
+</Step>
+
+<Step title="A loss for classification">
+
+When the label is a category rather than a number, residuals make little sense: the "gap" between class 0 and class 1 is not a distance. The standard loss instead asks how much probability the model gave to the right answer.
+
+Here the model outputs $p = \sigma(wx + b)$, an S-shaped curve between 0 and 1 that we read as "the probability the label is 1". Filled dots are points labelled 1, open dots are labelled 0. The **log loss** (or cross-entropy) of one example is
+
+$$\ell = -\ln p_{\text{correct}},$$
+
+where $p_{\text{correct}}$ is $p$ for a label-1 point and $1 - p$ for a label-0 point. Give the right answer probability 1 and the loss is 0. Give it probability 0.5 and the loss is $\ln 2 = 0.693$. Give it probability 0.01 and the loss is $4.6$: a confident mistake is punished severely. The thickness of each red bar shows its point's loss.
+
+Watch the timeline sharpen the curve. Confident correct points get cheap and confident mistakes get expensive. The readout shows the average, and the value 0.693 is what a model that guesses 0.5 for everything would score.
+
+<LossPlayground client:visible task="classification" title="Log loss: confident mistakes cost the most" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** the loss is a measure of accuracy. **Actually** the loss is a smooth number we can minimize; accuracy just counts right answers. A model can improve its loss without changing a single answer.
+- **You might think** there is one correct loss. **Actually** the loss is a design choice that encodes what mistakes matter. Squared and absolute error disagree exactly when outliers are present.
+- **You might think** the loss is a property of the model alone. **Actually** it is a property of the model *and* the data: change either and the number changes.
+- **You might think** a lower loss on the training data always means a better model. **Actually** a model can fit the training points beautifully and still fail on new ones. Later lessons on generalization return to this.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>A model predicts 7 and the true value is 10. What are the residual, the absolute error and the squared error?</summary>
+
+Residual $10 - 7 = 3$, absolute error 3, squared error 9.
+
+</details>
+
+<details>
+<summary>Residuals are 1, -2 and 3. What is the MSE? The MAE?</summary>
+
+MSE $= (1 + 4 + 9)/3 = 4.67$. MAE $= (1 + 2 + 3)/3 = 2$.
+
+</details>
+
+<details>
+<summary>Why does an outlier hurt MSE more than MAE?</summary>
+
+Squaring makes a big residual count far more than a small one (10 counts as 100 instead of 10), so one large miss dominates the average.
+
+</details>
+
+<details>
+<summary>A classifier gives probability 0.9 to the correct class. Is its log loss bigger or smaller than 0.693?</summary>
+
+Smaller: $-\ln 0.9 = 0.105$.
+
+</details>
+
+<details>
+<summary>What does "loss as a function of the parameters" mean?</summary>
+
+With the data fixed, each choice of knob values gives one loss value, so the loss is a function $L(w, b)$ of the knobs.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Goodfellow, Bengio and Courville, [*Deep Learning*](https://www.deeplearningbook.org/), section 5.5 (maximum likelihood) for why squared error and cross-entropy are natural.
+- Legendre (1805) introduced least squares as a method of fitting curves to astronomical observations, and Gauss (1809) tied it to normal errors; Stigler's ["Gauss and the Invention of Least Squares"](https://doi.org/10.1214/aos/1176345451) tells the story.
+- Google's [Machine Learning Crash Course: Linear regression: loss](https://developers.google.com/machine-learning/crash-course/linear-regression/loss).
+- Huber, ["Robust Estimation of a Location Parameter"](https://doi.org/10.1214/aoms/1177703732), Annals of Mathematical Statistics 1964: the compromise between squared and absolute loss.
+
+</Step>

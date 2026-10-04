@@ -1,0 +1,212 @@
+---
+title: "Why Vanilla RNNs Forget"
+summary: "Repeated multiplication by the recurrent Jacobian makes gradients vanish or explode over time."
+day: 8
+track: sequences
+order: 5
+level: advanced
+duration: 25
+prereqs: ["sequences/bptt","neural-networks/vanishing-exploding-gradients"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+
+<Step title="A signal that has to cross many steps">
+
+Take the sentence "The keys that I left on the table in the kitchen **are** missing." To predict "are" (and not "is"), a language model has to remember that the subject, "keys", is plural, ten words earlier. During training the gradient of the loss at "are" has to travel back through ten copies of the recurrent cell to tell the weights that "keys" mattered.
+
+The [last lesson](/learn/sequences/bptt/) showed that this backward trip multiplies the gradient by the same kind of factor at every step. Here we ask what happens when the trip is long. Drag the slider below: it sets how strongly the recurrent weights $W_{hh}$ amplify a vector, and the bars show how much gradient reaches each step. Small values make the early steps starve, and large values make them get far more than the last step.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={0.8} folded={false} maxLen={12} loopPhase="backward" showScale showPanel={false} title="How much gradient reaches each step depends on the recurrent weights" />
+
+</Step>
+
+<Step title="The gradient is a product of Jacobians">
+
+Follow one path of the gradient from step $T$ back to step $t$. The last lesson found that one step of the backward pass multiplies the gradient by the transpose of the one-step Jacobian $\partial \mathbf h_{k}/\partial \mathbf h_{k-1} = \operatorname{diag}(1-\mathbf h_k^2)\,W_{hh}$. Do that $T - t$ times and the total effect of $\mathbf h_t$ on $\mathbf h_T$ is the product of all of them:
+
+$$\frac{\partial \mathbf h_T}{\partial \mathbf h_t} = \prod_{k=t+1}^{T} \operatorname{diag}\bigl(1-\mathbf h_k^2\bigr)\,W_{hh}.$$
+
+A product of many matrices has a norm that, roughly, grows or shrinks exponentially in the number of factors. If each factor stretches a vector by less than 1, the product goes to zero exponentially fast. If it stretches by more than 1 it may blow up. There is no stable middle unless the weights are tuned to sit exactly at the edge.
+
+The figure adds an accent tick to every bar: the upper bound $\lVert \mathbf g_T\rVert\,\lVert\partial \mathbf h_T/\partial \mathbf h_t\rVert_2$ computed from this exact product of Jacobians. The gradient (magenta bar) can never rise above the tick, and here it stays within a factor of about two of it. Pin a step to see a new row in the panel: the $\tanh$ slope $1-\mathbf h^2$, which is one factor of the product.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={0.8} folded={false} maxLen={12} loopPhase="backward" showScale showBound select={6} title="The bars and the product-of-Jacobians bound" />
+
+<details>
+<summary>Show the math</summary>
+
+For a loss at the last step, the gradient at step $t$ is $\mathbf g_t = \bigl(\partial \mathbf h_T/\partial \mathbf h_t\bigr)^{\top}\mathbf g_T$. Take norms and use $\lVert AB\rVert_2 \le \lVert A\rVert_2\lVert B\rVert_2$:
+
+$$\lVert \mathbf g_t\rVert \;\le\; \lVert \mathbf g_T\rVert \prod_{k=t+1}^{T}\bigl\lVert \operatorname{diag}(1-\mathbf h_k^2)\bigr\rVert_2\,\lVert W_{hh}\rVert_2 \;\le\; \lVert \mathbf g_T\rVert\,(\gamma\,\sigma)^{T-t}.$$
+
+Here $\sigma = \lVert W_{hh}\rVert_2$ is the largest singular value of $W_{hh}$ and $\gamma = \max_{k,j}(1 - h_{k,j}^2) \le 1$ is the steepest $\tanh$ slope seen along the path. Since $\gamma \le 1$, **if $\sigma < 1$ the gradient must vanish exponentially**: $(\gamma\sigma)^{T-t} \le \sigma^{T-t} \to 0$.
+
+The converse is weaker. $\sigma > 1$ only makes explosion *possible*, because the $\tanh$ slopes shrink the product. A sufficient condition for a guaranteed vanish is $\gamma\sigma < 1$, and a necessary condition for exploding is $\sigma > 1/\gamma \ge 1$ (Pascanu et al., 2013).
+
+</details>
+
+</Step>
+
+<Step title="The largest singular value decides">
+
+The slider sets $\sigma$: in this widget every singular value of $W_{hh}$ equals $s$, so $W_{hh}$ stretches every direction by exactly $s$ before the $\tanh$ acts. That is a convenient way to see the effect in isolation.
+
+At $s = 1$ the recurrent matrix alone preserves the size of a vector. Yet the gradient still shrinks, about $\times 0.83$ per step on "hello world". The remaining factor comes from the $\tanh$: its slope is $1 - h^2$, at most 1 and typically less. On this sequence the average slope is $0.80$. So even a perfectly norm-preserving $W_{hh}$ does not keep the gradient alive, because the nonlinearity takes a small bite at every step.
+
+For gradients to survive you need $s$ above 1, to make up for the slope. That is the balancing act: too little, and the gradient dies; a bit more, and it neither vanishes nor explodes; too much, and it grows. The stable region is narrow and moves with the data, because the slopes depend on the states.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={1} folded={false} maxLen={12} loopPhase="backward" showScale showBound select={4} title="At s = 1 the matrix preserves size, the tanh still shrinks it" />
+
+</Step>
+
+<Step title="Saturation: why tanh limits the explosion">
+
+If a large $s$ makes gradients grow, why not increase it further? Because a large $s$ also drives the hidden state toward $\pm 1$, where the $\tanh$ slope is almost zero. Saturated units pass no gradient. So the explosion feeds its own brake: bigger $s$ gives bigger states, smaller slopes, and a gradient factor that grows more slowly than $s$ does.
+
+Measured on this widget's network on "hello world", the per-step factor of the gradient and the size of step 1 relative to step 11:
+
+<table>
+<thead>
+<tr><th scope="col">Scale $s$</th><th scope="col">Factor per step</th><th scope="col">Step 1 vs step 11</th><th scope="col">Mean tanh slope</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">0.5</th><td>0.45</td><td>0.033%</td><td>0.88</td></tr>
+<tr><th scope="row">0.8</th><td>0.70</td><td>2.8%</td><td>0.84</td></tr>
+<tr><th scope="row">1.0</th><td>0.83</td><td>15%</td><td>0.80</td></tr>
+<tr><th scope="row">1.5</th><td>1.08</td><td>2.2×</td><td>0.65</td></tr>
+<tr><th scope="row">2.0</th><td>1.29</td><td>13×</td><td>0.53</td></tr>
+<tr><th scope="row">3.0</th><td>1.35</td><td>20×</td><td>0.40</td></tr>
+</tbody>
+</table>
+
+The factor rises with $s$ but far less than $s$ itself: at $s = 3$ it is only $1.35$, and the mean slope has fallen to $0.40$. The dependence is also irregular, because which units saturate depends on the input. The figure below is pinned to step 8, where two of the four slopes are $0.00$ and $0.15$: those units pass almost no gradient back. Click other steps to see how the pattern changes.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={3} folded={false} maxLen={12} loopPhase="backward" showScale select={8} title="At s = 3 the states saturate and the slopes collapse" />
+
+</Step>
+
+<Step title="Vanishing: long-range dependencies are lost">
+
+Now the consequence. In the vanishing regime the gradient reaching a step ten positions back is a tiny fraction of the gradient at the loss, in this network $0.033\%$ at $s = 0.5$. The weights receive almost no instruction to preserve information from that far back, and any real signal is swamped by the gradient from nearby steps.
+
+This is the **vanishing gradient problem for recurrent networks**, described by Hochreiter (1991) and by Bengio, Simard and Frasconi (1994). Notice what it does and does not say:
+
+- It does not say the network *cannot represent* a long-range dependency. A cell with the right weights could carry information across many steps.
+- It says gradient descent **cannot find** those weights, because the learning signal from far-away steps is too weak. Short-range patterns are learned first and long-range ones never arrive.
+
+In practice a plain tanh RNN learns dependencies of roughly ten to twenty steps and struggles beyond that. Making the sequence longer does not help; it just adds more steps for the gradient to die on.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={0.5} folded={false} maxLen={12} loopPhase="backward" showPanel={false} title="s = 0.5: the first step gets 0.03% of the last step’s gradient" />
+
+</Step>
+
+<Step title="Exploding: clip the gradient norm">
+
+The opposite failure is easier to fix. When the gradient blows up, one step of gradient descent can throw the weights far away, the loss jumps and training diverges, often with a sudden spike to infinity or not-a-number. It shows up as a loss curve that is calm and then suddenly explodes.
+
+The standard remedy is **gradient norm clipping** (Pascanu et al., 2013). Compute the gradient $\mathbf g$ of the weights as usual. If its norm exceeds a threshold $c$, rescale it to length $c$ and keep its direction:
+
+$$\mathbf g \;\leftarrow\; \mathbf g \cdot \min\!\Bigl(1,\ \frac{c}{\lVert \mathbf g\rVert}\Bigr).$$
+
+The step is still in the right direction, just not longer than $c$. Set $s = 2$ in the figure below: the norm of $\partial L/\partial W_{hh}$ is $7.8$. With a threshold $c = 5$ it is scaled by $0.64$ down to length 5. Slide the threshold up above $7.8$ and nothing changes. The readout under the figure says which case you are in.
+
+Clipping tames explosion but does nothing for vanishing. You cannot rescale a gradient that is already near zero into carrying information it never received.
+
+<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={2} folded={false} maxLen={12} loopPhase="backward" showScale showClip showPanel={false} title="Gradient norm clipping on an exploding gradient" />
+
+<details>
+<summary>Show the code</summary>
+
+In PyTorch, clip the total gradient norm after `backward()` and before the optimizer step.
+
+```python
+loss.backward()
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)  # rescale if the norm exceeds 5
+optimizer.step()
+```
+
+And to see the product of Jacobians directly for a small network, multiply the one-step Jacobians and take the largest singular value:
+
+```python
+import numpy as np
+
+def jac_step(W_hh, h_k):                      # d h_k / d h_{k-1}
+    return np.diag(1 - h_k**2) @ W_hh
+
+J = np.eye(H)
+for h_k in states[t + 1:]:                    # k = t+1, ..., T
+    J = jac_step(W_hh, h_k) @ J
+print(np.linalg.norm(J, 2))                   # spectral norm: how strongly h_t still reaches h_T
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think vanishing gradients mean the RNN forgets during the forward pass. Actually** vanishing is about the *backward* pass: the learning signal to early steps is tiny. A network can carry information forward that it never learned to carry, and the two problems are related but different.
+
+**You might think exploding and vanishing gradients are opposite ends of one dial you can tune. Actually** the stable region is extremely narrow (spectral radius near one, slopes near one) and moves with the data. Tuning $\sigma$ by hand is fragile, so real models change the architecture instead.
+
+**You might think a larger learning rate fixes vanishing gradients. Actually** it scales the tiny gradient and the huge gradient from nearby steps by the same amount, so the imbalance stays, and it makes explosion far more likely.
+
+**You might think clipping solves the whole problem. Actually** it only bounds the size of a step. It cannot bring back gradient signal that decayed to nearly zero, so long-range learning is unchanged.
+
+**You might think ReLU fixes it for RNNs as it does for deep MLPs. Actually** a ReLU recurrent cell has slope 1 where it is active, but then the recurrent matrix alone decides whether things grow or shrink, so explosion becomes *more* likely, and inactive units pass exactly zero gradient.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. Write the gradient of the loss at step $t$ in terms of the gradient at the last step, using the Jacobian of the states.</summary>
+
+$\mathbf g_t = \bigl(\partial \mathbf h_T/\partial \mathbf h_t\bigr)^{\top}\mathbf g_T$, where $\partial \mathbf h_T/\partial \mathbf h_t = \prod_{k=t+1}^{T}\operatorname{diag}(1-\mathbf h_k^2)W_{hh}$. It is a product of $T-t$ one-step Jacobians.
+
+</details>
+
+<details>
+<summary>2. If the largest singular value of $W_{hh}$ is 0.9, can the gradient explode? Why or why not?</summary>
+
+No. Every factor has norm at most $\gamma\sigma \le 0.9 < 1$ (the $\tanh$ slope is at most 1), so the norm of the product is at most $0.9^{T-t}$, which shrinks exponentially. The gradient can only vanish or stay bounded.
+
+</details>
+
+<details>
+<summary>3. A $\tanh$ RNN has $\sigma = 1$ exactly. Does the gradient neither vanish nor explode?</summary>
+
+Not in general. The matrix preserves norm, but each step also multiplies by the $\tanh$ slope $1 - h^2$, which is below 1 whenever $h \ne 0$. The gradient therefore still shrinks, though more slowly than at $\sigma < 1$. In the figure, at $s = 1$ the factor is about 0.83 per step.
+
+</details>
+
+<details>
+<summary>4. Why does making $s$ very large not lead to unlimited gradient growth in a $\tanh$ network?</summary>
+
+A large $s$ pushes states toward $\pm 1$, where the $\tanh$ slope is near zero, so those units pass almost no gradient. Saturation shrinks the Jacobian factor and limits the growth, which is why the factor at $s=3$ (1.35) is much less than $3$.
+
+</details>
+
+<details>
+<summary>5. Gradient clipping is applied and training becomes stable, but the model still cannot learn a dependency 50 steps long. Why?</summary>
+
+Clipping only prevents big gradients from causing big steps. The long-range gradient has vanished, and scaling it cannot restore information it never carried. Solving that needs a cell whose gradient path does not decay, which is what LSTM and GRU cells provide (next lesson).
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Yoshua Bengio, Patrice Simard and Paolo Frasconi, "Learning long-term dependencies with gradient descent is difficult", *IEEE Transactions on Neural Networks* 5(2), 157-166 (1994). The paper that proves recurrent networks cannot easily learn long-term dependencies by gradient descent, and shows the trade-off between storing information and being trainable.
+- Sepp Hochreiter, "Untersuchungen zu dynamischen neuronalen Netzen", diploma thesis, Technische Universitaet Muenchen (1991). The earliest analysis of the vanishing gradient (in German).
+- Razvan Pascanu, Tomas Mikolov and Yoshua Bengio, "On the difficulty of training recurrent neural networks", ICML 2013 ([arXiv:1211.5063](https://arxiv.org/abs/1211.5063)). The singular-value analysis used here, and gradient norm clipping.
+- Goodfellow, Bengio and Courville, [Deep Learning, section 10.7: The Challenge of Long-Term Dependencies](https://www.deeplearningbook.org/contents/rnn.html).
+
+Next: [LSTMs and GRUs: gates as valves](/learn/sequences/lstm-gru/).
+
+</Step>

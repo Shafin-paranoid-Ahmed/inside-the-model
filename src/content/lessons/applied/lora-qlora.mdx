@@ -1,0 +1,176 @@
+---
+title: "Fine-Tuning Efficiently: LoRA and QLoRA"
+summary: "Train small low-rank update matrices instead of all weights; QLoRA also stores the frozen base model in 4 bits."
+day: 14
+track: applied
+order: 7
+level: advanced
+duration: 30
+prereqs: ["alignment/sft","math/matrices"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+Fine-tune a huge model by training only a sliver of extra parameters.
+
+<Step title="What full fine-tuning costs">
+
+Full fine-tuning updates every weight, so it needs memory for the weights, their gradients and the optimizer's state for each one.
+
+{/*
+IDEA: memory per parameter for full fine-tuning with Adam in mixed precision: weights, gradients, two Adam moments, often an fp32 master copy. Use the breakdown from a primary source (ZeRO paper, Rajbhandari et al. 2020, arXiv:1910.02054, states 16 bytes per parameter for mixed-precision Adam; VERIFY) and compute totals, never quote from memory.
+WIDGET: LoRALab mode="memory" model="7B". Stacked bars of memory for full fine-tuning: weights, gradients, optimizer state, activations shown as "not counted". A model-size select (tiny demo model, 1B, 7B, 70B).
+MOTION over t: bars stack segment by segment with byte counts tweening; a reference line marks one 80 GB GPU.
+TRY: switch model size.
+QUOTE: bytes per parameter and total GB for 7B and 70B (computed from the formula in sim.ts).
+*/}
+
+</Step>
+
+<Step title="The low-rank update: W + BA">
+
+LoRA freezes the original weight matrix and learns its change as the product of two thin matrices, B and A, whose inner size r is small.
+
+{/*
+IDEA: W' = W + (alpha / r) B A, with B (d x r), A (r x k), B initialised to 0 so training starts exactly at the base model. Rank r limits the update to r directions.
+WIDGET: LoRALab mode="lowrank" r=2. Real matrices: base W (32x32 heat map), B (32x2), A (2x32), product BA (32x32) shown as the outer-product sum of r rank-1 layers, W + BA.
+MOTION over t: the r rank-1 layers (column of B times row of A) are drawn one by one and stacked into BA; then BA adds onto W.
+TRY: change r between 1, 2, 4 and 8 and see the update's structure (stripes for r = 1).
+QUOTE: parameters in BA (2 x 32 x r) vs in W (1024); rank of BA (r).
+SHOW THE MATH: h = W x + (alpha/r) B A x; parameter count r(d + k) vs dk.
+SHOW THE CODE: a 10-line PyTorch LoRALinear (frozen weight, A random, B zeros), matching the sim.
+*/}
+
+</Step>
+
+<Step title="Training only the adapter">
+
+During fine-tuning only A and B receive gradient updates, and on many tasks a small rank reaches nearly the loss of updating everything.
+
+{/*
+IDEA: real training in sim.ts (no worker needed if under 50 ms; else worker): base linear model W0 (32x32) pretrained on task A; task B's true change is low-rank plus small noise. Train full fine-tuning and LoRA r = 1, 2, 4, 8 with the same optimizer and steps; seeded.
+WIDGET: LoRALab mode="train". Loss-vs-update curves (log loss axis) for full and each rank; a parameter-count column beside the legend.
+MOTION over t: all curves draw together over training; a cursor shows update number and each loss.
+TRY: hover a curve end to compare loss per trained parameter.
+QUOTE: final loss for full and r = 1, 2, 4, 8; trainable parameters for each.
+*/}
+
+</Step>
+
+<Step title="Why low rank is enough">
+
+The change that full fine-tuning makes is often close to low rank, which is why a rank-r update can capture most of it.
+
+{/*
+IDEA: SVD of the full fine-tuning delta (W_full − W0): singular values fall off fast when the task change is low-rank; the energy captured by the top r singular values. Then the same with a task whose true change is full rank, where small r fails (honest counter-case).
+WIDGET: LoRALab mode="spectrum" task="low-rank" with a task toggle ("low-rank change" / "full-rank change"). Bar chart of the 32 singular values (log axis), cumulative energy line, and the final LoRA loss at each r.
+MOTION over t: singular values rise in order; the cumulative energy line draws; a marker steps through r = 1, 2, 4, 8 with the matching LoRA loss.
+TRY: switch to the full-rank task.
+QUOTE: energy in the top 2 singular values for each task; LoRA r = 2 loss for each task.
+SOURCE: Hu et al. 2021 (LoRA) report that very low ranks suffice on their benchmarks, arXiv:2106.09685; Aghajanyan et al. 2020, "Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning", arXiv:2012.13255.
+*/}
+
+</Step>
+
+<Step title="Merging: no extra cost at inference">
+
+After training, the product BA can be added into W once, so the fine-tuned model runs exactly as fast as the original.
+
+{/*
+IDEA: merge W' = W + (alpha/r) BA; outputs identical to the unmerged adapter up to float rounding; adapters can be swapped by subtracting one and adding another.
+WIDGET: LoRALab mode="merge" r=4. Input x passes through two paths (W x + B A x, and W' x); output vectors side by side; max absolute difference readout.
+MOTION over t: particles flow along both paths; outputs fill in; then the merge animation folds BA into W and the two-path diagram becomes one path.
+TRY: swap to a second adapter (task C) and back.
+QUOTE: max absolute difference between merged and unmerged outputs (rounding level); multiply-adds per input for each path.
+*/}
+
+</Step>
+
+<Step title="QLoRA: a 4-bit base model">
+
+QLoRA stores the frozen base weights in 4 bits to cut memory further, and trains LoRA adapters on top in higher precision.
+
+{/*
+IDEA: blockwise quantization: per block of 64 weights, scale by the block's absolute max, round to one of 16 levels. Compare uniform int4 levels with NF4 levels (quantiles of a normal distribution, as defined in Dettmers et al. 2023, arXiv:2305.14314; compute the levels from that definition in sim.ts and test against the paper's table, VERIFY). Double quantization of the scales mentioned in prose only.
+WIDGET: LoRALab mode="quantize" scheme="nf4". Histogram of W0's weights with the 16 level positions as vertical lines; each weight's rounding error; MSE readout; toggle int4 vs nf4.
+MOTION over t: one block is highlighted, normalised by its absmax, weights snap to their nearest level (dots slide), error bars appear; then all blocks at once and the MSE settles.
+TRY: switch between int4 and nf4 and compare MSE.
+QUOTE: weight MSE for int4 and nf4; memory per weight including the scale (4 + 32/64 bits).
+SHOW THE CODE: absmax blockwise quantize/dequantize in 8 lines of NumPy.
+*/}
+
+</Step>
+
+<Step title="Adapters recover what quantization loses">
+
+Training LoRA on top of the quantized base lets the adapter absorb part of the quantization error along with the new task.
+
+{/*
+IDEA: task-B loss for: full-precision base + LoRA, 4-bit base alone, 4-bit base + LoRA (same r, same steps). Then the memory bars from step 1 extended with LoRA and QLoRA.
+WIDGET: LoRALab mode="qlora" r=4. Left: loss curves for the three setups; right: memory bars (full FT, LoRA on 16-bit base, QLoRA) for the selected model size.
+MOTION over t: curves draw over training; memory bars grow to their totals.
+TRY: switch model size to 70B.
+QUOTE: final losses for the three setups; total GB for 7B in each setup; the QLoRA paper's headline (65B fine-tuned on a single 48 GB GPU, VERIFY in the abstract).
+*/}
+
+</Step>
+
+<Step title="Fine-tune, prompt or retrieve?">
+
+Fine-tuning changes how a model behaves and needs training examples; prompting and retrieval change what it sees and need none.
+
+{/*
+IDEA: fine-tuning needs data; with very few examples LoRA overfits, so prompting or RAG is the better first move; facts that change belong in retrieval (link /learn/applied/rag/), formats and behaviour in fine-tuning.
+WIDGET: LoRALab mode="data" r=4. Train and test loss of LoRA after training on n = 4, 16, 64, 256 examples of task B; bars or a curve with log x.
+MOTION over t: n sweeps upward; train and test loss curves for each n draw; the gap shrinks.
+TRY: hover each n.
+QUOTE: train vs test loss at n = 4 and n = 256.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few beliefs about efficient fine-tuning that do not hold up.
+
+{/*
+NO WIDGET. Intended misconceptions:
+1. "LoRA makes the model smaller." The base model is unchanged in size; only the trainable part is small.
+2. "LoRA is slower at inference." Merged, it costs nothing extra.
+3. "4-bit means a quarter of the quality." Measured weight error is small with NF4 and the adapter compensates part of it (quote sim).
+4. "Fine-tuning is the way to add knowledge." Facts that change belong in retrieval; fine-tuning mainly shapes behaviour (cite a source or phrase as guidance).
+5. "Rank should be as high as possible." Past the task's intrinsic rank, extra rank adds parameters without lowering loss (spectrum step).
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Short questions to test the ideas above.
+
+{/*
+NO WIDGET. Questions:
+1. Trainable parameters of LoRA r = 8 on a 4096 x 4096 matrix, and the fraction of the full matrix?
+2. Why is B initialised to zero?
+3. Bytes for 7B weights in 16-bit and in 4-bit (ignore scales)?
+4. Why does NF4 put more levels near zero?
+5. A team has 30 examples of the desired output style. LoRA or few-shot prompt first, and why?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources for going further.
+
+{/*
+NO WIDGET. Cite:
+- Hu et al. 2021, "LoRA: Low-Rank Adaptation of Large Language Models", arXiv:2106.09685.
+- Dettmers et al. 2023, "QLoRA: Efficient Finetuning of Quantized LLMs", arXiv:2305.14314.
+- Aghajanyan et al. 2020, arXiv:2012.13255.
+- Houlsby et al. 2019, "Parameter-Efficient Transfer Learning for NLP" (adapters), arXiv:1902.00751.
+- Rajbhandari et al. 2020, "ZeRO", arXiv:1910.02054 (memory per parameter, VERIFY).
+- Hugging Face PEFT library documentation (VERIFY URL).
+*/}
+
+</Step>

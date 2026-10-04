@@ -1,0 +1,210 @@
+---
+title: "Inference: KV Cache and Batching"
+summary: "Cache keys and values of past tokens so each new token costs one step, and batch requests for throughput."
+day: 10
+track: llms
+order: 4
+level: advanced
+duration: 30
+prereqs: ["llms/sampling","transformers/self-attention"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import KVCacheLab from '../../../components/widgets/KVCacheLab/KVCacheLab.svelte';
+
+Generating token N without a cache would recompute everything from scratch. This lesson shows how much work that wastes, what the cache fixes, and what it costs in memory. The numbers for the small model come from a real run on this page; the numbers for Llama models come from their published configurations.
+
+<Step title="The generation loop">
+
+A language model writes one token at a time. It reads the text so far, predicts the next token, adds it to the end, and runs again on the longer text. This works because of the causal mask ([causal masking](/learn/transformers/causal-masking/)): each position looks only at earlier positions, so adding a token at the end never changes what came before.
+
+The model here is the small character-level model from this day, trained on *Alice in Wonderland*. Real models use BPE tokens instead of characters ([tokenization](/learn/transformers/tokenization/)), but the loop is the same. It always picks its most likely next character, so the run is repeatable. In the figure, a space shows as a dot.
+
+The prompt is 16 characters, and the model adds 12 more. Each step, the whole text lights up in both layers, then the predicted character slides to the end of the row. Counting every character that goes through the model, step by step, gives 16 + 17 + … + 27 = **258 positions** for just 12 new characters. Scrub back and forth and notice that the model is run once for every new character, and each time on a longer text.
+
+<KVCacheLab client:visible mode="loop" title="Each new character means another run over the whole text" />
+
+</Step>
+
+<Step title="Most of that work is repeated">
+
+Look at what the model computes for a character such as the `a` at position 4. Its keys and values in every layer depend only on the characters up to position 4, because of the mask. When the text grows by one character, those characters have not changed, so those keys and values have not changed either. Yet without a cache the model computes them again at every step.
+
+The grid shows it. Each row is a generation step and each column a position in the text. A cell lights up when the model processes that position in that step. Teal cells are new work. Hatched cells repeat work from an earlier row. After the first step, only the last cell of each row is new.
+
+The counter counts **multiply-adds**, the basic arithmetic of a neural network (counted from the model's shapes, not timed). Generating up to 64 characters from the 16-character prompt takes **67,758,912** of them, and **96.6%** repeats work done before. Drag the length slider down to 32 characters: the total falls to 12,897,216. Doubling the text length multiplied the work by about 5, because every step is longer as well as there being more steps.
+
+<KVCacheLab client:visible mode="nocache" title="Re-reading the whole text at every step" />
+
+</Step>
+
+<Step title="The KV cache">
+
+In attention, every position produces a **query** (what it is looking for), a **key** (what it offers) and a **value** (what it passes on). A new position needs its own query, plus the keys and values of all earlier positions. Those earlier keys and values never change, so store them. This stored collection is the **KV cache**. Each step then runs only the newest character through the model, adds its key and value as one new row in each layer's cache, and lets its query read all the stored rows.
+
+In the figure, the coloured blocks are the real stored keys and values of both layers, one row per character. The thin bar beside each layer shows how strongly the newest character attends to each stored row. The chart shows work per step on a log scale: the dashed line is the no-cache run from the previous step, the teal line the cached run.
+
+With the cache the same 64-character run takes **2,336,040** multiply-adds, **29.0 times fewer** than the 67,758,912 without it. The last step costs 41,544 with the cache and 2,336,040 without. That 2,336,040 is no coincidence: the whole cached run costs exactly what one full pass over the 63 stored characters costs, because the cache does each position's work once and no more. The cache changes the cost, not the answer: the readout compares the logits (the model's raw scores) of every cached step with a full uncached pass over the same text, and the largest difference is **0**. Untick the comparison to see the chart without the dashed line.
+
+<KVCacheLab client:visible mode="cache" title="Store keys and values once, read them every step" />
+
+<details>
+<summary>Show the math</summary>
+
+At step $t$ the new token has hidden state $h_t$. In each layer, with learned matrices $W_q, W_k, W_v$:
+
+$$q_t = W_q h_t,\quad k_t = W_k h_t,\quad v_t = W_v h_t$$
+
+Append $k_t$ and $v_t$ to the cached matrices $K_{1:t-1}$ and $V_{1:t-1}$ to get $K$ and $V$ with $t$ rows. The output is
+
+$$\mathrm{softmax}\!\left(\frac{q_t K^\top}{\sqrt{d}}\right) V$$
+
+where $d$ is the width of one head. Rows $1$ to $t-1$ of $K$ and $V$ are exactly what earlier steps computed, so nothing is approximated.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import torch
+
+def decode_step(x_new, layer, cache):
+    q = layer.wq(x_new)                      # (1, d)
+    k = layer.wk(x_new)
+    v = layer.wv(x_new)
+    cache.k = torch.cat([cache.k, k], dim=0) # (t, d): one new row
+    cache.v = torch.cat([cache.v, v], dim=0)
+    scores = q @ cache.k.T / q.shape[-1] ** 0.5
+    return torch.softmax(scores, dim=-1) @ cache.v
+```
+
+Real implementations split this into heads and preallocate the buffers instead of calling `torch.cat` every step.
+
+</details>
+
+</Step>
+
+<Step title="The cache costs memory">
+
+The cache keeps two numbers (one key, one value) per layer for each of the model's key-value dimensions, for every token of every conversation:
+
+bytes = 2 × layers × key-value width × tokens × batch × bytes per number.
+
+The **batch** is how many conversations the GPU serves at once. With 16-bit numbers (2 bytes), Llama 2 7B (32 layers, width 4,096) stores **0.5 MiB per token**, so one 4,096-token conversation holds **2 GiB** of cache. The small model on this page needs only 288 bytes per token.
+
+Both axes in the figure are logarithmic, so each line is straight. The dashed line is a GPU with 80 GB of memory. With a batch of 8, the Llama 2 7B cache alone fills it at **19,073 tokens**. Llama 3 8B shares keys and values between groups of heads (**grouped-query attention**), so its key-value width is 1,024 instead of 4,096 and it needs 128 KiB per token; it fills the GPU at **76,294**. Raise the batch slider and watch both crossing points move left.
+
+<KVCacheLab client:visible mode="memory" title="The cache grows with every token and every conversation" />
+
+Sharing keys and values across heads was proposed as multi-query attention by [Shazeer (2019)](https://arxiv.org/abs/1911.02150) and generalised to groups of heads by [Ainslie et al. (2023)](https://arxiv.org/abs/2305.13245). The configurations used here are from the [Llama 2 paper](https://arxiv.org/abs/2307.09288) (Llama 2 7B: 32 layers, width 4,096, 32 heads, no sharing) and the [Llama 3 paper](https://arxiv.org/abs/2407.21783) (Llama 3 8B: 32 layers, width 4,096, 32 heads, 8 key-value heads of 128 dimensions each). The 80 GB figure is the H100 SXM from the [NVIDIA H100 datasheet](https://www.nvidia.com/en-us/data-center/h100/).
+
+</Step>
+
+<Step title="Prefill and decode">
+
+Serving has two phases. In **prefill**, the whole prompt goes through the model in one parallel pass and fills the cache. In **decode**, the answer is produced one token at a time, each step reading the cache and adding to it. The time before the first token appears is the prefill. The time between later tokens is the decode.
+
+The two phases use the hardware very differently. Every step must read all the model's weights from memory. In prefill, each weight read is used for all 32 prompt characters at once. In decode, it is used for just one. The ratio of arithmetic to memory traffic is the **arithmetic intensity**, in operations per byte of weights. For this model, stored with 1 byte per weight (35,822 bytes), prefill of 32 characters does 2,230,272 operations, or **62.3 operations per weight byte**. A decode step does between 74,448 and 83,088, which is **2.1 to 2.3 per byte**.
+
+The log-scale chart pairs each step's operations (teal) with the weight bytes it reads (yellow). In prefill the teal bar towers over the yellow one. In decode they sit almost together. Drag the prompt-length slider to 56 and prefill's intensity grows to 114, while decode's stays near 2.
+
+<KVCacheLab client:visible mode="phases" title="Prefill does a lot per weight read, decode very little" />
+
+</Step>
+
+<Step title="Batching and the memory-bandwidth wall">
+
+At about two operations per byte, decode leaves the GPU's arithmetic units mostly idle: the time goes into reading weights. The **roofline model** ([Williams, Waterman and Patterson, 2009](https://doi.org/10.1145/1498765.1498785)) captures this. The attainable speed is the smaller of the chip's peak arithmetic rate and its memory bandwidth times the arithmetic intensity. On a log chart that is a sloped line (limited by memory bandwidth) that meets a flat line (limited by arithmetic) at the **ridge**.
+
+Serving a **batch** of conversations together reads each weight once and uses it for every conversation, so decode's intensity grows with the batch. With 16-bit weights it is about one operation per byte for each conversation in the batch. The chart uses the H100 SXM at 989.5 trillion operations per second (dense 16-bit; the datasheet's 1,979 is with sparsity) and 3.35 TB/s of bandwidth, so the ridge is at **295 operations per byte**, and Llama 2 7B (13.5 GB of weights in 16 bits).
+
+At batch 1 the estimate is **249 tokens per second**. Each doubling of the batch doubles the total, up to about 73,000 tokens per second at the ridge, and each user still gets 249 per second. But watch the memory bar at the bottom. At 4,096 tokens each conversation adds 2 GiB of cache, and the **largest batch that fits is 30**, long before batch 295. The cache, not the arithmetic, runs out first. Choose Llama 3 8B and the limit rises to 119, since its cache is four times smaller; choose 16,384 tokens of context with Llama 2 and it falls to 7. Real systems manage cache memory carefully ([vLLM](https://arxiv.org/abs/2309.06180), Kwon et al. 2023) and add new requests to a running batch at every step ([Orca](https://www.usenix.org/conference/osdi22/presentation/yu), Yu et al. 2022). The estimate counts weight reads only; reading the cache costs extra time, so real speeds are lower.
+
+<KVCacheLab client:visible mode="batch" title="A bigger batch reuses each weight read, until memory runs out" />
+
+<details>
+<summary>Show the math</summary>
+
+Each decoded token needs about $2P$ operations for a model with $P$ parameters (one multiply and one add per weight), and a batch of $b$ tokens reuses the same weight reads:
+
+$$I \approx \frac{2Pb}{B_w P} = \frac{2b}{B_w}\ \text{operations per byte}$$
+
+with $B_w$ bytes per weight, so $I \approx b$ for 16-bit weights. The roofline is
+
+$$\text{speed} = \min\!\left(F_{\text{peak}},\; \mathrm{BW}\cdot I\right),\qquad I_{\text{ridge}} = \frac{F_{\text{peak}}}{\mathrm{BW}}$$
+
+For the chart, $989.5\times 10^{12} / 3.35\times 10^{12} \approx 295$. Tokens per second is the speed divided by $2P$.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+You might think **the KV cache is an approximation**. It is exact. Step 3 compared every cached step with a full recomputation and the logits matched.
+
+You might think **inference speed is limited by the GPU's arithmetic**. At small batch, decode is limited by memory bandwidth: at batch 1 the chip does a few operations per byte read and waits for the rest.
+
+You might think **caching makes attention free**. Each new token still attends over every cached row, so the attention work per token grows with the context length. The cache removes repeated computation, not the reading.
+
+You might think **a long prompt only slows the first token**. Every later token also reads a longer cache, and the cache takes memory for as long as the conversation lasts.
+
+You might think **batching makes each request faster**. It raises the total throughput. Each user's speed stays flat until the ridge and then falls, and in practice waiting to form a batch can add delay.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. Without a cache, how does the total work for N generated tokens grow?</summary>
+
+Every step re-processes the whole text, so the number of positions processed is about 1 + 2 + … + N, which grows with the square of N. With a cache each token is processed once, so it grows with N.
+
+</details>
+
+<details>
+<summary>2. A 32-layer model has a key-value width of 1,024 and 16-bit numbers. How big is its cache for one 8,192-token conversation?</summary>
+
+2 × 32 × 1,024 × 2 bytes × 8,192 tokens = 1,073,741,824 bytes, which is 1 GiB.
+
+</details>
+
+<details>
+<summary>3. Why does prefill have high arithmetic intensity and decode low?</summary>
+
+Both read all the weights once per step. Prefill uses each weight for every prompt token, decode for one token.
+
+</details>
+
+<details>
+<summary>4. What does grouped-query attention change, and what does it not change?</summary>
+
+It shrinks the key-value width by sharing keys and values among groups of heads, so the cache and the cache reads get smaller. It does not change the number of query heads or the weights' read-once-per-step cost.
+
+</details>
+
+<details>
+<summary>5. Why does a bigger batch eventually stop helping?</summary>
+
+Either the arithmetic units become the bottleneck (past the ridge, the speed is flat), or the cache no longer fits in memory, which usually happens first.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+Primary papers and sources used in this lesson:
+
+- Reiner Pope et al., ["Efficiently Scaling Transformer Inference"](https://arxiv.org/abs/2211.05102) (2022), an analytical treatment of prefill, decode, batch size and cache cost.
+- Noam Shazeer, ["Fast Transformer Decoding: One Write-Head is All You Need"](https://arxiv.org/abs/1911.02150) (2019).
+- Joshua Ainslie et al., ["GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints"](https://arxiv.org/abs/2305.13245) (2023).
+- Woosuk Kwon et al., ["Efficient Memory Management for Large Language Model Serving with PagedAttention"](https://arxiv.org/abs/2309.06180), SOSP 2023.
+- Gyeong-In Yu et al., ["Orca: A Distributed Serving System for Transformer-Based Generative Models"](https://www.usenix.org/conference/osdi22/presentation/yu), OSDI 2022, pages 521 to 538.
+- Samuel Williams, Andrew Waterman and David Patterson, ["Roofline: An Insightful Visual Performance Model for Multicore Architectures"](https://doi.org/10.1145/1498765.1498785), Communications of the ACM 52(4), 2009.
+- Hugo Touvron et al., ["Llama 2"](https://arxiv.org/abs/2307.09288) (2023), and the [Llama 3 herd of models](https://arxiv.org/abs/2407.21783) (2024).
+
+Quantization and speculative decoding come next in [efficient inference](/learn/frontier/efficient-inference/). The next lesson in this day is [emergent abilities and in-context learning](/learn/llms/emergent-icl/).
+
+</Step>

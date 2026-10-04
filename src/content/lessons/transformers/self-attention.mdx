@@ -1,0 +1,218 @@
+---
+title: "Self-Attention: Queries, Keys, Values"
+summary: "Each token builds a weighted mix of all tokens' values, weights from query-key similarity."
+day: 9
+track: transformers
+order: 3
+level: advanced
+duration: 45
+prereqs: ["transformers/embeddings","math/dot-product","math/matrices"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import AttentionExplorer from '../../../components/widgets/AttentionExplorer/AttentionExplorer.svelte';
+
+Every word asks a question, and every earlier word offers an answer.
+
+<Step title="Every word gathers information from the others">
+
+Take the sentence "these small sheep chase a red fox". To predict that the verb is **chase** and not **chases**, the model has to know that "sheep" is plural here, and "sheep" looks the same in singular and plural. The evidence is two words back, in "these". So at the word "sheep" the model needs a way to go and look at "these".
+
+**Self-attention** is that way of looking. Every word gets to read from the other words of its own sentence and decides **how much** to take from each. The amounts are called **attention weights**: positive numbers for each word that add up to 1. It is the same score, weigh and mix pattern as in the [seq2seq attention lesson](/learn/sequences/seq2seq-attention/), except the words read from their own sentence instead of from a separate encoder.
+
+The figure runs a small trained transformer, **TinyLM**, on this sentence. It reads left to right, so a word can only look at itself and the words before it; later words are masked, which [the causal masking lesson](/learn/transformers/causal-masking/) explains. Each arc goes from the word being processed to a word it reads from, and a thicker arc means a larger weight. The model has two layers with two **heads** each, meaning two independent attention patterns per layer; this is layer 1, head 2. TinyLM works on 34 whole words so you can read it. Real models split text into [subword tokens](/learn/transformers/tokenization/) first.
+
+Pause on "sheep". It puts **0.56** of its attention on "these", 0.23 on itself, 0.13 on "[start]" and 0.08 on "small". That is the lookup we wanted.
+
+<AttentionExplorer client:visible mode="arcs" layer={1} head={2} query="sheep" title="Where each word looks, layer 1 head 2" />
+
+</Step>
+
+<Step title="Queries, keys and values">
+
+How does "sheep" know that "these" is the word to read? Each word's vector is turned into three new vectors by three learned matrices, $W_Q$, $W_K$ and $W_V$:
+
+- the **query**: what this word is looking for,
+- the **key**: what this word offers to be found by,
+- the **value**: what this word hands over once it is chosen.
+
+Keeping them apart matters. The label on a drawer ("socks") need not be the same as what is in it. A word can be easy to find for one reason and pass on something different.
+
+All eight words are processed at once. Their vectors (16 numbers each, after a layer normalisation that rescales them) form an $8 \times 16$ grid. Each matrix is $16 \times 8$, so each word ends up with a query, a key and a value of 8 numbers, three $8 \times 8$ grids. Watch one row of the left grid flow through each matrix and fill one row of each result. Hover any cell to read its number.
+
+<AttentionExplorer client:visible mode="qkv" layer={1} head={2} title="One word at a time, three new vectors" />
+
+<details>
+<summary>Show the math</summary>
+
+With $X$ the $T \times 16$ matrix of word vectors, one row per word, and one head's matrices $W_Q, W_K, W_V$ of size $16 \times 8$:
+
+$$Q = X W_Q + \mathbf b_Q, \qquad K = X W_K + \mathbf b_K, \qquad V = X W_V + \mathbf b_V,$$
+
+each $T \times 8$. TinyLM adds a small bias vector to each, written $\mathbf b$ here. The two heads of a layer have their own pair of matrices; the [next lesson](/learn/transformers/multi-head-attention/) shows how they fit together.
+
+</details>
+
+</Step>
+
+<Step title="Scores: queries times keys">
+
+A key is found by a query that matches it. "Matches" here means a large **dot product**, the sum of the products of the matching numbers (see the [dot product lesson](/learn/math/dot-product/)). The dot product of the query of word $i$ with the key of word $j$ is a **score**: large and positive for a good match, negative for a bad one.
+
+Doing it for every pair of words is one matrix product, $Q K^{\top}$, an $8 \times 8$ grid. Row $i$ holds the scores of word $i$'s query against every key.
+
+Watch the row for "sheep". For the key of "these", multiplying the two 8-number strips number by number and adding gives **2.53**. The scores for "[start]", "small" and "sheep" itself are $-1.50$, $-2.93$ and $0.00$. So among the words it may read, the best match for "sheep" is "these", which is what the arcs showed. The cells right of the diagonal are later words, and some of them score higher ($2.6$ for "chase", $2.9$ for "fox"). They are scored too, since the matrix product does every pair, and they are hatched because the model masks them in the next step.
+
+<AttentionExplorer client:visible mode="scores" layer={1} head={2} query="sheep" title="Every query scored against every key" />
+
+<details>
+<summary>Show the math</summary>
+
+$$S_{ij} = \mathbf q_i \cdot \mathbf k_j = \sum_{d=1}^{8} q_{id}\,k_{jd}, \qquad S = Q K^{\top}.$$
+
+</details>
+
+</Step>
+
+<Step title="Scale, then softmax">
+
+Raw scores are not weights: they can be negative and they do not add up to 1. Two things fix that.
+
+First, divide every score by $\sqrt{d_k}$, the square root of the key length. Here $d_k = 8$, so the divisor is $2.83$. Second, the later words are masked, so their weight will be exactly zero. Then apply [softmax](/learn/foundations/softmax-cross-entropy/), which turns the remaining scores into positive weights that add up to 1, with the largest score getting the largest weight.
+
+The division matters because a dot product of 8 numbers is a sum of 8 terms, so its typical size grows with the length of the vectors. Big scores make softmax nearly one-hot, so one word takes everything, and learning gets stuck. Dividing by $\sqrt{d_k}$ keeps the scores at a moderate size.
+
+For "sheep" the scores $-1.50, 2.53, -2.93, 0.00$ become $-0.53, 0.89, -1.04, 0.00$ and then the weights **0.13, 0.56, 0.08, 0.23**. Now jump to "Without scaling" on the timeline: the same row without the division puts **0.91** on "these" instead of 0.56.
+
+<AttentionExplorer client:visible mode="softmax" layer={1} head={2} query="sheep" title="From scores to weights, with and without the division" />
+
+<details>
+<summary>Show the math</summary>
+
+$$A = \operatorname{softmax}\!\left(\frac{Q K^{\top}}{\sqrt{d_k}}\right), \qquad A_{ij} = \frac{e^{S_{ij}/\sqrt{d_k}}}{\sum_{m \le i} e^{S_{im}/\sqrt{d_k}}},$$
+
+where the sum only runs over words up to $i$ (the masked words are left out). If the entries of $\mathbf q$ and $\mathbf k$ are independent with mean 0 and variance 1, then $\mathbf q \cdot \mathbf k$ has mean 0 and variance $d_k$, so dividing by $\sqrt{d_k}$ brings its variance back to 1.
+
+</details>
+
+</Step>
+
+<Step title="A weighted sum of values">
+
+The weights decide how much to take; the **values** are what is taken. The output for a word is each value multiplied by its weight, added up:
+
+$$\text{output}_i = \sum_j A_{ij}\,\mathbf v_j.$$
+
+For "sheep" that is $0.13 \times$ the value of "[start]", plus $0.56 \times$ "these", plus $0.08 \times$ "small", plus $0.23 \times$ "sheep". Words with weight 0 contribute nothing. Watch the values flow into the running total, one word at a time.
+
+The result is mostly the value of "these", with a little of everything else. The output and the value of "these" point in nearly the same direction: their cosine similarity is **0.93**. This is the actual transfer of information. The weights only chose the mix. The output goes on to the rest of the network. It is one route by which "sheep" can pick up that it is plural: with this head switched off, the model's probability on grammatical words after "sheep" falls from 0.998 to 0.945 (the [next lesson](/learn/transformers/multi-head-attention/) lets you switch heads off yourself).
+
+<AttentionExplorer client:visible mode="mix" layer={1} head={2} query="sheep" title="Values flow into one output" />
+
+<details>
+<summary>Show the code</summary>
+
+The whole single-head computation, as in the figures. TinyLM also adds a bias vector to $Q$, $K$ and $V$, left out here.
+
+```python
+import numpy as np
+
+def attention(X, Wq, Wk, Wv):             # X: (T, 16), W*: (16, 8)
+    Q, K, V = X @ Wq, X @ Wk, X @ Wv      # (T, 8) each
+    S = Q @ K.T / np.sqrt(K.shape[1])     # (T, T) scaled scores
+    S = np.where(np.tril(np.ones_like(S)) == 1, S, -np.inf)  # hide later words
+    A = np.exp(S - S.max(1, keepdims=True))
+    A /= A.sum(1, keepdims=True)          # each row adds up to 1
+    return A @ V, A                       # (T, 8) outputs, (T, T) weights
+```
+
+</details>
+
+</Step>
+
+<Step title="The attention explorer">
+
+Here is the whole pipeline on the real matrices of TinyLM, for any sentence you like. Type words from its 34-word vocabulary, choose a layer and a head, and hover a word (or tap it, or use the buttons) to see everything it does: the arcs, its row of the weight grid, and the four steps of score, divide, softmax and mix. Left alone, the figure tours the words one by one.
+
+With layer 1 head 2 selected, compare "the sheep chase a fox" with "this sheep chases a fox". In the second sentence "sheep" puts **0.62** on "this", which tells it the word is singular. In the first it puts only **0.22** on "the" and 0.60 on itself, because "the" says nothing about number. This head looks hardest at the word that carries the information.
+
+The other heads do other things. In the default sentence the strongest link from a word back to an earlier one is "small" to "these" at 0.60 in layer 1 head 1, "red" to "a" at 0.84 in layer 1 head 2, "chase" to "[start]" at 0.96 in layer 2 head 1, and "these" to "[start]" at 0.999 in layer 2 head 2. A weight of 1 on "[start]" is a head that has nothing to look for, so it parks there.
+
+<AttentionExplorer client:visible mode="explorer" sentence="these small sheep chase a red fox" layer={1} head={2} title="Type a sentence, pick a head, hover a word" />
+
+</Step>
+
+<Step title="Any word can reach any other in one step">
+
+Why use attention instead of a recurrent network, which also reads a sentence? Because of distance. A recurrent network passes what it has read from one word to the next, so information from "these" must survive every step before it reaches "fox". Attention connects any two words directly.
+
+In "these small old sheep chase a red fox" there are **7 hops** from "these" to "fox" through the recurrent chain and **1 hop** through attention. Fewer hops matter because every hop is a chance to lose or blur the signal, the problem of the [vanishing gradients lesson](/learn/sequences/vanishing-gradients-time/). A single hop does not guarantee that attention uses the link: that is up to the weights it learned.
+
+The price is the grid on the right. Every word is scored against every other, so the number of scores is the length squared: **9 tokens (8 words plus [start]) need 81 scores**. Watch the grid grow as words are added. Double the length and the cost grows fourfold.
+
+<AttentionExplorer client:visible mode="reach" title="Hops between two words, and the cost of looking everywhere" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **"The query, key and value are three different words."** They come from the same word. Its vector goes through three different matrices.
+- **"Attention weights explain why the model decided something."** They show how much of each word was mixed in, not why the final answer came out as it did. Later layers transform the mix, and studies of attention in language models find weights can be changed without changing the output ([Jain and Wallace, 2019](https://arxiv.org/abs/1902.10186); [Wiegreffe and Pinter, 2019](https://arxiv.org/abs/1908.04626) argue for a more careful reading). Treat arcs as a clue, not a proof.
+- **"Dividing by $\sqrt{d_k}$ is cosmetic."** Without it the scores grow with the vector length and softmax saturates. For "sheep" the largest weight goes from 0.56 to 0.91.
+- **"The softmax has weights to learn."** It has none. The learned parameters are the matrices $W_Q$, $W_K$, $W_V$ (and an output matrix, $W_O$, in the next lesson).
+- **"Self-attention knows the word order."** On its own it does not: it treats the words as a set. Order enters through position information, the subject of [the positional encodings lesson](/learn/transformers/positional-encodings/).
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>With 5 words and key length 8, what shape is $QK^{\top}$?</summary>
+
+$Q$ and $K$ are both $5 \times 8$, so $QK^{\top}$ is $5 \times 5$: one score for every pair of words.
+
+</details>
+
+<details>
+<summary>The scores of one query are $(2, 0, 0)$ and $d_k = 4$. What are the weights?</summary>
+
+Divide by $\sqrt 4 = 2$ to get $(1, 0, 0)$. Then softmax gives $e/(e+2) \approx 0.58$ for the first and $1/(e+2) \approx 0.21$ for each of the others.
+
+</details>
+
+<details>
+<summary>Why are values separate from keys?</summary>
+
+The key decides whether a word is found, and the value is what it passes on once found. With one vector doing both jobs, "easy to find for this query" would force "contains exactly this information".
+
+</details>
+
+<details>
+<summary>If all the keys were equal, what would the weights and the output be?</summary>
+
+Every query would score every key the same, so the weights would all be $1/T$ and the output would be the plain average of the values.
+
+</details>
+
+<details>
+<summary>The sentence doubles in length. How does the number of scores change?</summary>
+
+It grows by a factor of four, since there are $T^2$ scores.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- [Vaswani et al., "Attention Is All You Need" (NeurIPS 2017)](https://arxiv.org/abs/1706.03762): the transformer paper, with the scaled dot-product attention of this lesson.
+- [Bahdanau, Cho and Bengio, "Neural Machine Translation by Jointly Learning to Align and Translate" (ICLR 2015)](https://arxiv.org/abs/1409.0473): the first attention, covered in [Day 8](/learn/sequences/seq2seq-attention/).
+- [Jay Alammar, "The Illustrated Transformer" (2018)](https://jalammar.github.io/illustrated-transformer/): a picture-by-picture walk through the same steps.
+- [Phuong and Hutter, "Formal Algorithms for Transformers" (2022)](https://arxiv.org/abs/2207.09238): short, exact pseudocode for attention.
+- [Jain and Wallace, "Attention is not Explanation" (NAACL 2019)](https://arxiv.org/abs/1902.10186) and [Wiegreffe and Pinter, "Attention is not not Explanation" (EMNLP 2019)](https://arxiv.org/abs/1908.04626): the argument about what weights show.
+- [Vig, "A Multiscale Visualization of Attention in the Transformer Model" (ACL 2019 demo)](https://arxiv.org/abs/1906.05714): the BertViz tool.
+- [Karpathy, "Let's build GPT: from scratch, in code, spelled out" (2023)](https://www.youtube.com/watch?v=kCc8FmEb1nY): build self-attention in code.
+
+Next: [Multi-head attention: several attention patterns at once](/learn/transformers/multi-head-attention/).
+
+</Step>

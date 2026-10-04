@@ -1,0 +1,225 @@
+---
+title: "Sampling: Temperature, Top-k, Top-p"
+summary: "How a probability distribution over the next character becomes actual text, and how temperature, top-k and top-p reshape it."
+day: 10
+track: llms
+order: 2
+level: core
+duration: 25
+prereqs: ["llms/pretraining","foundations/softmax-cross-entropy"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import SamplingLab from '../../../components/widgets/SamplingLab/SamplingLab.svelte';
+
+A language model never writes text directly. For the text so far, it answers one question: how likely is each possible next piece? Turning that answer into a choice is a separate step called **decoding**, and the same model gives very different text depending on how it is done.
+
+Every figure here runs the small character-level model from the [pretraining lesson](/learn/llms/pretraining/), trained on *Alice in Wonderland* and *Through the Looking-Glass*. It reads up to 64 characters and chooses among 38 symbols: 26 letters, space (drawn as ·), newline (↵), nine punctuation marks and one "unknown" slot (~). Every prompt comes from a part of the books the model never saw in training. Real language models work on pieces called tokens rather than single characters, as the [tokenization lesson](/learn/transformers/tokenization/) explains, but decoding works the same way.
+
+<Step title="From logits to probabilities">
+
+The last layer of the model produces one raw number for every symbol, called a **logit** or score. A higher score means the model prefers that symbol; a negative score means it disfavours it. Scores are not probabilities: they can be negative and they do not add up to anything in particular. The **softmax** function converts them: first raise $e$ (about 2.718) to each score, which makes every number positive and makes bigger scores much bigger, then divide each result by the total so that everything adds up to 1. The [softmax lesson](/learn/foundations/softmax-cross-entropy/) covers why this is the right conversion.
+
+The prompt here ends in the middle of a word: *"…rather doubtfully, as she r"*. Watch the three phases. The top score belongs to **e, with 8.41**. Raising $e$ to it gives 4,479, out of a total of 9,298 across all 38 bars, so e gets **48.2%**. Five characters are above 1%: e (48.2%), a (26.0%), o (11.6%), u (8.7%) and i (5.2%), which spell *re…*, *ra…*, *ro…*, *ru…* and *ri…*.
+
+Now drag the "add the same number to every score" slider to +3 and let the figure play again. Every bar in the first phase moves up and the total in the second phase jumps from 9,298 to 186,754, but the final probabilities do not move: e is still 48.2%. Only the differences between scores matter.
+
+<SamplingLab client:visible mode="logits" title="Scores, then e to the score, then probabilities" />
+
+<details>
+<summary>Show the math</summary>
+
+For scores $z_1,\dots,z_V$ the probabilities are
+
+$$p_i = \frac{e^{z_i}}{\sum_{j=1}^{V} e^{z_j}}.$$
+
+Adding the same constant $c$ to every score multiplies the top and the bottom by $e^{c}$:
+
+$$\frac{e^{z_i + c}}{\sum_j e^{z_j + c}} = \frac{e^{c}\,e^{z_i}}{e^{c}\sum_j e^{z_j}} = p_i.$$
+
+The total above, 9,298, is the denominator. With the +3 shift it becomes $9298\,e^{3} \approx 186{,}754$.
+
+</details>
+
+</Step>
+
+<Step title="Greedy decoding versus sampling">
+
+To write text, the model repeats one loop: look at the text so far, get a probability for each next character, **pick** one, add it to the text and go round again. Everything interesting happens in the word "pick".
+
+**Greedy decoding** always picks the most likely character. It is deterministic: the same prompt always gives the same text. **Sampling** draws a character at random, in proportion to its probability, so a character with 48% is picked about half the time. The computer does this with one random number $u$ between 0 and 1 per character. Lay the characters end to end in a bar, each owning a stretch as wide as its probability, and see which stretch $u$ lands in.
+
+Watch the two lanes write 80 characters from the same prompt. Under them, the bar shows the sampled lane's choice: with seed 1 the first random number is 0.627, which lands in the stretch owned by "e" (from about 0.26 to 0.74), so the sampled text begins with *e*. Both lanes also show their **average log-probability**: the natural logarithm of the probability the model gave each chosen character, averaged. It is always negative, and closer to 0 means the model found the text more likely.
+
+The greedy lane scores **−0.90** against **−1.56** for the sampled lane, yet its text is the worse: *"ead the was the came of the said the came of the say and the was the came of the"*. By character 44 the lane is copying itself: characters 12 to 23, *" the came of"*, return as characters 33 to 44 (the figure underlines both). Taking the best next character every time does not produce the best text, because each step ignores where the text is heading, and once a phrase has appeared, repeating it tends to be the likeliest continuation. The sampled lane is messier (*"eal: 'whe might last can't do the swards denother…"*) but it does not get stuck. Press "New random numbers": the greedy lane never changes, and the sampled lane writes something else.
+
+<SamplingLab client:visible mode="greedy" title="Greedy and sampled text, one character at a time" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+rng = np.random.default_rng(1)
+
+# greedy: the largest probability
+next_id = int(np.argmax(probs))
+
+# sampling: the stretch of the cumulative bar that u lands in
+u = rng.random()
+next_id = int(np.searchsorted(np.cumsum(probs), u, side='right'))
+
+# the same thing in one call
+next_id = int(rng.choice(len(probs), p=probs))
+```
+
+</details>
+
+</Step>
+
+<Step title="Temperature">
+
+Greedy is too rigid and plain sampling can wander. **Temperature** $T$ is a dial between them. Before the softmax, divide every score by $T$. With $T$ below 1 the gaps between scores grow, so the favourite takes even more of the probability. With $T$ above 1 the gaps shrink and the probabilities flatten. $T = 1$ leaves the model's own distribution alone. As $T$ approaches 0 you get greedy decoding; as $T$ grows without limit every character becomes equally likely.
+
+To measure how spread out a distribution is, use **entropy**, counted here in bits. 0 bits means one character is certain; 5.25 bits is the most it can be with 38 characters, all equally likely. On the same prompt as step 1, the temperature changes the numbers like this:
+
+| Temperature | Probability of e | Entropy |
+|---|---|---|
+| 0.5 | 71.8% | 1.19 bits |
+| 1 | 48.2% | 1.95 bits |
+| 2 | 30.3% | 2.87 bits |
+
+Drag the timeline to its middle, where $T$ reaches 2. The text sample under the bars uses the same random numbers at every temperature, so the only difference between samples is the temperature. At $T = 0.5$ it reads *"ead, and when and something to her way in a little when with"*. At $T = 2$ it becomes *"iam-" sne-plamenten's anxsid."* and the average log-probability falls from −0.85 to −2.92. The lowest temperature is not the best one either: at $T = 0.2$ the sample is *"ead the king the came had some of the came…"*, nearly greedy, repeating itself again, with a lower score (−0.92) than $T = 0.5$.
+
+<SamplingLab client:visible mode="temperature" title="Temperature reshapes the distribution" />
+
+<details>
+<summary>Show the math</summary>
+
+$$p_i(T) = \frac{e^{z_i/T}}{\sum_j e^{z_j/T}}.$$
+
+As $T \to 0$ the largest score dominates and $p$ puts all its probability on the top character (greedy). At $T = 1$ it is the ordinary softmax. As $T \to \infty$ every $z_i/T$ tends to 0, so every $p_i$ tends to $1/V$ and the entropy tends to $\log_2 V$, which is 5.25 bits for $V = 38$.
+
+</details>
+
+</Step>
+
+<Step title="Top-k: keep only the k best">
+
+Temperature reshapes the whole distribution, but a long tail of very unlikely characters stays in it. Each tail character is unlikely, yet together they can add up to a lot, so every so often a draw lands there and the text goes off course. **Top-k sampling** removes the tail: keep the $k$ most likely characters, throw away the rest and scale the survivors back up so they add up to 1. Angela Fan, Mike Lewis and Yann Dauphin sampled from the $k = 10$ most likely words when generating stories, and found it worked better than beam search, which "tends to produce common phrases and repetitive text" ([Fan et al., 2018](https://aclanthology.org/P18-1082/), section 5.4).
+
+The figure uses two contexts from the held-out text. After *"…that she was q"* the model is sure: "u" has **99.5%**. After *"…in a tone of the "* it is not: the best character, "t", has only **7.6%**, followed closely by "s" (7.5%), "c" (7.3%), "r" (6.6%) and "w" (6.3%), because almost any letter can start the next word. The outlines show the probabilities before cutting and the filled bars show them after.
+
+Set the slider to **k = 5** and compare the numbers under the two panels. After "q", the characters thrown away held only **0.1%** of the probability, so keeping five is more than needed. After "the ", they held **64.7%**, so keeping five throws away almost two thirds of the model's opinion. No single $k$ fits both: it is too generous in one place and too harsh in the other. At $k = 1$ you have greedy decoding.
+
+<SamplingLab client:visible mode="topk" title="Top-k keeps the k most likely characters" />
+
+</Step>
+
+<Step title="Top-p: keep the smallest set that covers p">
+
+**Top-p**, also called **nucleus sampling**, fixes this by letting the number of kept characters change. Sort the characters from most to least likely, add up their probabilities from the top, and stop as soon as the running total reaches $p$. Those characters are the **nucleus**: keep them and scale them back up to add up to 1. Ari Holtzman and colleagues proposed it after finding that choosing the most likely text gives "bland and strangely repetitive" output ([Holtzman et al., ICLR 2020](https://arxiv.org/abs/1904.09751)).
+
+Watch the line climb as the curve is drawn from the most likely character down. After "q" it passes $p = 0.9$ at once: the nucleus is **1 character**. After "the " it takes **16 of the 38** characters to reach 0.9. The same $p$ adapts to each situation. Drag the $p$ slider and count: at $p = 0.5$ the kept sets are 1 and 8 characters, at $p = 0.95$ they are 1 and 18, and at $p = 0.99$ they are 1 and 23.
+
+<SamplingLab client:visible mode="topp" title="Top-p keeps the smallest set that adds up to p" />
+
+<details>
+<summary>Show the math</summary>
+
+The nucleus $V^{(p)}$ is the smallest set of characters whose probabilities add up to at least $p$, taken from most likely downwards. The new distribution is
+
+$$p'_i = \begin{cases} p_i \big/ \sum_{j \in V^{(p)}} p_j & i \in V^{(p)}, \\ 0 & \text{otherwise.} \end{cases}$$
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import torch
+
+probs = torch.softmax(logits / T, dim=-1)
+sorted_p, idx = probs.sort(descending=True)
+cum = sorted_p.cumsum(dim=-1)
+drop = (cum - sorted_p) >= p          # tokens that start after the total reached p
+sorted_p[drop] = 0
+sorted_p = sorted_p / sorted_p.sum()
+next_id = idx[torch.multinomial(sorted_p, 1)]
+```
+
+</details>
+
+</Step>
+
+<Step title="The sampling lab">
+
+Put the controls together and write from the real model. Common implementations apply them in a fixed order: divide the scores by the temperature, then apply top-k, then top-p. The Hugging Face `transformers` library builds its list of sampling steps in that order ([source](https://github.com/huggingface/transformers/blob/main/src/transformers/generation/utils.py)). No setting is correct for everything: a low temperature suits answers that should be repeatable, a higher one suits writing where variety is wanted.
+
+The figure starts with $T = 0.8$, top-p 0.95, top-k off, and seed 1. That writes, for 120 characters, *"ead-" she said alice. "i think it would in the blow!" he were added the way in a little from office, and this alice was "*, with an average log-probability of **−0.94**. Each character is shaded by the probability the model gave it: a strong shade means the model expected it, a faint one a surprise. Below the text, the bars show the distribution the last character was drawn from.
+
+Now try this: set the temperature to 0 and the "Repeats itself" readout says yes, because a block of 12 characters appears twice. Raise it slowly and the repeats thin out. Across seeds 1 to 10 at top-p 0.95, a 120-character text repeated itself in all 10 at $T = 0$, in 5 at $T = 0.2$, in 2 at $T = 0.3$, in 2 at $T = 0.4$, and in none from $T = 0.5$ to $T = 1$. A little randomness is enough to break the loop.
+
+<SamplingLab client:visible mode="lab" title="Generate text and change the settings" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **"Temperature 0 makes the model more accurate."** It makes it deterministic: it is greedy decoding. The best character at each step does not add up to the best text, as the greedy lane showed with an average log-probability of −0.90 and a loop.
+- **"Temperature changes the model."** It only reshapes the output distribution at decoding time. The weights, and the scores for a given prompt, are exactly the same.
+- **"Top-k and top-p are the same thing."** Top-k keeps a fixed count. Top-p keeps however many it takes to reach $p$: 1 character after "q" and 16 after "the " at $p = 0.9$.
+- **"Randomness means the model is unreliable."** Sampling is a choice made by the decoder. For a given prompt the probabilities are fixed and, with the same random numbers, so is the text.
+- **"Greedy decoding avoids nonsense."** It avoids unlikely characters, but it can loop, as the repeated *"the came of"* shows.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>The scores are (2, 1, 0). What are the probabilities at T = 1 and at T = 0.5?</summary>
+
+At $T = 1$: $e^2, e^1, e^0$ are 7.389, 2.718 and 1, with total 11.107, so the probabilities are **0.665, 0.245, 0.090**. At $T = 0.5$ the scores become (4, 2, 0), so the numbers are 54.60, 7.389 and 1, total 62.99, and the probabilities are **0.867, 0.117, 0.016**.
+
+</details>
+
+<details>
+<summary>The sorted probabilities are (0.5, 0.3, 0.1, 0.05, 0.05). Which characters does top-p keep with p = 0.85?</summary>
+
+The running totals are 0.5, 0.8, 0.9. The total first reaches 0.85 at the third character, so the **first three** are kept. They are scaled up by dividing by 0.9.
+
+</details>
+
+<details>
+<summary>Why does adding 10 to every score change nothing?</summary>
+
+It multiplies every $e^{z_i}$ by $e^{10}$, and the total by the same $e^{10}$, so the factor cancels in the division.
+
+</details>
+
+<details>
+<summary>What happens to entropy as T grows without limit?</summary>
+
+All probabilities approach $1/V$, so entropy approaches $\log_2 V$: 5.25 bits for 38 characters, or about 3.64 in natural-log units.
+
+</details>
+
+<details>
+<summary>With top-k = 1, which decoding method do you get?</summary>
+
+Greedy decoding: only the single most likely character is kept, so it is chosen every time.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- [Holtzman, Buys, Du, Forbes and Choi, "The Curious Case of Neural Text Degeneration" (ICLR 2020)](https://arxiv.org/abs/1904.09751): nucleus (top-p) sampling, and why maximum-likelihood decoding gives bland, repetitive text.
+- [Fan, Lewis and Dauphin, "Hierarchical Neural Story Generation" (ACL 2018)](https://aclanthology.org/P18-1082/): top-k sampling for story generation, section 5.4.
+- [Nguyen et al., "Turning Up the Heat: Min-p Sampling for Creative and Coherent LLM Outputs" (ICLR 2025)](https://arxiv.org/abs/2407.01082): a newer rule that sets the cut-off relative to the top token's probability. The paper reports gains in quality and diversity at higher temperatures; read its evaluation before relying on that.
+- [von Platen, "How to generate text: using different decoding methods for language generation with Transformers" (Hugging Face, 2020)](https://huggingface.co/blog/how-to-generate): greedy, beam search, top-k and top-p with runnable code.
+
+Next: [Scaling laws](/learn/llms/scaling-laws/).
+
+</Step>

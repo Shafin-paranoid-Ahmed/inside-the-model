@@ -1,0 +1,164 @@
+---
+title: "PPO: Improving a Policy in Small Steps"
+summary: "Use advantages and probability ratios to build PPO's clipped objective, reuse a batch for a few epochs, and measure how far the policy moves."
+day: 11
+track: alignment
+order: 5
+level: advanced
+duration: 35
+prereqs: ["alignment/policy-gradients"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+How can an agent reuse a good batch without chasing it too far?
+
+<Step title="An advantage compares an action with the usual outcome">
+
+An advantage estimates how much better an action turned out than the critic expected from that state, so its sign tells the policy whether to favour or discourage that action.
+
+{/*
+IDEA: A(s,a) = Q(s,a) - V(s); connect the actor-critic TD error to generalized advantage estimation (GAE), a discounted sum of later TD errors with lambda setting its horizon.
+WIDGET: GridWorldLab mode="ppo-advantage" gamma=0.9 lambda=0.95 batch=64 seed=29. One batch trajectory beside rewards, frozen critic values, TD errors and selected-step advantage contributions.
+MOTION over t: walk forward, reveal each TD error, accumulate GAE backward with decaying contribution widths, then reveal the selected action's signed advantage.
+TRY: compare the selected action's advantage at lambda 0 and 0.95.
+NUMBERS: selected r, V(s), V(s'), delta and A at both lambdas; probe a batch containing positive and negative advantages. Correctly mask termination and bootstrap at time-limit truncations.
+SHOW THE MATH: delta_t = r + gamma V(s') - V(s); A-hat_t = sum_l (gamma lambda)^l delta_(t+l) with episode masks. SHOW THE CODE: backward GAE recurrence.
+*/}
+
+</Step>
+
+<Step title="Keep the policy that collected the batch">
+
+PPO saves the old action probabilities when it collects a batch, then compares each new probability with that saved value using a ratio.
+
+{/*
+IDEA: rho_t(theta) = pi_theta(a_t|s_t) / pi_old(a_t|s_t); rho starts at 1, old log-probabilities and advantages stay fixed during optimization; denominator is the collection policy, not a permanent reference model.
+WIDGET: GridWorldLab mode="ppo-ratio" batch=64 epochs=4 focus="1,1" seed=29. Old probability bars as labelled outlines; new bars filled; selected action shows old/new log-probability and ratio.
+MOTION over t: collect actions, freeze the old bars, then reveal successive new-policy states; the ratio marker moves only with the new probability.
+TRY: select another sampled action and check its numerator and denominator.
+NUMBERS: old and new probabilities, their ratio, and ratio 1 at the start; compute all readouts from the displayed policy.
+SHOW THE MATH: rho = exp(log pi_new - log pi_old). SHOW THE CODE: storing detached old log-probabilities at collection.
+*/}
+
+</Step>
+
+<Step title="Clip the incentive to increase a good action">
+
+For a positive advantage, PPO stops adding reward to its objective once the action's probability ratio grows beyond the upper clip threshold.
+
+{/*
+IDEA: min(rho A, clip(rho, 1-epsilon, 1+epsilon) A); for A positive the favourable direction plateaus above 1+epsilon, while decreases still hurt the objective.
+WIDGET: PPOLab mode="clip-positive" advantage=1 epsilon=0.2 ratios="0.5,1.6". Two surrogate curves, unclipped and clipped, with a moving ratio cursor and the active branch labelled; use --viz-pos for the advantage sign.
+MOTION over t: ratio sweeps across 0.5 to 1.6; both curves trace, then the clipped objective's cursor enters its upper plateau while the unclipped line continues rising.
+TRY: compare the objective at ratios 1.2 and 1.5.
+NUMBERS: both objective values and the clipped derivative at those ratios; probe exact branch endpoints, not invented training statistics.
+SHOW THE MATH: the clipped surrogate and its positive-advantage piecewise form.
+*/}
+
+</Step>
+
+<Step title="Negative advantages clip in the other direction">
+
+For a negative advantage, PPO stops rewarding further decreases in the action's probability once its ratio falls below the lower clip threshold.
+
+{/*
+IDEA: with A negative, the minimum chooses a plateau below 1-epsilon; increasing a bad action's probability still worsens the objective, even beyond the upper band.
+WIDGET: PPOLab mode="clip-negative" advantage=-1 epsilon=0.2 ratios="0.5,1.6". Same axes as the preceding step, negative-advantage curves and explicit lower plateau; distinct signed default and mode.
+MOTION over t: cursor moves from ratio 1 toward 0.5, then toward 1.6, revealing the favourable decrease plateau and the penalized increase segment.
+TRY: compare ratios 0.6 and 1.4 and identify where the gradient is still active.
+NUMBERS: objective and derivative at ratios 0.6, 0.8, 1 and 1.4; show that outside the band does not always mean zero gradient.
+SHOW THE MATH: negative-advantage piecewise surrogate; explain why taking the minimum changes the active side.
+*/}
+
+</Step>
+
+<Step title="A few epochs reuse one batch">
+
+An epoch is one pass through a collected batch, and PPO makes several such passes while keeping its old probabilities and advantages fixed.
+
+{/*
+IDEA: minibatch ascent on the clipped policy surrogate plus a separately trained value loss; few epochs per rollout batch, then collect fresh data. Separate policy loss from critic loss and optional entropy bonus.
+WIDGET: GridWorldLab mode="ppo-epochs" batch=64 minibatch=16 epochs=4 epsilon=0.2 lr=0.03 seed=31. Frozen rollout list, shuffled minibatch selection, ratio histogram and value-loss curve; favourable clipped samples marked separately from ratios merely outside the band.
+MOTION over t: four epoch segments; shuffle and select minibatches within each; update policy and critic, recompute ratios, highlight active/plateau branches.
+TRY: find a sample outside the band whose surrogate gradient remains active.
+NUMBERS: surrogate, value loss, out-of-band ratio fraction and actual plateau fraction per epoch; keep these last two readouts distinct. Freeze GAE during epochs.
+SHOW THE CODE: collect batch, freeze old log-probs/advantages, shuffle minibatches, update for four epochs.
+*/}
+
+</Step>
+
+<Step title="Clipping encourages small moves but does not enforce a wall">
+
+Clipping removes the incentive for some large probability changes, but shared parameters can still move those probabilities, so the policy's actual drift must be measured.
+
+{/*
+IDEA: PPO clipping is not a hard ratio or KL bound; a sample's flat surrogate does not freeze its probability. Measure KL(old || new) across states visited in the fixed batch; optional early stopping uses measured KL.
+WIDGET: PPOLab mode="drift" epsilons="0.1,0.2,0.4" epochs=4 batch=64 lr=0.03 seed=31. Same rollout and initial logits for each setting; old/new action bars, ratio extrema and exact categorical KL averaged over batch states.
+MOTION over t: advance each run one minibatch at a time; ratios can leave the shaded band, and the measured KL cursor traces the change.
+TRY: find an out-of-band ratio and check whether other samples' updates moved it there.
+NUMBERS: min/max ratio, average KL and surrogate per epoch for each epsilon; probe before claiming smaller epsilon gives smaller drift. If no excursion occurs, adjust the documented step size or batch before writing that claim.
+SHOW THE MATH: KL(pi_old || pi_new); distinguish this within-batch diagnostic from RLHF's KL to a fixed SFT reference.
+*/}
+
+</Step>
+
+<Step title="Collect again after updating">
+
+After a few epochs PPO collects a fresh batch with its updated policy, repeats the advantage and clipping calculations, and can use the same loop to optimise a reward model in RLHF.
+
+{/*
+IDEA: full on-policy iteration; pi_old resets to the current policy at each new rollout, unlike DQN's persistent replay buffer. Bridge to /learn/alignment/rlhf/ where rewards score responses and a separate fixed-reference KL penalty shapes them.
+WIDGET: GridWorldLab mode="ppo-train" batch=64 epochs=4 iterations=100 gamma=0.9 lambda=0.95 epsilon=0.2 seed=37. Grid policy arrows, rollout batch and greedy evaluation return/critic-error curves; no reuse of earlier iterations' batches.
+MOTION over t: loop through collect, estimate advantages, four training epochs, evaluate and refresh old policy; later markers advance iterations without putting narration ahead of the displayed batch.
+TRY: pause at a batch refresh and see the probability ratios return to 1.
+NUMBERS: evaluation return at iterations 0, 20 and 100, critic error and KL(old || new) per batch; probe all claims and report variability where needed.
+SHOW THE CODE: complete PPO outer loop using shared RL helpers. Next Day 12 begins at /learn/alignment/sft/; PPO is reused in /learn/alignment/rlhf/.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Some common misunderstandings about PPO's objective.
+
+{/*
+NO WIDGET. Misconceptions:
+1. "PPO clamps every probability ratio inside the band." It clips an objective term, not the probability itself.
+2. "Every sample outside the band stops contributing." Only the favourable direction plateaus; the advantage sign selects that direction.
+3. "The old policy is the original policy from before training." It is the policy that collected this batch and is refreshed next iteration.
+4. "PPO replays arbitrary old experience like DQN." Its few epochs reuse the current rollout batch before fresh collection.
+5. "Clipping and RLHF's reference KL penalty are the same." One compares with the collection policy; the other penalizes drift from a fixed reference.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Try these questions about advantages, ratios and batch reuse.
+
+{/*
+NO WIDGET. Questions (answers in details blocks):
+1. With old action probability 0.25 and new probability 0.35, what is the ratio?
+2. For A = 1 and epsilon = 0.2, compute the surrogate at ratios 1.1 and 1.5.
+3. For A = -1, which side of the band plateaus, and why does a ratio 1.4 still receive a penalty?
+4. Which values stay fixed while the four epochs optimize one batch?
+5. Can clipping guarantee a small KL to the original SFT model? Explain both the lack of a hard bound and the different reference policies.
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Primary papers and resources on policy improvement with advantages.
+
+{/*
+NO WIDGET. References:
+- John Schulman et al., "Proximal Policy Optimization Algorithms", 2017, https://arxiv.org/abs/1707.06347.
+- John Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation", https://arxiv.org/abs/1506.02438.
+- John Schulman et al., "Trust Region Policy Optimization", https://arxiv.org/abs/1502.05477 (VERIFY before presenting the trust-region comparison).
+- OpenAI Spinning Up, "Proximal Policy Optimization", https://spinningup.openai.com/en/latest/algorithms/ppo.html (VERIFY implementation defaults before quoting them).
+Next: /learn/alignment/sft/; application: /learn/alignment/rlhf/.
+*/}
+
+</Step>

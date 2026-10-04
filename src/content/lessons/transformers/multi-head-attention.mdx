@@ -1,0 +1,186 @@
+---
+title: "Multi-Head Attention"
+summary: "Run several attention operations in parallel in smaller subspaces and combine them."
+day: 9
+track: transformers
+order: 4
+level: advanced
+duration: 30
+prereqs: ["transformers/self-attention"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import AttentionExplorer from '../../../components/widgets/AttentionExplorer/AttentionExplorer.svelte';
+
+One attention pattern is a single way of looking. A transformer looks several ways at once.
+
+<Step title="One attention pattern is not enough">
+
+In [the last lesson](/learn/transformers/self-attention/) each word made one weighted average of the other words' values. One average means one set of weights, and the weights must add up to 1. A word that needs information from two different places has to share that single unit of weight between them.
+
+The fix is to run attention several times side by side. Each copy is called a **head**, and each head has its own query, key and value matrices, so it can look at different words. TinyLM, the small trained transformer used in these figures, has two heads in each of its two layers. The figure shows the two heads of layer 1 for the same word, with the weights each puts on the words it may read. "Head 1" and "head 2" are just labels; neither is more important than the other.
+
+Watch "sheep". Head 1 puts **0.53** of its weight on "[start]" and 0.35 on "sheep" itself, and almost none, **0.03**, on "these". Head 2 puts **0.56** on "these", 0.23 on "sheep" and 0.13 on "[start]". Pause on "a" for a bigger contrast: head 1 spreads its weight over "these" (0.32), "chase" (0.28) and "a" itself (0.23), while head 2 puts **0.94** on "a" alone.
+
+<AttentionExplorer client:visible mode="compare" layer={1} query="sheep" title="The two heads of layer 1, word by word" />
+
+</Step>
+
+<Step title="Splitting d_model into heads">
+
+Using two heads does not mean paying twice. The word vectors in TinyLM have 16 numbers (the **model width**, $d_{\text{model}}$). The query matrix $W_Q$ turns those 16 numbers into 16 numbers, and the model simply cuts the 16 outputs into equal slices: the first 8 are the query of head 1, the last 8 are the query of head 2. The same cut is made for keys and values. Each head therefore works with queries, keys and values of only $d_k = 16 / 2 = 8$ numbers, as in the last lesson.
+
+So the number of heads is a choice about how to slice a fixed amount of width, and the amount of learned weights stays the same. The matrices $W_Q$, $W_K$, $W_V$ and the output matrix $W_O$ (two steps on) are each $16 \times 16$, which is $4 \times 16 \times 16 = $ **1,024** weights, whether the model has 1 head, 2 heads or 4. (Each projection also has a bias vector, 16 numbers each, 64 more in total; the 1,024 does not count them.) Watch the matrix split into one block, then two, then four slices. TinyLM really has two; the single head and the four-head version are what-ifs to show the counter holding still.
+
+<AttentionExplorer client:visible mode="split" layer={1} query="sheep" title="The same 1,024 weights, cut into 1, 2 or 4 heads" />
+
+<details>
+<summary>Show the math</summary>
+
+With $h$ heads and $d_k = d_{\text{model}} / h$, head $i$ uses the columns $i d_k$ to $(i+1) d_k - 1$ of each matrix, written here as matrices $W_Q^i, W_K^i, W_V^i$ of size $d_{\text{model}} \times d_k$:
+
+$$\text{head}_i = \operatorname{Attention}\bigl(X W_Q^i,\; X W_K^i,\; X W_V^i\bigr).$$
+
+The weights in the four projections come to $4\, d_{\text{model}}^2$, independent of $h$.
+
+</details>
+
+</Step>
+
+<Step title="Each head runs attention on its own">
+
+After the split, the heads do not interact. Each one scores its own queries against its own keys, applies its own softmax and mixes its own values, exactly the steps of the last lesson. On a GPU the heads are computed together in one batched operation, not one after another.
+
+The figure shows the weights of both layer 1 heads on the sentence at once, filling in row by row at the same time, then each head's output: eight words by 8 numbers, one row per word. The two weight grids look different because they are different: on this sentence head 1 puts a mean of **0.24** of its weight on the previous word and head 2 **0.31**, and neither is mainly looking back one word. Wait for the highlight to find where the two heads disagree most. For "a" it is **0.71**: that fraction of the weight sits on different words in the two heads (0 would mean identical rows, 1 completely different).
+
+<AttentionExplorer client:visible mode="heads" layer={1} title="Both heads at once, then their outputs" />
+
+<details>
+<summary>Show the code</summary>
+
+The batched version of the last lesson's code. The reshape gives each head its own slice of the columns, and the matrix products run over all heads together. TinyLM also adds a bias to each projection, left out here.
+
+```python
+import numpy as np
+
+def multi_head(X, Wq, Wk, Wv, Wo, h):       # X: (T, 16); W*: (16, 16)
+    T, d = X.shape
+    dk = d // h
+    split = lambda M: (X @ M).reshape(T, h, dk).transpose(1, 0, 2)   # (h, T, dk)
+    Q, K, V = split(Wq), split(Wk), split(Wv)
+    S = Q @ K.transpose(0, 2, 1) / np.sqrt(dk)                        # (h, T, T)
+    S = np.where(np.tril(np.ones((T, T))) == 1, S, -np.inf)           # hide later words
+    A = np.exp(S - S.max(-1, keepdims=True))
+    A /= A.sum(-1, keepdims=True)                                      # one softmax per head
+    heads = A @ V                                                      # (h, T, dk)
+    return heads.transpose(1, 0, 2).reshape(T, d) @ Wo                 # concatenate, then W_O
+```
+
+</details>
+
+</Step>
+
+<Step title="Concatenate and project with W_O">
+
+The model needs one vector per word again. First the heads' outputs are placed one after the other. Two vectors of 8 numbers become one vector of 16, called the **concatenation**. Then it is multiplied by one more learned matrix, $W_O$ ($16 \times 16$), which lets the two heads' results mix instead of staying in separate halves. The product is the **attention output**.
+
+That output is then added to the word's own vector. This is how what the word read from the others reaches the rest of the network: the original vector stays, with the attention output added on top. This adding is the **residual** connection, and [the transformer block lesson](/learn/transformers/transformer-block/) shows it in context. Watch the two strips slide together, pass through $W_O$, and be added to the vector of "sheep". The vector of 16 numbers going in has a size (its length, the square root of the sum of its squares) of **1.28**. The attention output has size **1.87**, and the sum has size **2.27**. In this layer attention changes the vector a lot.
+
+<AttentionExplorer client:visible mode="concat" layer={1} query="sheep" title="Two heads, one vector, added to the word" />
+
+<details>
+<summary>Show the math</summary>
+
+$$\operatorname{MultiHead}(X) = \operatorname{Concat}(\text{head}_1, \dots, \text{head}_h)\, W_O + \mathbf b_O.$$
+
+Concatenating $T \times 8$ and $T \times 8$ gives $T \times 16$, and $W_O$ is $16 \times 16$, so the result has the same shape as $X$ and can be added to it.
+
+</details>
+
+</Step>
+
+<Step title="What the heads of a trained model attend to">
+
+What has each of the four heads learned? Two kinds of evidence, and they do not agree.
+
+**Averages over 200 sentences.** Over the 200 test sentences, the line above each grid gives the head's mean weight on the previous word, on the determiner at the start of the sentence, and on the verb. All twelve numbers lie between **0.20 and 0.35**; the biggest is 0.35, layer 2 head 1 on the verb. So no head is a clean "previous-word head", "determiner head" or "verb head".
+
+**Single sentences show more.** Layer 1 head 2 sends words back to the determiner of their phrase: in "a big fox eats the red apples", "red" puts **0.90** of its weight on "the". In layer 2, "the" and "red" put **1.00** on "eats" in head 1, an object linked to its verb. Hover a word to see its row in all four grids. Then type "these small sheep chase a red fox": the object-to-verb link is gone, and in head 1 "a" and "red" look at "sheep" instead (0.48 and 0.39). So the link depends on the sentence, and calling a head a "verb head" would claim too much.
+
+<AttentionExplorer client:visible mode="gallery" sentence="a big fox eats the red apples" title="All four heads, with their 200-sentence averages" />
+
+</Step>
+
+<Step title="Switching a head off">
+
+Looking at weights shows what a head reads. It does not show whether the model needs it. A stronger test is to **switch a head off**: set that head's output to zero, leave everything else as it is, and see what gets worse. The figure measures how much probability the model gives to words the toy grammar allows next, after each word of the sentence. Grey bars are the full model, blue bars the model with a trained head removed. This tests the trained model with one part taken out. It does not tell us what training with fewer heads would produce.
+
+The timeline switches each head off in turn, and the boxes below it let you pick any combination. Averaged over 200 sentences from the grammar, the full model puts **0.998** on grammatical next words. Removing layer 1 head 1 gives **0.862**, layer 1 head 2 gives **0.861**, layer 2 head 1 gives **0.993** and layer 2 head 2 gives **0.983**. So the two layer 1 heads matter most here, and layer 2 head 1 barely at all.
+
+On this one sentence the picture is sharper. After "sheep", the full model gives 0.998. Without layer 1 head 1 it falls to **0.837**, the biggest drop, although head 1 put only 0.03 on "these" in the first figure. So the weights alone do not tell you which head a word relies on. Without layer 1 head 2, the probability after "a" falls to **0.670**, and after "red" to 0.788.
+
+<AttentionExplorer client:visible mode="ablate" title="Switching a trained head off" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **"More heads means more parameters."** With the width fixed, the four matrices hold $4\, d_{\text{model}}^2$ weights however many heads there are. Each head is narrower instead.
+- **"Each head is assigned a job."** Nobody assigns jobs. A head's pattern comes out of training, and in TinyLM no head is a clean previous-word, determiner or verb head: the 200-sentence averages sit between 0.20 and 0.35.
+- **"Heads are combined by averaging."** They are concatenated and then mixed by a learned matrix, $W_O$.
+- **"Every head is essential."** Often many can be removed with little loss ([Michel et al., 2019](https://arxiv.org/abs/1905.10650); [Voita et al., 2019](https://arxiv.org/abs/1905.09418)). In TinyLM removing layer 2 head 1 changes the average from 0.998 to 0.993, while removing either layer 1 head drops it to about 0.86.
+- **"Heads run one after another."** They run in parallel, in one batched operation, because none of them needs another's result.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>$d_{\text{model}} = 512$ and $h = 8$. What is $d_k$?</summary>
+
+$d_k = 512 / 8 = 64$.
+
+</details>
+
+<details>
+<summary>How many weights are in $W_Q$, $W_K$, $W_V$ and $W_O$ together for $d_{\text{model}} = 512$, not counting biases?</summary>
+
+$4 \times 512 \times 512 = 1{,}048{,}576$, whatever $h$ is.
+
+</details>
+
+<details>
+<summary>Why might two heads beat one head of double width?</summary>
+
+One head makes one softmax and so one weighted average per word. Two heads make two, so one word can read from different places at once. Both together still use the same number of weights.
+
+</details>
+
+<details>
+<summary>What does $W_O$ do that concatenation alone does not?</summary>
+
+Concatenation only places the heads' outputs side by side, so each stays in its own slice of the vector. $W_O$ mixes them, so any output number can depend on every head.
+
+</details>
+
+<details>
+<summary>You switch a head off and the model's results do not change. What can and can't you conclude?</summary>
+
+You can conclude the model does not need that head for those results, or that other heads cover for it. You cannot conclude the head does nothing in general, or that it would be pointless to train with it: you removed it from a model trained with it present, and you only measured one thing.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- [Vaswani et al., "Attention Is All You Need" (NeurIPS 2017), section 3.2.2](https://arxiv.org/abs/1706.03762): multi-head attention as defined here.
+- [Michel, Levy and Neubig, "Are Sixteen Heads Really Better than One?" (NeurIPS 2019)](https://arxiv.org/abs/1905.10650): how many heads can be removed.
+- [Voita et al., "Analyzing Multi-Head Self-Attention: Specialized Heads Do the Heavy Lifting, the Rest Can Be Pruned" (ACL 2019)](https://arxiv.org/abs/1905.09418): a few heads matter a lot.
+- [Clark et al., "What Does BERT Look At?" (BlackboxNLP 2019)](https://arxiv.org/abs/1906.04341): what the heads of a trained model look at.
+- [Elhage et al., "A Mathematical Framework for Transformer Circuits" (2021)](https://transformer-circuits.pub/2021/framework/index.html) and [Olsson et al., "In-context Learning and Induction Heads" (2022)](https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html): heads studied as circuits.
+- [Shazeer, "Fast Transformer Decoding: One Write-Head is All You Need" (2019)](https://arxiv.org/abs/1911.02150) and [Ainslie et al., "GQA" (2023)](https://arxiv.org/abs/2305.13245): sharing keys and values across heads to save memory.
+
+Next: [Positional encodings: how attention learns word order](/learn/transformers/positional-encodings/).
+
+</Step>

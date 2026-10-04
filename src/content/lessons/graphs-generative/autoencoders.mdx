@@ -1,0 +1,158 @@
+---
+title: "Autoencoders and Latent Spaces"
+summary: "Compress input to a small code and reconstruct it, learning a latent representation."
+day: 13
+track: graphs-generative
+order: 2
+level: core
+duration: 25
+prereqs: ["neural-networks/mlp"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+Force data through a narrow bottleneck and the network must learn what matters.
+
+{/* SKELETON (Day 13 plan: plans/day-13.md). Widget: LatentSpace (to build), trained in a worker on the
+    shared two-moons dataset from src/lib/gen/toy.ts, the SAME 600 points (seed 7) that the VAE, GAN,
+    diffusion and flow-matching lessons use. Architecture: encoder 2-32-32-1 tanh, decoder 1-32-32-2.
+    Prose numbers come from LatentSpace/sim.ts probes, never guessed. */}
+
+<Step title="Copy the input, through one number">
+A network that learns to copy its input sounds useless, until you make it pass the input through a single number on the way.
+
+{/* IDEA: an autoencoder is trained to output its own input; the narrow middle is what makes it learn.
+    WIDGET: LatentSpace model="ae" mode="tour" (trained model, all 600 points).
+    OVER t: phase 1 every data point slides from the data plane to its code on the 1D latent strip;
+    phase 2 codes slide back out to their reconstructions; loop. Reconstructions settle on a thin curve
+    that traces both moons.
+    LOOK: the cloud of points becomes a thin curve after the round trip.
+    QUOTE: final mean reconstruction error (MSE) of the trained AE on the 600 points.
+    No math block here. */}
+</Step>
+
+<Step title="Encoder, bottleneck, decoder">
+An autoencoder is two networks back to back: an encoder that squeezes each input into a short code, and a decoder that rebuilds the input from that code.
+
+{/* IDEA: define encoder f, code z (the bottleneck, also called the latent), decoder g, reconstruction
+    x-hat = g(f(x)). Here x has 2 numbers, z has 1.
+    WIDGET: LatentSpace model="ae" mode="focus" focus=[index of a point near the tip of the upper moon,
+    chosen in the probe].
+    OVER t: a pulse travels encoder to code to decoder in a small inline diagram while the focused point,
+    its code tick on the strip and its reconstruction light up in sync; the other points are dimmed.
+    LOOK: the focused point's x, z and x-hat readout.
+    QUOTE: x, z, x-hat and the squared error for the focused point.
+    SHOW THE MATH: z = f(x), x-hat = g(z), with the layer sizes. SHOW THE CODE: a 10-line PyTorch
+    nn.Sequential encoder and decoder matching the widget sizes. */}
+</Step>
+
+<Step title="Reconstruction loss">
+Training adjusts both networks together so that the rebuilt points land as close as possible to the originals.
+
+{/* IDEA: loss = mean squared distance between x and x-hat, minimised by backprop through decoder and
+    encoder (link /learn/neural-networks/backprop-mlp/).
+    WIDGET: LatentSpace model="ae" mode="train".
+    OVER t: scrubs the stored training snapshots (step 0 to the final step): the decoder curve morphs from
+    a short squiggle near the centre to a curve through both moons; a log-scale loss chart below has a
+    cursor at the same step.
+    LOOK: drag the timeline back to step 0 and compare the curve with the final one.
+    QUOTE: loss at step 0, at the midpoint snapshot and at the end (from the snapshots).
+    SHOW THE MATH: L = (1/N) sum of squared norms of x_i minus g(f(x_i)). */}
+</Step>
+
+<Step title="Why the bottleneck must be narrow">
+Give the code as many numbers as the input and the network can copy everything, including noise it should have ignored.
+
+{/* IDEA: a 2-number code on 2-number data lets the AE learn (close to) the identity, so it learns nothing
+    about the shape of the data; the 1-number code forces it to find the curve the data lies on.
+    WIDGET: LatentSpace model="ae" mode="tour" latentDim=[2] (a second small AE trained in the same
+    worker run).
+    OVER t: same round trip as step 1, but reconstructions land where they started, so the cloud stays a
+    cloud; a few extra off-curve probe points are reconstructed in place too.
+    LOOK: the probe point between the moons comes back where it was, not on a moon.
+    QUOTE: reconstruction error of the 2-number AE vs the 1-number AE (2-number should be lower; say why
+    lower is not better here). Probe first; if the 2D AE does not approach identity, change the prose. */}
+</Step>
+
+<Step title="Exploring the latent space">
+Every number on the code line decodes to some point, so sliding along the line draws the curve the decoder has learned.
+
+{/* IDEA: the latent space is the set of possible codes; the decoder maps it to a curve in data space.
+    Codes of real data cluster in two groups, one per moon, with an empty stretch between them.
+    WIDGET: LatentSpace model="ae" mode="explore".
+    OVER t: a marker sweeps the latent strip from its minimum to maximum and back; the decoded point
+    traces the decoder curve; a histogram of the 600 training codes sits on the strip. The reader can
+    drag the marker (pauses the timeline).
+    LOOK: what the decoded point does while the marker crosses the empty stretch between the two code
+    clusters (it travels through empty space between the moons).
+    QUOTE: the code range of each moon and the width of the gap between the clusters. */}
+</Step>
+
+<Step title="Random codes make bad samples">
+If the decoder can turn codes into points, picking codes at random looks like a way to make new data, but the gaps in the code line get in the way.
+
+{/* IDEA: a plain AE is not a generator: its codes are not spread in a known way, so random codes often
+    fall in gaps and decode to points off the data.
+    WIDGET: LatentSpace model="ae" mode="sample".
+    OVER t: 300 codes drawn uniformly over the observed code range (seeded) drop onto the strip one by
+    one, each decoded point appearing in the data plane; on-data ones in the data colour, off-data ones
+    marked.
+    LOOK: the points that land between the moons.
+    QUOTE: fraction of samples on the data (quality() from src/lib/gen/toy.ts), to compare later with the
+    VAE, GAN, diffusion and flow-matching lessons. Link forward to /learn/graphs-generative/vaes/. */}
+</Step>
+
+<Step title="Denoising autoencoders">
+Feed the network a noisy point and ask it for the clean one, and it learns to push points back onto the data.
+
+{/* IDEA: denoising autoencoder (Vincent et al. 2008): input x + noise, target x. It learns a map that
+    moves any point toward the data curve, a first look at what diffusion models learn.
+    WIDGET: LatentSpace model="dae" mode="denoise" (input noise std 0.25, set in sim).
+    OVER t: the noise level shown ramps from 0 up to 0.25 and back; each noisy input is drawn with an arrow
+    to its denoised output, arrows land on the moons.
+    LOOK: arrows from points far from the data are the longest and all point toward the nearest moon.
+    QUOTE: average distance to the data before vs after denoising at noise 0.25.
+    Link forward to /learn/graphs-generative/diffusion/ (the score arrows there point the same way).
+    SHOW THE CODE: the one-line change from AE training: model(x + sigma*randn) vs target x. */}
+</Step>
+
+<Step title="Common misconceptions">
+A few ideas about autoencoders sound right but are not.
+
+{/* NO WIDGET. Misconceptions to cover ("You might think X. Actually Y."):
+    1. An autoencoder is a generative model. Actually a plain AE gives no rule for choosing codes, so random
+       codes decode badly (step 6 number).
+    2. Lower reconstruction error means a better autoencoder. Actually a wide bottleneck can copy
+       everything and learn nothing about the data (step 4).
+    3. The latent numbers have human meanings. Actually they are whatever helps reconstruction; any
+       invertible reshaping of the code works equally well.
+    4. An autoencoder with linear layers is something new. Actually with linear layers and squared error it
+       recovers the same subspace as PCA (link /learn/classic-ml/pca/).
+    5. The denoising autoencoder only removes noise. Actually it learns the direction toward the data, the
+       same quantity diffusion models are trained to estimate. */}
+</Step>
+
+<Step title="Check yourself">
+Test your understanding with a few short questions.
+
+{/* NO WIDGET. Questions as details/summary:
+    1. Why does a 1-number code suffice for the two-moons data? (the data lie near a curve)
+    2. What happens to the reconstruction of a point between the moons, and why?
+    3. Why can a 2-number code on 2-number data reach almost zero error without being useful?
+    4. A linear autoencoder with a 1-number code on 2D data learns what? (the first principal direction)
+    5. What does the denoising autoencoder's arrow at a point far from the data point toward? */}
+</Step>
+
+<Step title="Going deeper">
+Papers and resources for going further.
+
+{/* NO WIDGET. Cite:
+    - Hinton and Salakhutdinov, "Reducing the Dimensionality of Data with Neural Networks", Science 2006.
+    - Vincent, Larochelle, Bengio, Manzagol, "Extracting and Composing Robust Features with Denoising
+      Autoencoders", ICML 2008.
+    - Bengio, Courville, Vincent, "Representation Learning: A Review and New Perspectives", 2013
+      (arXiv:1206.5538).
+    - Goodfellow, Bengio, Courville, Deep Learning (2016), chapter 14 "Autoencoders" (deeplearningbook.org).
+    - Baldi and Hornik 1989, linear autoencoders and PCA (VERIFY exact title and venue).
+    Next: /learn/graphs-generative/vaes/. */}
+</Step>

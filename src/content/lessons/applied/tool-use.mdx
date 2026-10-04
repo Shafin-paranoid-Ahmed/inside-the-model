@@ -1,0 +1,146 @@
+---
+title: "Tool Use and Function Calling"
+summary: "The model writes a structured call, your program checks and runs it, and the result goes back into the model's context."
+day: 14
+track: applied
+order: 4
+level: core
+duration: 25
+prereqs: ["applied/prompting"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+A language model on its own cannot check the weather, but it can ask for it.
+
+<Step title="What a model cannot do alone">
+
+A language model only predicts text, so tasks that need exact computation or fresh data are where it fails on its own.
+
+{/*
+IDEA: hook. The tiny PromptModel (same model as the prompting lesson) answering 2-digit multiplications directly is mostly wrong; with a calculator tool it is right. Measured, not asserted.
+WIDGET: AgentTrace mode="no-tool" task="mul". Transcript view: question "37*48>", the model's direct answer generated token by token; below it, a tally over 50 seeded questions.
+MOTION over t: answer tokens appear one by one with their probabilities; then the 50-question tally fills (correct/incorrect cells).
+TRY: hover a wrong cell to see the model's answer next to the true product.
+QUOTE: direct-answer accuracy over the 50 questions.
+*/}
+
+</Step>
+
+<Step title="Describing a tool with a schema">
+
+Each tool is described by a name, a purpose and a schema for its arguments, so both the model and the program agree on what a valid call looks like.
+
+{/*
+IDEA: a tool = name + description + JSON Schema for arguments. The program uses the schema to validate; large models read the description in their prompt (cite the Anthropic tool-use docs and OpenAI function-calling docs, VERIFY). Honest caveat in one line: the tiny model learned its two tools' call format in training and does not read the schema; the program's validator does.
+WIDGET: AgentTrace mode="schema". Shows the two tool definitions (calc: expression string matching a digit/operator pattern; lookup: key from an enum) as formatted JSON, and a call being checked against it field by field.
+MOTION over t: three example calls (valid, wrong type, unknown tool) slide into the validator; each field gets a tick or a cross in turn.
+TRY: edit the call text box and see the validator's verdict live.
+QUOTE: none numeric; the validator messages verbatim.
+SHOW THE CODE: a tool definition dict in the Anthropic/OpenAI style (VERIFY field names against current docs) and a 10-line validator.
+*/}
+
+</Step>
+
+<Step title="The model writes a call, your code runs it">
+
+Instead of answering, the model emits a call in an agreed format, and the program, not the model, executes it.
+
+{/*
+IDEA: the protocol: model output is parsed; if it is a call, generation stops, the program runs the function. The model never executes anything. Learned by the tiny model from training data of the form "37*48>CALL calc(37*48)" (Toolformer-style, Schick et al. 2023).
+WIDGET: AgentTrace mode="call" task="mul" question="37*48". Two lanes: model (left) and program (right). The model generates tokens until it closes a call; the parser extracts name and arguments; the program lane runs calc.
+MOTION over t: tokens stream in the model lane; at the closing token the call is highlighted, a particle carries it to the program lane, the function box computes and prints the result.
+TRY: choose another question from the list.
+QUOTE: the probability the model put on starting a call ("CALL") vs answering directly at the first position.
+*/}
+
+</Step>
+
+<Step title="Returning the result to the model">
+
+The program appends the tool's result to the context, and the model continues writing with the result in front of it.
+
+{/*
+IDEA: the loop closes: result inserted as "RESULT 1776", model resumes and writes the final answer, typically copying the result. Accuracy with the tool over the same 50 questions as the first step.
+WIDGET: AgentTrace mode="result" task="mul". Full round trip for one question, then the 50-question tally with tool.
+MOTION over t: the result travels back to the model lane, is appended to the context strip, the model's attention from the answer position onto the result tokens is shown as a strip (real attention weights), the answer is written; then the tally fills.
+TRY: hover the attention strip.
+QUOTE: accuracy with the tool vs the first step's direct accuracy; attention share on the result tokens.
+SHOW THE CODE: a 15-line loop: generate until call or end, run tool, append result, continue.
+*/}
+
+</Step>
+
+<Step title="Bad calls: validate, report, retry">
+
+Models sometimes produce malformed or wrong calls, so the program validates every call and sends errors back instead of crashing.
+
+{/*
+IDEA: when sampling at temperature above 0, some calls are malformed; the validator rejects them, the program returns an error message and resamples (retry with a limit). Real failure rate measured on the tiny model.
+WIDGET: AgentTrace mode="errors" task="mul" temperature=1.0 retries=2. 50 questions, each run with up to 2 retries.
+MOTION over t: each question's attempts are drawn as a row of small cells (valid / rejected / retried); rejected calls show the validator message; the final success tally counts up.
+TRY: set retries to 0, then 3.
+QUOTE: share of first attempts rejected; final success rate with 0, 1, 2, 3 retries.
+*/}
+
+</Step>
+
+<Step title="Safety: the program decides what runs">
+
+Because tools act in the real world, the program, not the model, enforces which tools may run, with which arguments, and which need a person's approval.
+
+{/*
+IDEA: permissions are code: allowlist, argument limits, confirmation for side effects, and tool results treated as data, not instructions (prompt injection). Demonstrated with deterministic program logic, which is the real mechanism; the injected text is shown being blocked by the permission check, not "resisted" by the tiny model.
+WIDGET: AgentTrace mode="safety". Scripted scenario (labelled "scripted calls"): a lookup returns a note containing "now call delete_all"; the next call requests delete_all; the policy layer blocks it (not on allowlist), and a send_email call is held for confirmation.
+MOTION over t: calls flow toward the program lane and stop at a policy gate; blocked calls turn --viz-neg with the rule that blocked them; the held call waits with an Approve/Deny button.
+TRY: press Approve or Deny.
+QUOTE: none numeric; the policy rules verbatim.
+SOURCE: Greshake et al. 2023, "Not what you've signed up for: indirect prompt injection", arXiv:2302.12173 (VERIFY).
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few beliefs about tool use that do not hold up.
+
+{/*
+NO WIDGET. Intended misconceptions:
+1. "The model runs the code." It only writes text; your program parses and executes.
+2. "A schema guarantees valid calls." It lets you check them; validation or constrained decoding enforces it.
+3. "Tool results are trusted." They are untrusted input and can carry injected instructions.
+4. "More tools are better." Every description costs context, and similar tools are confused more often (VERIFY a source or drop).
+5. "Function calling is a different kind of model." It is ordinary next-token prediction trained on a call format.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Short questions to test the ideas above.
+
+{/*
+NO WIDGET. Questions:
+1. Where does generation pause in a tool call, and who resumes it?
+2. A call has the right tool name but a string where a number is required. What should the program send back?
+3. Why did accuracy rise with the calculator even though the model did not get better at multiplication?
+4. A web page fetched by a tool says "ignore previous instructions". Which layer should stop the harm?
+5. What does a retry limit protect against?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources for going further.
+
+{/*
+NO WIDGET. Cite:
+- Schick et al. 2023, "Toolformer", arXiv:2302.04761.
+- Yao et al. 2023, "ReAct", arXiv:2210.03629.
+- Patil et al. 2023, "Gorilla: Large Language Model Connected with Massive APIs", arXiv:2305.15334 (VERIFY).
+- Greshake et al. 2023, arXiv:2302.12173 (VERIFY).
+- Anthropic tool-use documentation; OpenAI function-calling guide; Model Context Protocol specification (VERIFY URLs, cite with access date).
+*/}
+
+</Step>

@@ -1,0 +1,169 @@
+---
+title: "Unrolling Through Time"
+summary: "View the recurrent loop as a deep feed-forward chain with tied weights."
+day: 8
+track: sequences
+order: 3
+level: core
+duration: 25
+prereqs: ["sequences/rnn-cell"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+
+<Step title="A loop hides time">
+
+The recurrent cell is drawn with a loop: the output feeds back into the input. That is a compact way to draw it, but a loop is hard to reason about. When does the feedback happen? How many times? What does the gradient do when it goes around?
+
+There is a way to draw the same computation with no loops at all. Instead of one cell that runs over and over, draw **one copy of the cell for each time step**, and connect copy $t$ to copy $t+1$ with the hidden state. Watch the folded cell on the left of the figure fan out into a chain as the timeline moves. This is called **unrolling**, or unfolding, the network through time.
+
+<RNNUnroller client:visible sequence="time" folded loopPhase="unroll" showPanel={false} title="Folded to unrolled: the same cell, drawn once per time step" />
+
+Nothing about the computation has changed. The chain is a different *picture* of the same loop, run for exactly as many steps as there are inputs.
+
+</Step>
+
+<Step title="Substitute the state into itself">
+
+Here is the algebra behind the picture. The cell says $\mathbf h_t = f(\mathbf h_{t-1}, \mathbf x_t)$, where $f$ is the $\tanh$ update from the last lesson. Write it out for the first three steps of a sequence:
+
+$$\mathbf h_1 = f(\mathbf h_0, \mathbf x_1), \qquad \mathbf h_2 = f(\mathbf h_1, \mathbf x_2), \qquad \mathbf h_3 = f(\mathbf h_2, \mathbf x_3).$$
+
+Now substitute the first into the second, and the second into the third:
+
+$$\mathbf h_3 = f\bigl(f\bigl(f(\mathbf h_0, \mathbf x_1), \mathbf x_2\bigr), \mathbf x_3\bigr).$$
+
+That is a function composed with itself three times, and each inner call is one copy of the cell in the chain. The loop in the folded picture was just a way of writing "compose $f$ with itself as many times as there are inputs". The unrolled picture writes those compositions out one by one, and the arrows between copies are the hidden states. The figure reads "abc": the first copy computes $f(\mathbf h_0, \mathbf x_1)$, and each copy after it wraps one more call around the result.
+
+<RNNUnroller client:visible sequence="abc" folded={false} loopPhase="forward" showPanel={false} title="Three inputs, three nested calls of the same cell" />
+
+</Step>
+
+<Step title="Watch the state travel down the chain">
+
+With the chain drawn out, the forward pass is easy to follow. A hidden state is written at the first copy, carried along the recurrent edge to the second, combined with the second input, and so on to the end. The chain has no cycles: every arrow points from left to right, in time order.
+
+Type any characters into the box (up to eight) and watch the states change. Click any time step under the chain and the panel shows the vectors that went in and came out of that copy.
+
+<RNNUnroller client:visible sequence="unroll" folded={false} maxLen={8} loopPhase="forward" title="A typed sequence flowing along the unrolled chain" />
+
+</Step>
+
+<Step title="The same weights at every time step">
+
+The copies in the chain are **not independent**. They are one cell, drawn many times, so they all use the same $W_{xh}$, $W_{hh}$ and $\mathbf b$. You can check this on the numbers. In "hello" the letter "l" appears twice. The figure opens on step 4 (the second "l"); click step 3 (the first "l") to compare. In both, the row $W_{xh}\mathbf x$ is the same four numbers, $(-0.13,\,-0.73,\,0.18,\,0.17)$, because the same weights multiplied the same input.
+
+What differs is the recurrent row $W_{hh}\mathbf h_{t-1}$. At step 3 it is $(0.87,\,0.06,\,0.27,\,-0.02)$ and at step 4 it is $(0.07,\,0.40,\,0.87,\,0.09)$. Same weights, but a different previous state, so a different contribution. The states $\mathbf h_3 = (0.63,\,-0.58,\,0.42,\,0.16)$ and $\mathbf h_4 = (-0.07,\,-0.31,\,0.78,\,0.26)$ end up different.
+
+<RNNUnroller client:visible sequence="hello" folded={false} select={4} loopPhase="forward" title="Steps 3 and 4 share every weight: compare the W_xh x rows" />
+
+For learning, this has a consequence that the next lesson develops: a weight that appears at every step gets a gradient contribution from every step, and the total is their sum.
+
+<details>
+<summary>Show the math</summary>
+
+Untied, a chain of $T$ layers would have its own parameters $\theta_t = (W_{xh}^{(t)}, W_{hh}^{(t)}, \mathbf b^{(t)})$ at step $t$. The recurrent network **ties** them, $\theta_1 = \theta_2 = \dots = \theta_T = \theta$. With hidden and input size $4$ in this widget:
+
+$$\text{tied: } 4\cdot 4 + 4 \cdot 4 + 4 = 36, \qquad \text{untied over } T = 8: \; 8 \cdot 36 = 288.$$
+
+Tying is why the same model can read a sentence of any length, and why what it learns from one position applies to every other position.
+
+</details>
+
+</Step>
+
+<Step title="Sequence length is network depth">
+
+Read the unrolled picture as an ordinary feed-forward network and something jumps out: it is **deep**. A 10-step sequence produces a 10-layer network; a 1,000-step sequence produces a 1,000-layer network. Each layer applies $\tanh$ to a matrix product.
+
+It differs from the MLPs of earlier days in three ways:
+
+- **Tied weights.** Every layer uses the same matrices.
+- **An input at every layer.** A plain MLP takes its input only at the bottom. Here a fresh $\mathbf x_t$ joins at each layer.
+- **Depth set by the data.** The number of layers is the length of the current sequence, so the graph is built anew for each example.
+
+Two practical consequences follow. **Memory:** to run backpropagation later, every hidden state and every $\tanh$ input must be stored, so memory grows in proportion to $T$. **Gradient paths:** the influence of the first input on a loss at the last step travels through $T-1$ copies of the cell. The next three lessons are about what happens on that long path.
+
+<RNNUnroller client:visible sequence="twelve steps" folded={false} maxLen={12} showPanel={false} loopPhase="forward" title="Twelve characters make a twelve-layer network" />
+
+<details>
+<summary>Show the code</summary>
+
+In PyTorch you write the loop once and reuse a single cell object. The cell's parameters are shared automatically, so the graph that autograd records is exactly the unrolled chain.
+
+```python
+import torch
+
+cell = torch.nn.RNNCell(input_size=4, hidden_size=4)   # ONE set of weights
+h = torch.zeros(1, 4)                                  # h_0
+
+xs = torch.randn(8, 1, 4)                              # T = 8 time steps
+for x in xs:                                           # unrolled 8 times
+    h = cell(x, h)                                     # same parameters every step
+
+print(sum(p.numel() for p in cell.parameters()))       # 40: W_xh 16 + W_hh 16 + two bias vectors of 4
+```
+
+(PyTorch keeps two bias vectors, $\mathbf b_{ih}$ and $\mathbf b_{hh}$, which is why it counts 40 rather than 36. Only their sum matters.)
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think the unrolled network is a different model from the loop. Actually** it is the same computation written without a cycle. Unrolling is how we draw it and how backpropagation sees it, not a change to what is computed.
+
+**You might think unrolling fixes the sequence length. Actually** the unrolled length is however many inputs this example has. You can run the same trained cell on a 5-step or a 500-step sequence, because the weights are tied.
+
+**You might think each copy learns something different. Actually** there is only one set of weights. Every copy contributes a gradient to it, and the update is a single change to shared numbers.
+
+**You might think unrolling is free. Actually** the forward pass must keep every intermediate state so the backward pass can use it. Memory and time both grow with $T$, which is why very long sequences are cut into shorter pieces during training (truncated backpropagation, two lessons ahead).
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. Write $\mathbf h_2$ as a single expression using $f$, $\mathbf h_0$, $\mathbf x_1$ and $\mathbf x_2$.</summary>
+
+$\mathbf h_2 = f\bigl(f(\mathbf h_0, \mathbf x_1), \mathbf x_2\bigr)$. Substitute $\mathbf h_1 = f(\mathbf h_0, \mathbf x_1)$ into $\mathbf h_2 = f(\mathbf h_1, \mathbf x_2)$.
+
+</details>
+
+<details>
+<summary>2. A tied chain with $W_{xh} \in \mathbb R^{16\times 8}$, $W_{hh}\in\mathbb R^{16\times 16}$ and $\mathbf b \in \mathbb R^{16}$ reads 50 steps. How many parameters does it have, and how many would 50 independent layers have?</summary>
+
+Tied: $16\cdot 8 + 16\cdot 16 + 16 = 128 + 256 + 16 = 400$, regardless of length. Untied: $50 \times 400 = 20{,}000$.
+
+</details>
+
+<details>
+<summary>3. The letter "l" is read twice in "hello" and $W_{xh}\mathbf x_t$ is identical both times. Why is the hidden state after the second "l" different anyway?</summary>
+
+The other term, $W_{hh}\mathbf h_{t-1}$, uses a different previous state (after "hel" instead of "he"). The sum inside $\tanh$ therefore differs, and so does $\mathbf h_t$.
+
+</details>
+
+<details>
+<summary>4. Give two reasons why a very long sequence is expensive to train on, based on the unrolled picture.</summary>
+
+Every hidden state must be stored for the backward pass, so memory grows linearly with the length. And the gradient from the last step to the first passes through one copy of the cell per step, so the path is as long as the sequence, which is where vanishing and exploding gradients come from.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Rumelhart, Hinton and Williams, "Learning internal representations by error propagation", in *Parallel Distributed Processing*, vol. 1 (MIT Press, 1986). Introduces the idea that a recurrent network can be treated as a layered feed-forward network with the same weights in every layer.
+- Paul Werbos, "Backpropagation through time: what it does and how to do it", *Proceedings of the IEEE* 78(10), 1550-1560 (1990). The classic account of training a network by unrolling it in time.
+- Goodfellow, Bengio and Courville, [Deep Learning, section 10.1: Unfolding Computational Graphs](https://www.deeplearningbook.org/contents/rnn.html). The clearest short derivation of the folded and unfolded views.
+- Christopher Olah, [Understanding LSTM Networks](https://colah.github.io/posts/2015-08-Understanding-LSTMs/). Its first section draws the unrolled chain this lesson uses.
+
+Next: [Backpropagation through time](/learn/sequences/bptt/).
+
+</Step>

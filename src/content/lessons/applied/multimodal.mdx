@@ -1,0 +1,149 @@
+---
+title: "Multimodal Models: ViT, CLIP, VLMs"
+summary: "Treat images as patch tokens, align image and text embeddings with a contrastive loss, and feed image tokens to a language model."
+day: 14
+track: applied
+order: 6
+level: advanced
+duration: 35
+prereqs: ["transformers/transformer-block","cnns/convolution"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+Cut an image into patches and a transformer can read it like text.
+
+<Step title="An image as a sequence of patches">
+
+A Vision Transformer cuts an image into a grid of small square patches and treats each patch as one token.
+
+{/*
+IDEA: 16x16 grayscale image, 4x4 patches -> 16 tokens of 16 pixels each. Dataset: procedural shapes (circle, square, triangle, cross, bars) at two sizes and four positions, seeded; grayscale so no categorical colours are needed (pixel intensity uses --viz-seq ramp).
+WIDGET: ClipLab mode="patches" image="circle-large-left". Left: the image with the patch grid; right: the 16 patches laid out in a row as a sequence, each flattened to a 16-number strip.
+MOTION over t: grid lines draw, patches lift out in raster order and slide into the sequence, each flattens into its strip.
+TRY: change patch size between 2, 4 and 8 (tokens 64, 16, 4).
+QUOTE: tokens for each patch size; for a 224 px image with 16 px patches, 196 tokens (Dosovitskiy et al.), computed in the readout.
+*/}
+
+</Step>
+
+<Step title="Patch embedding and position">
+
+Each flattened patch is multiplied by one shared matrix to become an embedding, and a position embedding is added so the model knows where the patch came from.
+
+{/*
+IDEA: patch embedding = linear map shared across patches = a convolution with kernel = stride = patch size (show that equivalence with src/lib/cnn/conv.ts conv2d; unit test it). Position embeddings added, because attention is order-blind (link /learn/transformers/positional-encodings/).
+WIDGET: ClipLab mode="embed" image="cross-small-right". One patch's 16 pixels times the 16x8 projection matrix gives 8 numbers; then + position vector; the whole sequence of 16 tokens shown as a heat strip.
+MOTION over t: matrix-vector product animated row by row for the highlighted patch (values count up), then the position vector adds in, then the remaining patches fill in quickly.
+TRY: shuffle the patches (button) and see that without position embeddings the pooled vector does not change.
+QUOTE: the pooled embedding's change when patches are shuffled with and without position embeddings (zero without).
+SHOW THE MATH: z_i = E x_i + p_i.
+SHOW THE CODE: nn.Conv2d(1, d, kernel_size=P, stride=P) in PyTorch, flattened to a sequence.
+*/}
+
+</Step>
+
+<Step title="CLIP: training images and captions to agree">
+
+CLIP trains an image encoder and a text encoder together so that each image's embedding lands closest to its own caption's embedding and far from the others in the batch.
+
+{/*
+IDEA: symmetric contrastive (InfoNCE) loss over a batch similarity matrix; the diagonal pairs are the positives. Real training in a worker on the shapes dataset: image encoder = patch embedding + mean pool + linear (optionally one attention layer from src/lib/transformer if available); text encoder = mean of word embeddings + linear; captions like "large circle left". Snapshots every N updates, seeded, hand-written backprop on typed arrays, gradient-checked.
+WIDGET: ClipLab mode="contrastive". An 8x8 batch similarity matrix (images as rows, captions as columns, --viz-seq intensity) and the loss curve.
+MOTION over t: training snapshots replay; the matrix starts uniform and the diagonal brightens; the loss curve draws; the learnable temperature readout changes.
+TRY: scrub to the first snapshot and to the last and compare the diagonal.
+QUOTE: loss at start and end; mean diagonal probability at start (1/8) and end.
+SHOW THE MATH: L = average of cross-entropy over rows and over columns of softmax(S / tau), S_ij = cos(image_i, text_j).
+SHOW THE CODE: the CLIP paper's numpy-style pseudocode, paraphrased in 8 lines (cite Radford et al. 2021 Fig. 3).
+*/}
+
+</Step>
+
+<Step title="Zero-shot classification by caption">
+
+A trained CLIP model can classify an image into labels it was never trained on as classes, by comparing the image with a caption written for each label.
+
+{/*
+IDEA: classes as text prompts ("a circle", "a square", ...); predicted class = caption with the highest cosine. Measured on held-out images (combinations of size and position not seen in training).
+WIDGET: ClipLab mode="zeroshot" image="triangle-large-top". Image on the left; bars of cosine to each class caption on the right, softmax probabilities; accuracy over the held-out set below.
+MOTION over t: the image embedding is compared to each caption in turn (bars rise one by one), the winner is outlined; then held-out images cycle through with a running accuracy.
+TRY: pick another image from the strip; edit the caption template ("a circle" vs "circle" vs "a large circle").
+QUOTE: held-out zero-shot accuracy; the effect of the caption template on accuracy (measured, if the sim shows one).
+*/}
+
+</Step>
+
+<Step title="Vision-language models: image tokens into a language model">
+
+A vision-language model turns image patches into embeddings, maps them into the language model's token space with a small projector, and puts them in the sequence alongside the text.
+
+{/*
+IDEA: LLaVA-style plumbing: vision encoder -> projector (linear or MLP) -> image tokens prepended to text tokens -> causal language model. Honest scope: the figure shows the real sequence assembly and real token counts with the trained tiny image encoder and a projector; it does not show a language model describing the image unless the Day 9-10 tiny transformer is available and a captioning head is trained (open question in plans/day-14.md).
+WIDGET: ClipLab mode="vlm" image="square-small-bottom". A token row: 16 image tokens (from the encoder, after a linear projector into the LM width) then text tokens "Q: what shape? A:"; a context-share bar.
+MOTION over t: patches pass through the encoder and projector and enter the token row; the text tokens follow; the bar shows image vs text share of the context.
+TRY: change image size / patch size and see the token count and context share change.
+QUOTE: image tokens for this image; for a 336 px image with 14 px patches, 576 tokens (LLaVA-1.5, VERIFY) computed in the readout.
+SOURCES: Liu et al. 2023 "Visual Instruction Tuning" (LLaVA), arXiv:2304.08485; Alayrac et al. 2022 "Flamingo", arXiv:2204.14198.
+*/}
+
+</Step>
+
+<Step title="What the model sees and misses">
+
+Contrastive training learns whatever separates captions in the batch, so details that captions rarely distinguish, like word order, can be lost.
+
+{/*
+IDEA: limits demonstrated on the tiny model: the bag-of-words text encoder gives identical embeddings to "circle left of square" and "square left of circle" (order-blind by construction), so the model cannot tell those images apart by caption; counting and small objects also weaker (measure, only claim what the sim shows). Large-model evidence: Yuksekgonul et al. 2023 "When and why vision-language models behave like bags-of-words", arXiv:2210.01936 (VERIFY); Thrush et al. 2022 "Winoground", arXiv:2204.03162.
+WIDGET: ClipLab mode="limits". Two-object images (circle and square, either order); the two swapped captions and their cosines to each image.
+MOTION over t: both images are scored against both captions; the four bars rise; the two captions' bars come out equal.
+TRY: switch to a pair that differs in size ("large circle" vs "small circle") and see that one separate.
+QUOTE: the four cosines; the difference for the swapped-order pair (exactly 0) and for the size pair.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few beliefs about multimodal models that do not hold up.
+
+{/*
+NO WIDGET. Intended misconceptions:
+1. "ViTs see the image like a CNN with pixels in context." Each patch is flattened; neighbourhood comes only from position embeddings and attention.
+2. "CLIP learns labels." It learns to match images to captions in a batch; classes are just captions at test time.
+3. "A VLM looks at the image while it writes." The image is a fixed set of tokens in the context, processed like text tokens.
+4. "High zero-shot accuracy means the model understands the scene." Order and counting failures show otherwise.
+5. "More patches are free." Tokens grow with the square of resolution over patch size; attention cost grows faster.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Short questions to test the ideas above.
+
+{/*
+NO WIDGET. Questions:
+1. How many tokens does a 512 px image give with 16 px patches?
+2. Why is a patch embedding the same as a convolution with stride equal to kernel size?
+3. In a batch of 32 pairs, how many negatives does each image have in the CLIP loss?
+4. Why can a bag-of-words text encoder never separate "dog bites man" from "man bites dog"?
+5. What does the projector in a VLM learn to do?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources for going further.
+
+{/*
+NO WIDGET. Cite:
+- Dosovitskiy et al. 2021, "An Image is Worth 16x16 Words", arXiv:2010.11929.
+- Radford et al. 2021, "Learning Transferable Visual Models From Natural Language Supervision" (CLIP), arXiv:2103.00020.
+- van den Oord et al. 2018, "Representation Learning with Contrastive Predictive Coding" (InfoNCE), arXiv:1807.03748.
+- Alayrac et al. 2022, "Flamingo", arXiv:2204.14198.
+- Liu et al. 2023, "Visual Instruction Tuning", arXiv:2304.08485.
+- Yuksekgonul et al. 2023, arXiv:2210.01936 (VERIFY); Thrush et al. 2022, "Winoground", arXiv:2204.03162.
+*/}
+
+</Step>

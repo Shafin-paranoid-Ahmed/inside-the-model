@@ -1,0 +1,170 @@
+---
+title: "Emergent Abilities and In-Context Learning"
+summary: "Models can pick up tasks from examples in the prompt alone, without weight updates; whether abilities appear suddenly depends partly on how you measure."
+day: 10
+track: llms
+order: 5
+level: advanced
+duration: 25
+prereqs: ["llms/pretraining"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ICLLab from '../../../components/widgets/ICLLab/ICLLab.svelte';
+
+Show a model a few worked examples inside its prompt and it can sometimes pick up a task it was never trained on. How can a model learn something without changing?
+
+<Step title="Zero-shot, one-shot, few-shot">
+
+A **prompt** is the text you give a language model to continue. **Zero-shot** means the prompt only asks; **one-shot** adds one worked example; **few-shot** adds several. [Brown et al. (2020)](https://arxiv.org/abs/2005.14165) used these words for GPT-3, a 175-billion-parameter model that handled new tasks from examples written in the prompt, with no gradient updates and no fine-tuning.
+
+Our model is much smaller: 7,740 numbers, reading single letters (real models read [BPE tokens](/learn/transformers/tokenization/)). It was trained on sequences of pairs such as `c>f`, and every sequence hides its own rule: each letter among `a` to `h` moves forward by the same secret amount, wrapping from `h` back to `a`. In `c>f` the amount is 3. The model cannot memorise a rule, because every sequence has a different one. To answer a question like `g>` it must work the rule out from the pairs earlier in the same prompt.
+
+Watch the prompt grow one example at a time. With no examples, the correct letter `b` gets only **10.2%**, and the model's top guess is `c` at 14.4%. After the single example `c>f` it gives `b` **99.8%**, and after three examples 99.9%. The model's 7,740 numbers are identical at every beat; only the prompt changed. Type your own pairs below the figure to see how the bars react.
+
+<ICLLab client:visible mode="shots" title="One more example, same frozen model" />
+
+</Step>
+
+<Step title="Learning without weight updates">
+
+Training changes a model's numbers. Using a prompt does not. Yet the answers improve with each example, so something is being learned inside one forward pass, and it is gone as soon as the prompt is. This is called **in-context learning**.
+
+To measure it, give the model hundreds of new tasks, each with its own hidden rule, and count correct answers. With 500 tasks, accuracy is **12.4%** with no examples, which is chance because there are eight letters ($1/8 = 12.5\%$). With one example it is **100.0%**, with two **99.4%**, and with four **100.0%**.
+
+Now tick the box under the figure. The examples keep their format but their answers are random, so they no longer contain a rule. With four of them accuracy is **14.0%**, back at chance. The model is not just reacting to the look of a prompt with pairs in it; it uses what the answers say.
+
+<ICLLab client:visible mode="curve" title="Accuracy over 500 new tasks" />
+
+<details>
+<summary>Show the math</summary>
+
+In-context learning is usually scored by how the loss changes with position in the prompt. [Olsson et al. (2022)](https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html) define the score as the loss on the 500th token of a context minus the average loss on the 50th token: the later token has seen more context, so a lower loss means the context helped. Here there is one question per task, so we count how often the answer is right as examples are added.
+
+</details>
+
+</Step>
+
+<Step title="What the attention does">
+
+**Attention** lets each token look back at earlier tokens and mix in what it finds. This model has 2 layers with 2 attention heads each. The figure shows, for the prompt `c>f g>b a>d e>h g>`, where the final `>` looks in each head. A darker cell means more of that head's attention.
+
+A famous pattern explains in-context learning in large models: an **induction head** finds an earlier copy of the current token and reads what came after it ([Olsson et al., 2022](https://arxiv.org/abs/2209.11895)). Our model does not form one. The earlier `g>b` would be that target, and the answer `b` (position 7) gets at most **4%** of any head's attention. What does form: layer 2, head 1 puts **99%** on the query letter `g` (position 17), and layer 2, head 2 puts **88%** there, with **8%** on the answer `d` and **4%** on the answer `b`. Layer 1, head 1 spreads about 10 to 15% over each `>` and space, and layer 1, head 2 puts **29%** on the space just before the query.
+
+That shows where the heads look, not what each does. Pick a head and tick the box to switch it off. Without any one of the four heads the model gives `b` less than 1%, and accuracy over 500 new tasks drops to between **12.4% and 18.8%**, close to chance. All four heads are needed for the computation.
+
+<ICLLab client:visible mode="attention" title="Where the final > looks" />
+
+</Step>
+
+<Step title="A sudden jump during training">
+
+Does the ability grow steadily while the model trains? The figure replays one training run, logged every 50 updates. With four examples in the prompt, the loss sits on a plateau near **2.09** (chance is $\ln 8 = 2.08$) from update 100 to about 450, then falls: **2.03** at update 500, **1.00** at 700, **0.30** at 1,000. With no examples the loss settles at the same level (about 2.1) and never falls further.
+
+Watch the lower curve and the map. At update 400 the shown head puts **5%** of its attention on the query letter; at 450 it is **21%**, at 500 **46%**, and it holds near 60% afterwards. The attention change starts just before the loss drop, and the map's outlined bottom row sharpens from scattered to a bright cell on the query letter. Olsson et al. (2022) report the same kind of phase change in language models: a sudden, early improvement in in-context learning during training. They tie it to induction heads; in our model a different attention pattern appears at that moment.
+
+<ICLLab client:visible mode="phase" title="One training run, update by update" />
+
+</Step>
+
+<Step title="Emergent abilities, or a measuring artefact?">
+
+[Wei et al. (2022)](https://arxiv.org/abs/2206.07682) call an ability **emergent** if it is not present in smaller models but is present in larger ones. [Schaeffer, Miranda and Koyejo (2023)](https://arxiv.org/abs/2304.15004) replied that apparent emergence can come from how the ability is scored: nonlinear or discontinuous metrics produce sudden jumps, while linear or continuous ones show smooth change.
+
+We trained six model sizes, one run each, for 8,000 updates, and asked each to answer a four-letter question one letter at a time. The first thing the figure shows is that **size did not decide the outcome**. The models with width 12, 24 and 32 learned the task, while those with widths 8, 16 and 48 did not, so success is not a step at some size. Every run either left the plateau or stayed on it. Switch to "Each letter right": the two models that failed at width 8 and 16 stay at chance, 12% and 13%, so for them changing the metric changes nothing.
+
+The metric does matter for the width-48 model. Scored on all four letters it gets **0.6%**, which looks like failure. Each letter on its own is right **25.5%** of the time, twice chance, and its log-probability on the answer is **-5.57**, against **-8.32** for pure guessing. It learned something that the strictest score hides. That is a small, real example of the point in Schaeffer et al.: a score that demands every part right can make partial progress invisible. It does not turn our six sizes into a smooth curve.
+
+<ICLLab client:visible mode="emergence" title="Six sizes, three ways to score" />
+
+<details>
+<summary>Show the math</summary>
+
+If each of $L$ letters is right with probability $p$, and the letters are independent, all of them are right with probability $p^L$. For $p = 0.255$ and $L = 4$ that is $0.255^4 = 0.004$, close to the measured 0.006. A smooth rise in $p$ gives an exact-match score that stays near zero and then climbs steeply.
+
+</details>
+
+</Step>
+
+<Step title="Sensitive to the prompt's format">
+
+In-context learning works best on prompts that look like the ones the model learned from. The same four examples written in a different format can stop working.
+
+The model was trained only on `c>f a>d` with a space between pairs. Over 500 tasks with four examples it scores **100.0%** in that format. Replace `>` with `=` and it reads an unfamiliar symbol, which it treats as an unknown token: **30.2%**. Put each pair on its own line: **26.2%**. Remove the spaces between pairs: **16.8%**. Keep the trained format but change the last example's answer to a wrong letter: **23.2%**, so one bad example in four is enough to ruin most answers. Chance is 12.5%.
+
+Real models are sensitive to layout and example order too ([Zhao et al., 2021](https://arxiv.org/abs/2102.09690); [Lu et al., 2022](https://arxiv.org/abs/2104.08786)). They can also be surprisingly relaxed about labels: [Min et al. (2022)](https://arxiv.org/abs/2202.12837) found that randomly replacing the labels in demonstrations barely hurts performance on many classification tasks, because the format and the label space carry much of the signal. In our task the answers are the rule, so random answers do hurt.
+
+<ICLLab client:visible mode="format" title="Same four examples, five formats" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think the model learns from the prompt the way it learns in training. Actually** no number changes. The "learning" is a computation inside one forward pass and disappears with the prompt.
+
+**You might think in-context learning lets a model pick up any task. Actually** it works for tasks and formats near what the model was trained on. Our model lost most of its accuracy when `>` became `=`.
+
+**You might think emergence proves abilities appear at a fixed size. Actually** the abruptness depends partly on how you score. In our sweep it also depended on the run: a smaller model succeeded where a larger one did not.
+
+**You might think more examples are always better. Actually** misformatted or wrong examples can hurt. One wrong example among four cut our model from 100% to 23.2%.
+
+**You might think induction heads explain all in-context learning. Actually** they are one well-studied mechanism. Our model solved its task with a different attention pattern, and the paper itself presents the general claim as a hypothesis with varying strength of evidence.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each before opening the answer.
+
+<details>
+<summary>In the shift task, what is chance accuracy, and why?</summary>
+
+1 in 8, or 12.5%, because there are eight possible answer letters.
+
+</details>
+
+<details>
+<summary>Why can't the tiny model memorise the answer to a query?</summary>
+
+Every sequence has its own hidden shift, so the same query letter has a different answer in each one. The rule has to come from the examples in the prompt.
+
+</details>
+
+<details>
+<summary>Each letter of a four-letter answer is right 80% of the time. How often is the whole answer right?</summary>
+
+$0.8^4 \approx 0.41$, assuming the letters are independent.
+
+</details>
+
+<details>
+<summary>What would show that a sudden jump is not a metric artefact?</summary>
+
+It would persist under continuous metrics such as log-probability. In our sweep, the width 8 and 16 runs stayed at chance under all three metrics, so there the jump belongs to the run and not to the metric.
+
+</details>
+
+<details>
+<summary>One example in four is wrong and accuracy falls from 100% to 23.2%. What does that say about how the model uses examples?</summary>
+
+It does not take a majority vote. One conflicting example is enough to derail it, which fits a model that learned a fixed procedure for clean prompts.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+Primary papers.
+
+- Tom Brown et al., [Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165) (2020).
+- Catherine Olsson et al., [In-context Learning and Induction Heads](https://arxiv.org/abs/2209.11895), Transformer Circuits Thread (2022); Nelson Elhage et al., [A Mathematical Framework for Transformer Circuits](https://transformer-circuits.pub/2021/framework/index.html) (2021).
+- Jason Wei et al., [Emergent Abilities of Large Language Models](https://arxiv.org/abs/2206.07682), TMLR (2022).
+- Rylan Schaeffer, Brando Miranda and Sanmi Koyejo, [Are Emergent Abilities of Large Language Models a Mirage?](https://arxiv.org/abs/2304.15004), NeurIPS (2023).
+- Stephanie Chan et al., [Data Distributional Properties Drive Emergent In-Context Learning in Transformers](https://arxiv.org/abs/2205.05055), NeurIPS (2022): in-context learning appears when training data is bursty and has many rare classes.
+- Sewon Min et al., [Rethinking the Role of Demonstrations](https://arxiv.org/abs/2202.12837) (2022).
+- Shivam Garg et al., [What Can Transformers Learn In-Context?](https://arxiv.org/abs/2208.01066) (2022); Sang Michael Xie et al., [In-context Learning as Implicit Bayesian Inference](https://arxiv.org/abs/2111.02080) (2021).
+
+Next: [Hallucination](/learn/llms/hallucination/).
+
+</Step>

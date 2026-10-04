@@ -1,0 +1,176 @@
+---
+title: "Train, Validation and Test Splits"
+summary: "Hold out data so you can honestly measure generalization and tune choices."
+day: 2
+track: foundations
+order: 5
+level: core
+duration: 20
+prereqs: ["foundations/overfitting-bias-variance"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import DataSplitter from '../../../components/widgets/DataSplitter/DataSplitter.svelte';
+
+<Step title="Why not grade a model on what it studied?">
+
+If a student is graded on the exact questions they practised, a top mark tells you about their memory, not their understanding. Models are the same. The [previous lesson](/learn/foundations/overfitting-bias-variance/) showed a flexible model driving its training error toward zero by memorizing noise. What we want to know is how it will do on data it has **never seen**: its **generalization** error.
+
+The fix is simple: never grade the model on data it trained on. Set some data aside before training and judge the model there. The figure starts with 100 labelled examples (dots) in a pool. Watch them flow into three bins. The **training set** is the only data the model learns from.
+
+<DataSplitter client:visible lockSplit title="A dataset flows into three bins" />
+
+</Step>
+
+<Step title="Training error is optimistic">
+
+Once the dots have settled, the model starts training. It is a degree-13 polynomial fitted by gradient descent (the [previous lesson's](/learn/foundations/overfitting-bias-variance/) flexible model), and the horizontal axis counts training steps. The blue curve is the loss on the training bin. It only ever goes down: gradient descent is built to make exactly this number smaller.
+
+By the end, the training loss is about 0.14. The data was generated with noise that no model can explain, and that sets a **noise floor** of 0.25 (the dotted line, the average squared noise). A training loss well *below* the floor is not skill, it is the model fitting noise it has seen. The training loss is therefore an optimistic report card.
+
+<DataSplitter client:visible lockSplit startAt={2.5} title="Training loss keeps falling, even below the noise floor" />
+
+</Step>
+
+<Step title="The validation set: an honest score you may look at">
+
+The orange curve is the loss on the **validation set**: examples the model never trains on, used to measure progress and to choose settings. It first falls along with the training loss, because the model really is learning the pattern. Then it turns upward while the training loss keeps falling. The model has started memorizing the training points' noise, which does not carry over to new points.
+
+Everything you can tune, the number of training steps, the model size, the learning rate, the strength of regularization, is called a **hyperparameter**, and you choose it by watching validation loss. Here the choice is how long to train. **Early stopping** means keeping the model from the step where validation loss is lowest. Watch the timeline pass the dashed marker: for the default split that is around epoch 18, with a validation loss near 0.42, while by the end it has climbed to about 0.53.
+
+<DataSplitter client:visible lockSplit startAt={2.5} title="Validation loss bottoms out: the early-stopping point" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+best_val, best_w = float("inf"), None
+for epoch in range(max_epochs):
+    w = train_one_epoch(w, X_train, y_train)      # only the training set updates w
+    val = mse(w, X_val, y_val)                    # the validation set only measures
+    if val < best_val:
+        best_val, best_w = val, w.copy()          # keep the best model seen so far
+```
+
+</details>
+
+</Step>
+
+<Step title="Choosing the split sizes">
+
+How much data goes into each bin is a trade. More training data gives a better model. More validation and test data gives a less noisy score: with only ten test points, one unlucky point can move the average a lot. A common starting point is 60 to 80 percent for training and the rest split evenly, and with very large datasets a few percent each is plenty.
+
+Drag the two handles on the bin bar, or use the sliders, and the model retrains on the new split. Try giving training only 20 percent: the fit has less data to pin down the pattern, so it overfits from the first steps and the validation curve sits high. Then try 80 percent training and only 10 test points: the score read from that tiny test set is noisy.
+
+<DataSplitter client:visible trainFrac={0.2} valFrac={0.3} startAt={2.5} title="Drag the handles: fewer training points, earlier overfitting" />
+
+</Step>
+
+<Step title="The test set: touch it once">
+
+The validation set has a weakness: because you use it to choose, your choices slowly fit *it* too. Pick among enough options by their validation score and the winner will look better than it really is, partly by luck. So keep a third set, the **test set**, locked away. You look at it once, after every choice is made, to report the final score.
+
+In the figure the test bin is dashed and marked sealed. Once the stopping point has been chosen by validation, the test score is read once and printed under the figure next to the score on a large fresh sample (600 points standing in for the real world). In the default split the test score is about 0.36 and the fresh-data score about 0.30. They differ because 40 test points are few and noisy, but nothing pushed the test score in a flattering direction: it is an honest, if noisy, estimate.
+
+<DataSplitter client:visible lockSplit startAt={2.5} title="Choose with validation, report once on test" />
+
+</Step>
+
+<Step title="What peeking at the test set does">
+
+Suppose you have not one knob but many: a model family with different flexibilities, each trained on a different resample of the training data. The figure tries 30 such candidates (polynomial degrees 4 to 9, five resamples each). Every candidate gets three scores: on validation (filled circles), on test (filled squares), and on a large fresh sample (open ring), which we can compute here but you never could in practice.
+
+Two people choose among the candidates. One picks the lowest **validation** loss. The other **peeks**: picks the lowest **test** loss. When the timeline ends, both picks are marked and the readout compares them. In the default split the peeker's model reports a test loss of about 0.24, which looks better than the honest picker's 0.29. But on fresh data the peeker's model scores about 0.32, worse than the honest pick's 0.27. The peeker chose the candidate that was luckiest on those 15 test points, then reported that luck as skill.
+
+The effect grows with the number of candidates and shrinks with the size of the test set. Try moving the handles to make the test bin larger and the gap narrows. Whenever a number is used to make a decision, it stops being an unbiased measurement. This is why a good benchmark keeps its test labels private.
+
+<DataSplitter client:visible mode="tune" trainFrac={0.4} valFrac={0.45} startAt={2.5} title="Thirty settings, two ways to pick one" />
+
+<details>
+<summary>Show the math</summary>
+
+Let $\hat L_k$ be the test loss of choice $k$ and $L_k$ its true loss on the whole distribution, so $\hat L_k = L_k + \varepsilon_k$ where $\varepsilon_k$ is sampling noise with mean zero. If you pick the choice with the smallest $\hat L_k$, then $\mathbb E[\min_k \hat L_k] \le \min_k \mathbb E[\hat L_k] = \min_k L_k$ in general, with a gap that grows with the number of choices and the size of $\varepsilon_k$ (which shrinks like $1/\sqrt{n_{\text{test}}}$). Picking the minimum of noisy estimates is biased downward.
+
+</details>
+
+</Step>
+
+<Step title="Leakage and cross-validation">
+
+The most common way to ruin a split is **data leakage**: information from the held-out data sneaks into training. Typical causes are scaling or imputing with statistics computed on the whole dataset before splitting, near-duplicate examples (the same photo, or several rows from one patient) landing on both sides, and, for time series, training on the future to predict the past. Split first, then compute anything from data using the training bin only.
+
+When data is scarce, a single validation set is noisy and wasteful. **$k$-fold cross-validation** cuts the training data into $k$ parts, trains $k$ times each holding out a different part for validation, and averages the scores. It costs $k$ times the compute, in exchange for a steadier estimate. The test set stays untouched either way.
+
+<details>
+<summary>Show the code</summary>
+
+```python
+from sklearn.model_selection import train_test_split, cross_val_score
+
+X_dev, X_test, y_dev, y_test = train_test_split(X, y, test_size=0.2, random_state=0)  # lock the test set away first
+scores = cross_val_score(model, X_dev, y_dev, cv=5, scoring="neg_mean_squared_error")   # tune on 5 folds of X_dev
+# ...pick hyperparameters, refit on all of X_dev, then look at (X_test, y_test) once
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** a low training error means a good model. **Actually** training error is measured on data the model has seen and can be pushed toward zero by memorizing. Only held-out error estimates how it will do on new data.
+- **You might think** validation and test sets are the same thing with two names. **Actually** the validation set is used up by making choices; only the test set, touched once, gives an unbiased final score.
+- **You might think** it is fine to glance at test results "just to check" while developing. **Actually** every decision informed by the test score leaks it into your choices, and the reported number becomes optimistic.
+- **You might think** more held-out data is always better. **Actually** every held-out example is one the model cannot learn from, so the split is a trade between a better model and a steadier score.
+- **You might think** the split proportions are a law. **Actually** 60/20/20 is just a habit; with millions of examples a few percent held out is plenty.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>Why is the training loss a poor estimate of how the model will perform on new data?</summary>
+
+The model was fitted to make that number small on exactly those examples, so it includes noise the model has memorized. New data does not share that noise.
+
+</details>
+
+<details>
+<summary>What is the validation set used for, and what is the test set used for?</summary>
+
+The validation set guides choices: hyperparameters, early stopping, model selection. The test set is looked at once at the end to report the final score of the chosen model.
+
+</details>
+
+<details>
+<summary>Your validation loss started rising at epoch 30 while training loss kept falling. What should you do?</summary>
+
+Stop and keep the model from about epoch 30 (early stopping), or reduce flexibility with regularization or more data. The rise means the model is memorizing.
+
+</details>
+
+<details>
+<summary>You tried 50 model variants and reported the best test score. Why is it too optimistic?</summary>
+
+The minimum of 50 noisy estimates is biased low: part of the winner's advantage is luck on that test sample. Select on validation data and use the test set once.
+
+</details>
+
+<details>
+<summary>You standardize features using the mean and standard deviation of the whole dataset, then split. What is wrong?</summary>
+
+The validation and test rows influenced the statistics used in training, which is leakage. Compute the mean and deviation on the training set only and apply them to the other sets.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Hastie, Tibshirani and Friedman, [*The Elements of Statistical Learning*](https://hastie.su.domains/ElemStatLearn/), section 7.2 (the three-way split) and 7.10 (cross-validation, including the mistake of selecting features before splitting).
+- Kaufman, Rosset and Perlich (2012), ["Leakage in data mining: formulation, detection, and avoidance"](https://doi.org/10.1145/2382577.2382579), *ACM TKDD* 6(4).
+- Recht, Roelofs, Schmidt and Shankar (2019), ["Do ImageNet Classifiers Generalize to ImageNet?"](https://arxiv.org/abs/1902.10811): what happens when a test set is reused for years.
+- Prechelt, ["Early Stopping - But When?"](https://page.mi.fu-berlin.de/prechelt/Biblio/stop_tricks1997.pdf): practical stopping rules.
+- scikit-learn user guide, [Cross-validation: evaluating estimator performance](https://scikit-learn.org/stable/modules/cross_validation.html).
+
+</Step>

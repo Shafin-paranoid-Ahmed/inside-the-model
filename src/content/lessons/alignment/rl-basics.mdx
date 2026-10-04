@@ -1,0 +1,164 @@
+---
+title: "RL Basics: Agents, Rewards, Policies, MDPs"
+summary: "An agent acts in an environment, gets only a score for what it did, and learns to maximise the total score over time."
+day: 11
+track: alignment
+order: 1
+level: core
+duration: 30
+prereqs: ["math/probability"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+Instead of labeled answers, the learner gets only a score for what it did.
+
+<Step title="An agent, an environment and a score">
+
+Reinforcement learning is about an agent that takes actions, sees what happens, and receives a number called a reward, with no labeled correct answer to copy.
+
+{/*
+IDEA: the agent-environment loop. State, action, reward, next state. Contrast with supervised learning (Day 1-2): nobody says which action was right.
+WIDGET: GridWorldLab mode="loop" policy="random" seed=1. Russell and Norvig 4x3 world from src/lib/rl/gridworld.ts (start bottom-left, wall, +1 goal, -1 pit, step reward -0.04, slip 0.2).
+MOTION over t: the agent dot glides cell to cell along one recorded random episode; at each move a small ticker row appends (state, action, reward); the running reward total counts. Loops after the episode ends.
+TRY: watch one move where the agent asked for "up" but slipped sideways (the episode seed must contain one; pick a seed that does and name the move number).
+NUMBERS from sim: episode length, number of slips, total reward of the shown episode.
+No math block. Define: agent, environment, state, action, reward, episode.
+*/}
+
+</Step>
+
+<Step title="A Markov decision process">
+
+A Markov decision process writes the environment down exactly: the states, the actions, the probability of each next state, and the reward, where the next state depends only on the current state and action.
+
+{/*
+IDEA: MDP = (S, A, P, R, gamma). The Markov property: the present state is all you need. Slippery moves make transitions probabilistic.
+WIDGET: GridWorldLab mode="mdp" focus="3,1" action="up". Highlighted cell with three outcome arrows (0.8 intended, 0.1 each side) drawn with widths proportional to probability; bumping a wall means staying put.
+MOTION over t: cycles through the four actions at the focus cell; arrows ease to the new outcome probabilities; 20 sampled outcomes per action drop as dots into their target cells, tally fills.
+TRY: pick the action next to the wall and see the "stay" probability.
+NUMBERS: the sampled tallies for the shown seed vs the exact 0.8/0.1/0.1.
+SHOW THE MATH: P(s'|s,a), R(s,a,s'), the Markov property in one line.
+*/}
+
+</Step>
+
+<Step title="Policies and returns">
+
+A policy is the agent's rule for choosing an action in each state, and the return is the sum of the rewards it collects from now on, with later rewards shrunk by a discount factor.
+
+{/*
+IDEA: policy pi(a|s) (deterministic arrows here); return G_t = r_t+1 + gamma r_t+2 + ... ; computed backward from the end of an episode.
+WIDGET: GridWorldLab mode="return" policy="textbook" gamma=0.9 seed=3. Arrows of a fixed policy in every cell; one sampled episode.
+MOTION over t: first half the agent walks the episode forward; second half the returns G_t fill in backward along the path, each cell's number counting up from the reward plus gamma times the next return.
+TRY: compare G at the start cell with the plain sum of rewards.
+NUMBERS: G_0 for this episode and the undiscounted sum.
+SHOW THE MATH: G_t = sum_k gamma^k r_(t+k+1) and the recursion G_t = r_(t+1) + gamma G_(t+1).
+*/}
+
+</Step>
+
+<Step title="What the discount factor decides">
+
+The discount factor sets how much the agent cares about the future, and changing it can change which path is best.
+
+{/*
+IDEA: gamma near 0 is short-sighted, near 1 is patient. With slip and a pit, the best route depends on gamma: low gamma barely values the far goal.
+WIDGET: GridWorldLab mode="discount" gammas="0.5,0.99". Two small grids side by side (stacked under 540 px) showing the optimal policy (from value iteration) for each gamma.
+MOTION over t: the gamma value sweeps 0.5 to 0.99 along the timeline on a third, shared readout; arrows that flip as gamma passes a threshold flash with --accent. Markers at the gamma values where any arrow flips (computed, not guessed).
+TRY: find the first gamma at which the cell next to the pit changes its arrow.
+NUMBERS: the threshold gamma(s) from the sim; start-cell value at both gammas.
+*/}
+
+</Step>
+
+<Step title="Value functions">
+
+The value of a state is the return the agent can expect from there if it keeps following its policy, averaged over all the ways the slippery moves can turn out.
+
+{/*
+IDEA: V^pi(s) = E[G_t | s_t = s]. Computed by iterative policy evaluation (Bellman expectation backups), no learning yet, the MDP is known.
+WIDGET: GridWorldLab mode="value" policy="textbook" gamma=1 stepReward=-0.04. Heatmap with --viz-seq-* (diverging --viz-pos/--viz-neg if negative values appear), numbers in each cell.
+MOTION over t: one sweep per marker; cell values tween to the next sweep's values; the cell currently being backed up shows its three weighted successor arrows.
+TRY: watch how many sweeps it takes before the start cell's value stops changing in the second decimal.
+NUMBERS: V at the start after convergence and the sweep count (compare with the textbook utilities for the 4x3 world only if the sim reproduces them; VERIFY before quoting).
+SHOW THE MATH: Bellman expectation equation. SHOW THE CODE: 10-line NumPy policy evaluation matching the widget.
+Also introduce Q^pi(s,a) in one sentence and link forward to /learn/alignment/q-learning/.
+*/}
+
+</Step>
+
+<Step title="Exploration versus exploitation">
+
+An agent that always repeats the best action it knows may never find a better one, so it must sometimes try actions that look worse.
+
+{/*
+IDEA: the bandit as the simplest RL problem (one state). Greedy vs epsilon-greedy vs UCB. Regret.
+WIDGET: BanditLab mode="explore" arms=5 epsilons="0,0.1" ucb=true runs=50 steps=500 seed=7. Left: arm bars (true mean as a tick, estimated mean as a bar, pull count). Right: average reward and percent-optimal-action curves over steps, averaged over 50 seeded runs.
+MOTION over t: pulls stream in; bars and counts update; curves draw left to right. One featured run animates in the bars; the curves are the averages.
+TRY: watch the greedy curve flatten below the others; find how often greedy settles on a wrong arm.
+NUMBERS: final percent optimal action for greedy, eps 0.1 and UCB; number of the 50 greedy runs stuck on a suboptimal arm.
+SHOW THE MATH: incremental mean update, UCB score Q(a) + c sqrt(ln t / N(a)).
+*/}
+
+</Step>
+
+<Step title="Rewards shape behaviour">
+
+The reward is the only thing the agent is told, so changing it, even slightly, can change everything the agent does.
+
+{/*
+IDEA: the optimal policy as a function of the step reward (the classic 4x3 figure). Preview of reward design and reward hacking, used again in /learn/alignment/rlhf/.
+WIDGET: GridWorldLab mode="optimal-policy" stepReward slider (range about -2 to +0.1), gamma=1 (cap episode length or use gamma 0.99 for positive rewards; sim author decides and states it).
+MOTION over t: stepReward sweeps across its range; arrows recompute from value iteration at each displayed value; markers at the computed thresholds where the policy changes. With positive step reward the agent avoids both exits (it prefers to wander forever).
+TRY: drag to a large negative step reward and see the agent dive into the pit to end the episode.
+NUMBERS: the threshold step rewards from the sim (do not quote textbook values unless reproduced).
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few ideas about reinforcement learning that sound right but are not.
+
+{/*
+NO WIDGET. Intended misconceptions:
+1. "The reward tells the agent what to do." Actually it scores outcomes; the agent must discover which actions led to them (credit assignment).
+2. "Maximising the immediate reward is enough." Actually the return includes the future; greedy short-term choices can be worse.
+3. "Exploration is wasted effort." Actually without it estimates of untried actions never improve (greedy stuck runs).
+4. "Value and reward are the same." Actually value is expected future return under a policy.
+5. "Discounting is just a trick for convergence." It also encodes a real preference and changes the optimal policy.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Try these questions about the ideas above.
+
+{/*
+NO WIDGET. Questions (answers in details blocks):
+1. Rewards -0.04, -0.04, +1 with gamma 0.9: what is G_0? (compute exactly in the answer)
+2. Why does the Markov property make value functions possible?
+3. In the slippery grid, why can V(s) be lower than the reward of the shortest path?
+4. A greedy bandit agent's first pull of arm 2 happened to be unlucky. What happens next, and why does epsilon fix it?
+5. What policy would you expect with step reward +0.5 and gamma 1?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Sources and further reading on Markov decision processes and the foundations of reinforcement learning.
+
+{/*
+NO WIDGET. References:
+- Richard S. Sutton and Andrew G. Barto, Reinforcement Learning: An Introduction, 2nd ed., MIT Press 2018, free at http://incompleteideas.net/book/the-book-2nd.html (chapters 2-4).
+- Stuart Russell and Peter Norvig, Artificial Intelligence: A Modern Approach, chapter on sequential decision problems (source of the 4x3 world; VERIFY chapter number for the 4th edition).
+- Richard Bellman, Dynamic Programming, Princeton University Press 1957.
+- Peter Auer, Nicolo Cesa-Bianchi and Paul Fischer, "Finite-time Analysis of the Multiarmed Bandit Problem", Machine Learning 47, 2002 (UCB1).
+- OpenAI Spinning Up, "Key Concepts in RL", https://spinningup.openai.com/en/latest/spinningup/rl_intro.html
+Next: /learn/alignment/q-learning/
+*/}
+
+</Step>

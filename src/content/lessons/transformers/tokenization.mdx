@@ -1,0 +1,214 @@
+---
+title: "Tokenization (BPE)"
+summary: "Split text into subword tokens with byte-pair encoding and map them to integer IDs."
+day: 9
+track: transformers
+order: 1
+level: core
+duration: 25
+prereqs: ["sequences/why-memory"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import TokenizerLab from '../../../components/widgets/TokenizerLab/TokenizerLab.svelte';
+
+How do you give a neural network a word it has never seen? Start by giving it smaller pieces it already knows.
+
+<Step title="Characters, words or something in between">
+
+A **token** is one piece of text from a fixed list called the **vocabulary**. A tokenizer cuts text into those pieces and replaces each with its integer **ID**, its position in the list. The model receives the IDs, rather than the written sentence.
+
+One character per token makes a small vocabulary but a long sequence. One whole word per token shortens the sequence, but every unfamiliar word needs an `[unknown]` placeholder. **Subwords** reuse smaller pieces to spell unfamiliar words without throwing them away.
+
+Watch the three rows fill. The sentence has **36 character pieces**, **6 word pieces** and **12 BPE pieces**. The word row loses both `unhappiest` and `outran`; the subword row keeps their spelling. The character vocabulary here has **29 entries**, the word vocabulary **120 including unknown**, and the byte-level BPE vocabulary **416**. A character tokenizer would also need a policy for unfamiliar characters.
+
+<TokenizerLab client:visible mode="granularity" text="the unhappiest foxes outran the dogs" title="Shorter sequences can lose unfamiliar words" />
+
+</Step>
+
+<Step title="Byte-pair encoding: merge the most frequent pair">
+
+A computer stores text as **bytes**, numbers from 0 to 255. English letters usually take one byte each; other characters can take several. **Byte-pair encoding**, or **BPE**, starts with all 256 bytes as separate tokens. It counts neighbouring token pairs in a **corpus**, the text used to learn the vocabulary. The most frequent pair gets a new token ID, and its non-overlapping occurrences join together. Then BPE counts again.
+
+The bars show counts across the full corpus; the two rows show one excerpt. Here `·` marks a space. **Merge 1 joins `e` and a space, counted 126 times. Merge 2 joins `t` and `h`, counted 119 times. Merge 3 joins `th` and `e·`, counted 113 times.** Spaces are useful parts of tokens because they occur so often beside words.
+
+Scrub through those merges and watch `the·` grow from smaller pieces. After merge 12, the vocabulary has **268 entries**: 256 bytes plus 12 new pieces. The smaller pieces remain available for other words. Gage introduced BPE for compression; [Sennrich, Haddow and Birch (2016)](https://aclanthology.org/P16-1162/) adapted the merging idea to subword translation.
+
+<TokenizerLab client:visible mode="merges" title="Count neighbours, choose a pair, join it" />
+
+<details>
+<summary>Show the code</summary>
+
+This Python version counts overlapping candidate pairs, replaces non-overlapping matches from left to right, and breaks tied counts by the bytes of the left token, then the right token.
+
+```python
+from collections import Counter
+
+def merge_ids(ids, pair, new_id):
+    out, i = [], 0
+    while i < len(ids):
+        hit = tuple(ids[i:i+2]) == pair
+        out.append(new_id if hit else ids[i])
+        i += 2 if hit else 1
+    return out
+
+def train(text, rounds):
+    ids, vocab, merges = list(text.encode('utf-8')), [bytes([i]) for i in range(256)], []
+    for _ in range(rounds):
+        counts = Counter(zip(ids, ids[1:]))
+        if not counts or max(counts.values()) < 2: break
+        pair = min(counts, key=lambda p: (-counts[p], vocab[p[0]], vocab[p[1]]))
+        new_id = len(vocab)
+        vocab.append(vocab[pair[0]] + vocab[pair[1]])
+        merges.append((pair, new_id))
+        ids = merge_ids(ids, pair, new_id)
+    return vocab, merges
+```
+
+</details>
+
+</Step>
+
+<Step title="Encoding new text with the learned merges">
+
+Learning a vocabulary and using it are different jobs. When **encoding** new text, the tokenizer keeps its vocabulary fixed. It starts from the text's bytes and applies the learned rules in **rank order**, the order in which the rules were learned. It does not count pairs or invent IDs for this new input.
+
+`lowering` never appeared as a word in our corpus. It starts as **8 byte tokens**. The first applicable rule is **rank 6**, which joins `i` and `n` near the end. Ranks **7, 8, 14 and 17** then leave **`low | er | ing`**, with IDs **272, 262 and 263**. A rule's rank decides when it applies; the position of its letters does not.
+
+Watch the first join happen near the right end, before `l` and `o` join on the left. At the end, the unfamiliar word is only **3 tokens**, and concatenating their bytes gives its exact spelling back.
+
+<TokenizerLab client:visible mode="apply" text="lowering" title="An unseen word uses pieces the tokenizer already knows" />
+
+<details>
+<summary>Show the code</summary>
+
+Reuse `merge_ids` from the previous step. A learned rule can only use tokens that existed before it, so replaying all rules once in rank order gives the final encoding.
+
+```python
+def encode(text, merges):
+    ids = list(text.encode('utf-8'))
+    for pair, new_id in merges:
+        ids = merge_ids(ids, pair, new_id)
+    return ids
+
+def decode(ids, vocab):
+    raw = b''.join(vocab[i] for i in ids)
+    return raw.decode('utf-8')
+```
+
+</details>
+
+</Step>
+
+<Step title="A live tokenizer playground">
+
+An ID is an address in a table, not a score or a meaning. ID 272 does not mean “more” than ID 263. In the [embedding lesson](/learn/transformers/embeddings/), the model will use each ID to look up a vector of learned numbers.
+
+The default text, `the water is low`, has **16 characters and 3 tokens**, or **5.33 characters per token**. A token can include spaces and even several words: here one piece is `water·is·`. This basic BPE merges directly over bytes; real tokenizers such as [GPT-2's](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) also restrict which character categories may merge.
+
+Try `water`, then `antidisestablishmentarianism`. The common word takes **1 token**, while the rare word takes **22**. You can still recover both spellings. A token's label may be a hex byte, such as `E0`, when that byte alone is only part of a Unicode character.
+
+<TokenizerLab client:visible mode="playground" text="the water is low" title="Edit text and inspect its pieces and IDs" />
+
+Our vocabulary has 416 entries. For scale, GPT-2 uses **50,257**, and OpenAI's tokenizer collection includes vocabularies around **200,000** entries. The exact split belongs to the tokenizer you choose. [Tokenizer definitions](https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py).
+
+</Step>
+
+<Step title="Vocabulary size is a trade-off">
+
+Every learned merge adds one vocabulary entry and can shorten future inputs. Shorter sequences use fewer positions in the model's **context window**, its limit on input tokens. But every entry also needs a row in the **embedding table**, the learned vectors the next lesson explains. More entries make that table larger, and infrequent entries appear less often during training.
+
+The curve counts tokens in **114 characters of new text**, outside the training corpus. With no merges, it takes **114 tokens**, or **100 per 100 characters**. At 50 merges it takes **77**; at 100 it takes **73**; at all 160 it takes **65**, or **57.0 per 100 characters**. The first 50 merges give a large drop. Their vocabulary has **306 entries**; the next 50 entries save only **4 tokens** on these sentences.
+
+Drag past 50 merges and watch the curve flatten while the table keeps growing. At the final **416 entries**, a width-16 table needs **6,656 parameters**; a width-768 table needs **319,488**. Width 768 is the size used by the smallest GPT-2 model, whose much larger vocabulary makes its table much larger too. [Radford et al. (2019)](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf).
+
+<TokenizerLab client:visible mode="vocab" title="Shorter input, more rows to learn" />
+
+<details>
+<summary>Show the math</summary>
+
+For vocabulary size $V$ and vector width $d$, the table has $Vd$ parameters. Adding 50 entries costs $50d$ parameters even when none of their tokens occur in a particular sentence. The curve measures $100N/C$, where $N$ is the token count and $C$ is the number of characters in the held-out text.
+
+$$416 \times 16 = 6{,}656, \qquad 416 \times 768 = 319{,}488.$$
+
+The width-16 readout is a table-size comparison, not the vocabulary of the word-based model in the later Day 9 figures.
+
+</details>
+
+</Step>
+
+<Step title="Quirks: spaces, numbers and other languages">
+
+BPE rewards frequent byte sequences, rather than dictionary entries. Changing a space or capital letter changes the bytes, so it can change the split. In this demo, **`the` takes 2 tokens** (`th | e`), **` the` takes 3** (`· | th | e`), and **`The` takes 3** (`T | h | e`).
+
+Our tokenizer merges directly over the corpus bytes, so it learns **trailing-space** pieces such as `e·` and `the·`. **GPT-style tokenizers usually attach a leading space to the following word**: they split the text into groups before applying BPE. For example, real GPT-2 encodes **` the` as one token, ID 262**, rather than the three pieces shown here. Watch the Spaces segment as a result of this demo's corpus and rules, not as GPT-2's whitespace convention. [GPT-2 tokenizer](https://github.com/openai/gpt-2/blob/master/src/encoder.py) · [GPT-2 vocabulary](https://openaipublic.blob.core.windows.net/gpt-2/encodings/main/encoder.json).
+
+Numbers follow those same rules. **`2026` takes 2 tokens** (`20 | 26`), while **`12345` takes 5** and **`1,234,567` takes 9**. Token boundaries need not match decimal places, so a model doing arithmetic must work across whatever pieces it receives.
+
+Watch the **Bengali** segment. English **`water` takes 1 token**. Bengali **`পানি`**, also meaning water, takes **12**: its **4 Unicode code points** each use 3 UTF-8 bytes, and none of their byte pairs were learned from this English corpus. A code point is a Unicode number; it is not necessarily a whole visible letter. The byte tokens preserve the text, but use more sequence positions. [Petrov et al. (2023)](https://arxiv.org/abs/2305.15425) study this difference in token costs across languages in real model tokenizers.
+
+<TokenizerLab client:visible mode="quirks" title="The training text decides which spellings are cheap" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **“A model reads words or letters directly.”** It receives token IDs. Letters can be bundled inside one token; counting letters requires recovering that internal spelling.
+- **“Neighbouring IDs have similar meanings.”** IDs are arbitrary table addresses. Learned embedding vectors carry the information used by the model.
+- **“One token is about one word.”** A token can be a byte, a word fragment, a word, or a piece that includes spaces. The vocabulary and the input decide.
+- **“BPE discovers the meaningful parts of words.”** It discovers frequent neighbouring pieces. `low | er | ing` resembles word structure; `water·is·` follows frequency rather than grammar.
+- **“A bigger vocabulary always wins.”** It may shorten inputs, but it also enlarges the table and adds pieces with fewer examples to learn from.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>For the corpus “aaab aab”, which pair wins first, and what remains after that merge?</summary>
+
+`a + a` occurs 3 times when overlapping pairs are counted. Replacing non-overlapping matches from left to right gives `[aa] a b [space] [aa] b`: 6 tokens. The candidate count can exceed the replacement count when matches overlap.
+
+</details>
+
+<details>
+<summary>Why can this byte-level tokenizer spell a word it has never seen?</summary>
+
+Its vocabulary includes all 256 byte values. If no learned pair applies, it keeps the raw UTF-8 bytes. Joining the bytes before decoding recovers the input, so it needs no unknown token for valid Unicode text.
+
+</details>
+
+<details>
+<summary>How many parameters does an embedding table with 50,000 entries and width 768 contain?</summary>
+
+$50{,}000 \times 768 = 38{,}400{,}000$: **38.4 million parameters**.
+
+</details>
+
+<details>
+<summary>Why might “ cat” and “cat” have different token IDs?</summary>
+
+The leading space is a byte too. If a merge includes it, ` cat` can be one piece while `cat` is another piece or several pieces. This changes both the ID sequence and how many context positions it uses.
+
+</details>
+
+<details>
+<summary>Why does a language missing from the training corpus often need more tokens?</summary>
+
+Its common byte sequences did not get merged. More of the text stays in small pieces, potentially down to individual UTF-8 bytes, as `পানি` does here. Training on that language can give its common sequences their own tokens.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- [Philip Gage, “A New Algorithm for Data Compression” (1994)](https://jacobfilipp.com/DrDobbs/articles/CUJ/1994/9402/gage/gage.htm): the original pair-merging compression algorithm.
+- [Sennrich, Haddow and Birch, “Neural Machine Translation of Rare Words with Subword Units” (ACL 2016)](https://aclanthology.org/P16-1162/): BPE for open-vocabulary translation.
+- [Radford et al., “Language Models are Unsupervised Multitask Learners” (2019), §2.2](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf): GPT-2's byte-level BPE and character-category boundaries.
+- [Kudo and Richardson, “SentencePiece” (EMNLP 2018 demos)](https://aclanthology.org/D18-2012/), and [Kudo, “Subword Regularization” (ACL 2018)](https://aclanthology.org/P18-1007/): tokenizer tooling and a unigram alternative to BPE.
+- [Petrov et al., “Language Model Tokenizers Introduce Unfairness Between Languages” (NeurIPS 2023)](https://arxiv.org/abs/2305.15425): how token counts vary across languages.
+- [Karpathy, “Let's build the GPT Tokenizer” (2024)](https://www.youtube.com/watch?v=zduSFxRajkE), with the [minbpe implementation](https://github.com/karpathy/minbpe): build a tokenizer from bytes upward.
+
+Next: [Embeddings — turn those IDs into vectors](/learn/transformers/embeddings/).
+
+</Step>

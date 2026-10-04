@@ -1,0 +1,153 @@
+---
+title: "Variational Autoencoders"
+summary: "Encode to a distribution and regularize it, giving a smooth latent space you can sample from."
+day: 13
+track: graphs-generative
+order: 3
+level: advanced
+duration: 35
+prereqs: ["graphs-generative/autoencoders","math/probability"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+A plain autoencoder cannot generate, since its latent space has holes.
+
+{/* SKELETON (Day 13 plan: plans/day-13.md). Widget: LatentSpace (built for the autoencoders lesson) with
+    model="vae". Same 600 two-moons points (src/lib/gen/toy.ts, seed 7), same 1-number latent, same
+    network sizes as the AE so the two lessons compare directly. Encoder outputs mu and log-variance;
+    prior N(0, 1); decoder output is its mean (state this once: real VAEs also model decoder noise).
+    VAEs for beta 0.1, 1 and 4 are trained in one worker run. All numbers from LatentSpace/sim.ts probes. */}
+
+<Step title="Where do you pick a code?">
+To generate new data from an autoencoder you need to know which codes are safe to decode, and a plain autoencoder never tells you.
+
+{/* IDEA: restate the AE failure as the question a VAE answers: choose a known distribution for the codes
+    (the prior, N(0, 1)) and train the encoder to fill it.
+    WIDGET: LatentSpace model="ae" mode="sample" showPrior=[true] (the prior curve is drawn on the strip
+    over the AE's code histogram; codes are drawn from N(0, 1), not uniform as in the AE lesson).
+    OVER t: prior codes drop onto the strip and decode one by one.
+    LOOK: how many prior codes fall where the AE has no training codes at all.
+    QUOTE: fraction of prior samples on the data for the AE (quality()). */}
+</Step>
+
+<Step title="Encoding to a mean and a variance">
+A variational autoencoder's encoder does not output one code per input but a small bell curve: a mean and a spread.
+
+{/* IDEA: encoder outputs mu(x) and sigma(x) (as log-variance); the code is a sample from N(mu, sigma^2).
+    Nearby codes must therefore decode to nearby, similar points, which smooths the latent space.
+    WIDGET: LatentSpace model="vae" mode="encode" focus=[same point index as the AE focus step].
+    OVER t: for the focused point, its bell curve is drawn on the strip; sampled codes stream out of the
+    bell and their decoded points scatter around the reconstruction; the other points show their mean
+    codes only.
+    LOOK: the width of the focused point's bell compared with the gap between the two moons' codes.
+    QUOTE: mu and sigma of the focused point; the spread of its decoded samples. */}
+</Step>
+
+<Step title="The reparameterization trick">
+Sampling is random, and gradients cannot flow through a dice roll, so the VAE moves the randomness out of the way.
+
+{/* IDEA: write z = mu + sigma * eps with eps from N(0, 1). The randomness lives in eps, a fixed input, so
+    the gradient of the loss reaches mu and sigma by the ordinary chain rule.
+    WIDGET: LatentSpace model="vae" mode="reparam" focus=[same point].
+    OVER t: eps sweeps from -2 to 2 on a small standard-normal strip; a linked arrow scales it by sigma and
+    shifts it by mu onto the latent strip; the decoded point moves accordingly. A two-path diagram shows
+    the gradient (gradient colour) reaching mu and sigma, not eps.
+    LOOK: the readout z = mu + sigma * eps with real numbers as eps moves.
+    QUOTE: mu, sigma and z at eps = 1.
+    SHOW THE MATH: dz/dmu = 1, dz/dsigma = eps. SHOW THE CODE: z = mu + torch.exp(0.5*logvar) *
+    torch.randn_like(mu). */}
+</Step>
+
+<Step title="The loss: reconstruction plus KL">
+The VAE's loss has two parts that pull in opposite directions: rebuild the input well, and keep every bell curve close to the standard normal.
+
+{/* IDEA: the ELBO = expected reconstruction log-likelihood minus KL(q(z given x) to the prior). The KL term
+    pulls means to 0 and spreads to 1, closing gaps; reconstruction pushes codes apart.
+    WIDGET: LatentSpace model="vae" mode="train" beta=[1].
+    OVER t: scrubs training snapshots; the code histogram on the strip spreads out to match the prior curve;
+    the decoder curve forms; two loss curves (reconstruction, KL) share a step cursor.
+    LOOK: the KL curve rising early while reconstruction falls, then both settling.
+    QUOTE: final reconstruction term and final KL term (from snapshots).
+    SHOW THE MATH: KL for a 1D Gaussian, 0.5 * (mu^2 + sigma^2 - log sigma^2 - 1); the ELBO derivation
+    from log p(x) in three lines (Jensen). */}
+</Step>
+
+<Step title="Balancing the two terms">
+How hard the KL term pulls decides whether the VAE behaves like a plain autoencoder or forgets its input entirely.
+
+{/* IDEA: weight the KL term by beta (Higgins et al. 2017). Small beta: sharp reconstructions, gaps remain.
+    Large beta: codes collapse onto the prior and the decoder ignores the input (posterior collapse:
+    every point decodes near the same place).
+    WIDGET: LatentSpace model="vae" mode="beta" beta=[4] with a beta selector 0.1 / 1 / 4.
+    OVER t: the decoder curve and code histogram tween between the three trained models (each segment
+    snaps its readout to the real model, never a blend).
+    LOOK: switch to beta 4 and watch the decoded curve shrink.
+    QUOTE: reconstruction error and on-data sample fraction for each beta. Probe: if beta 4 does not
+    visibly collapse, pick the beta that does and change the selector. */}
+</Step>
+
+<Step title="Sampling new data from the prior">
+Once trained, a VAE generates by drawing a code from the standard normal and decoding it.
+
+{/* IDEA: generation = z from N(0, 1), x = decoder(z). Most samples land on the moons. Because the decoder
+    is continuous and the code line is one piece, some samples land on a thin bridge between the moons.
+    WIDGET: LatentSpace model="vae" mode="sample" beta=[1].
+    OVER t: 300 prior codes drop and decode (same seed as step 1, so the comparison is fair).
+    LOOK: the bridge between the moons.
+    QUOTE: VAE on-data fraction vs the AE's from step 1; share of samples on each moon. */}
+</Step>
+
+<Step title="Walking through the latent space">
+Sliding through a VAE's latent space now traces a single smooth path across both moons.
+
+{/* IDEA: the regularised latent space is continuous and has no empty stretches, so interpolation is
+    meaningful.
+    WIDGET: LatentSpace model="vae" mode="explore" beta=[1].
+    OVER t: a marker sweeps z from -2.5 to 2.5; decoded point traces the decoder curve; prior curve and
+    code histogram on the strip. Draggable marker.
+    LOOK: where on the strip the decoded point crosses between the moons, and how much prior mass is there.
+    QUOTE: the z interval that decodes into the gap and its probability under N(0, 1). */}
+</Step>
+
+<Step title="Common misconceptions">
+A few ideas about VAEs sound right but are not.
+
+{/* NO WIDGET. Misconceptions:
+    1. The encoder outputs a code. Actually it outputs the parameters of a distribution over codes.
+    2. The KL term is just a regulariser added for convenience. Actually it comes out of a lower bound on
+       log p(x), the ELBO.
+    3. VAE samples are blurry because the network is too small. Actually a large part comes from the
+       objective (averaging under the Gaussian decoder and the KL pressure), visible here as the bridge.
+    4. The reparameterization trick changes what is sampled. Actually z has exactly the same distribution;
+       only the gradient path changes.
+    5. Higher beta always gives a better latent space. Actually too high a beta makes the decoder ignore the
+       code (posterior collapse). */}
+</Step>
+
+<Step title="Check yourself">
+Test your understanding with a few short questions.
+
+{/* NO WIDGET. Questions:
+    1. Compute the KL term for mu = 0, sigma = 1. (zero)
+    2. Why can't gradients pass through "sample z from N(mu, sigma^2)" directly?
+    3. What happens to the codes if the KL weight is set to 0?
+    4. Why do some VAE samples land between the moons?
+    5. Which loss term pushes the moons' codes apart, and which pulls them together? */}
+</Step>
+
+<Step title="Going deeper">
+Papers and resources for going further.
+
+{/* NO WIDGET. Cite:
+    - Kingma and Welling, "Auto-Encoding Variational Bayes", ICLR 2014 (arXiv:1312.6114).
+    - Rezende, Mohamed, Wierstra, "Stochastic Backpropagation and Approximate Inference in Deep Generative
+      Models", ICML 2014 (arXiv:1401.4082).
+    - Higgins et al., "beta-VAE: Learning Basic Visual Concepts with a Constrained Variational Framework",
+      ICLR 2017 (VERIFY OpenReview link).
+    - Kingma and Welling, "An Introduction to Variational Autoencoders", 2019 (arXiv:1906.02691).
+    - Doersch, "Tutorial on Variational Autoencoders", 2016 (arXiv:1606.05908).
+    - Bowman et al., "Generating Sentences from a Continuous Space", 2016 (arXiv:1511.06349), on posterior
+      collapse.
+    Next: /learn/graphs-generative/gans/. */}
+</Step>

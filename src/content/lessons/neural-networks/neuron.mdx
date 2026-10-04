@@ -1,0 +1,146 @@
+---
+title: "The Neuron"
+summary: "A neuron computes a weighted sum of its inputs plus a bias, then applies an activation."
+day: 4
+track: neural-networks
+order: 1
+level: core
+duration: 20
+prereqs: ["foundations/logistic-regression","math/dot-product"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import NeuronPlayground from '../../../components/widgets/NeuronPlayground/NeuronPlayground.svelte';
+
+<Step title="A logistic-regression model is one neuron">
+
+In [logistic regression](/learn/foundations/logistic-regression/) you computed a score $z = wx + b$ and squashed it with a sigmoid to get a probability. With two input features the score is $z = w_1 x_1 + w_2 x_2 + b$. That whole recipe, multiply each input by a number, add them up, add one more number, then pass the result through a fixed function, is a **neuron**. Every neural network is made of many copies of it, so it is worth learning the single one well.
+
+The names are these. The **inputs** are $x_1, x_2$. Each has a **weight** $w_1, w_2$ that says how strongly a change in that input affects the sum: increasing a feature raises the sum when its weight is positive and lowers it when its weight is negative. The **bias** $b$ is a number added regardless of the inputs. The **weighted sum** is $z$. An **activation function** turns $z$ into the neuron's **output**.
+
+Watch the left panel while the indigo test dot circles the plane on the right. The neuron's weights are fixed at $w = (1.5, 1.0)$ with $b = -0.6$, and there is no activation yet, so the output is just $z$. Edge width shows how large a weight is; blue edges are positive, orange edges are negative. The number beside each edge is the product $w_i x_i$. At 3 s the dot is at $x = (0.20, -1.60)$: the products are $0.30$ and $-1.60$, and with the bias $z = 0.30 - 1.60 - 0.60 = -1.90$. At 9 s the input is $x = (0.20, 1.60)$: the first product is the same $0.30$, but now the second is $+1.60$, so $z = 1.30$. The dashed line is every input where $z = 0$.
+
+<NeuronPlayground client:visible mode="weighted-sum" title="Inputs times weights, plus a bias, added up" />
+
+</Step>
+
+<Step title="The weighted sum is a dot product">
+
+Writing $w = (w_1, w_2)$ and $x = (x_1, x_2)$ as vectors, the sum is
+
+$$z = w_1 x_1 + w_2 x_2 + b = w \cdot x + b.$$
+
+That is the [dot product](/learn/math/dot-product/) of the weight vector with the input, plus the bias. The dot product has a geometric meaning: $w \cdot x = |w|\,|x|\cos\theta$, where $\theta$ is the angle between the two vectors. It is large and positive when $x$ points the same way as $w$, zero when they are perpendicular, and negative when they point apart.
+
+So a neuron is a question: "how much does this input point in the direction $w$?" The weight vector is the direction the neuron looks for. In the figure the input stays at $x = (1.6, 1.0)$, with length $|x| \approx 1.89$. The weight vector has length $|w| = 1.80$ and rotates once around (the bias is set to 0 so the boundary passes through the origin). The teal segment is the shadow of $x$ on the line of $w$, whose signed length is $|x|\cos\theta$. At 3 s, $\theta = 30°$ and the full-precision product $1.80\sqrt{1.6^2 + 1.0^2}\cos(30°)$ rounds to $2.94$. The figure rounds each displayed factor separately, so multiplying those rounded factors need not give the same last digit. At 5 s $w$ is perpendicular to $x$ and the dot product passes through 0. At 6 s, $\theta = 120°$ and $w \cdot x$ rounds to $-1.70$.
+
+The dashed boundary, where $w \cdot x = 0$, is always **perpendicular to $w$**, so it turns as $w$ turns. Everything on the side $w$ points to is positive.
+
+<NeuronPlayground client:visible mode="dot-product" title="Rotate w: the dot product follows cos θ, the boundary turns with it" />
+
+<details>
+<summary>Show the math</summary>
+
+The boundary is the set of points with $w \cdot x + b = 0$. Its closest point to the origin is $-b\,w / |w|^2$, so its distance from the origin is $|b| / |w|$. For $w = (1.5, 1.0)$ and $b = -0.6$ that is $0.6 / 1.80 = 0.33$. Multiplying $w$ and $b$ by the same positive number leaves the boundary where it is and only changes how fast $z$ grows away from it.
+
+</details>
+
+</Step>
+
+<Step title="The activation: how the sum becomes an output">
+
+A neuron does not usually pass $z$ on unchanged. It applies a fixed function $\phi$ called the **activation**, so the output is $\phi(w \cdot x + b)$. Three choices show the range of possibilities:
+
+- **None** (identity): the output is $z$. It grows without limit, and on its own it can only express a straight-line relationship.
+- **Step**: the output is 1 if $z > 0$ and 0 otherwise. Threshold units appear in McCulloch and Pitts (1943) and Rosenblatt's perceptron (1958). It decides, but gives no graded output: its slope is 0 away from the jump and undefined at the jump, so ordinary [gradient descent](/learn/foundations/gradient-descent/) gets no useful signal. The perceptron instead used its own mistake-based update rule.
+- **Sigmoid**: $\sigma(z) = 1 / (1 + e^{-z})$, a smooth step. With a sigmoid, a one-neuron model is exactly logistic regression.
+
+In the figure the same neuron and the same moving input are shown with each activation in turn, four seconds each. The plane is coloured by the output and the lower-left curve plots $\phi(z)$ with a dot at the current $z$. At 1 s, 5 s and 9 s the input is the same point, with $z = 1.98$. The output is $1.98$ with no activation, $1$ with a step, and $0.88$ with a sigmoid. On the boundary, where $z = 0$, a sigmoid outputs $0.50$ (at 10 s). Notice also what does not change: the dashed boundary $z = 0$ stays in the same place for all three. The activation changes how the output grows or jumps across the boundary, not where the boundary is. Other activations, such as ReLU, come in [the next lesson](/learn/neural-networks/activation-functions/).
+
+<NeuronPlayground client:visible mode="activation" title="Same neuron, three activations: linear, hard and soft" />
+
+</Step>
+
+<Step title="Playground: move the weights, watch the boundary">
+
+Now put it together. Twelve points of each class lie on the plane (circles are class 1 and diamonds are class 0). A neuron predicts class 1 where $z > 0$. The script starts with a poor guess, $w = (-0.8, 0.5)$ and $b = 1.8$, which gets 11 of 24 points right. Between 2 s and 6 s the weights ease to $w = (1.5, 1.0)$: the boundary turns, because it is perpendicular to $w$, and 20 of 24 are right. From 6 s to 9 s the bias eases down to $-0.6$: the boundary keeps its direction and slides, because $b$ only shifts the sum. At the end all 24 points are on the correct side.
+
+Then take over. Drag $w_1$, $w_2$ and $b$ and watch the boundary and the accuracy. Try these: set both weights to 0 (the neuron ignores its inputs and the output is a constant); make one weight negative (the boundary flips toward the opposite corner); push the bias far up (everything is called class 1). Switch the activation to step or none and notice that the accuracy does not change. The decision $z > 0$ is the same, only the colouring differs.
+
+Finding good values by hand is easy with two weights and a bias. A real network has millions, and the next days are about how they are found automatically.
+
+<NeuronPlayground client:visible mode="playground" title="Neuron playground: weights, bias, activation" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def neuron(x, w, b, activation):
+    z = np.dot(w, x) + b          # weighted sum plus bias
+    return activation(z)
+
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+step = lambda z: float(z > 0)
+
+w, b = np.array([1.5, 1.0]), -0.6
+x = np.array([1.2, 0.8])
+print(neuron(x, w, b, lambda z: z))   # 2.0
+print(neuron(x, w, b, step))          # 1.0
+print(neuron(x, w, b, sigmoid))       # 0.88
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** a neuron is a tiny brain cell simulation. **Actually** it is a very loose inspiration at best: the artificial neuron is a weighted sum followed by a fixed function, nothing more.
+- **You might think** the bias is just another input you can ignore. **Actually** without it every boundary would have to pass through the origin, so the neuron could not separate data that sits off to one side. It is the knob that slides the boundary.
+- **You might think** the activation moves the decision boundary. **Actually** with the sigmoid or the step, the boundary is where $z = 0$, which depends only on $w$ and $b$. The activation changes the shape of the output, not the line.
+- **You might think** one neuron can learn any pattern. **Actually** its boundary is a straight line, so it cannot separate data that needs a curve. Combining neurons into layers is what fixes that, in the [MLP lesson](/learn/neural-networks/mlp/).
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>A neuron has $w = (2, 1)$, $b = 0.5$ and gets the input $x = (1, -2)$. What is $z$, and what does a sigmoid output?</summary>
+
+$z = 2 \cdot 1 + 1 \cdot (-2) + 0.5 = 0.5$. The sigmoid of 0.5 is $1 / (1 + e^{-0.5}) = 0.62$.
+
+</details>
+
+<details>
+<summary>Which direction is the decision boundary relative to $w$?</summary>
+
+Perpendicular. Moving along the boundary changes $x$ without changing $w \cdot x$, and that is only possible for displacements perpendicular to $w$.
+
+</details>
+
+<details>
+<summary>What does changing only $b$ do to the boundary?</summary>
+
+It slides the boundary parallel to itself, to a distance $|b| / |w|$ from the origin, without turning it.
+
+</details>
+
+<details>
+<summary>Why is a step activation a poor choice for training with gradient descent?</summary>
+
+Its derivative is 0 everywhere except at the jump, so a small change in $w$ or $b$ gives no signal about which way to go.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- McCulloch and Pitts (1943), ["A logical calculus of the ideas immanent in nervous activity"](https://doi.org/10.1007/BF02478259), *Bulletin of Mathematical Biophysics* 5: an early mathematical model of threshold units.
+- Rosenblatt (1958), ["The perceptron: a probabilistic model for information storage and organization in the brain"](https://doi.org/10.1037/h0042519), *Psychological Review* 65(6).
+- Nielsen, [*Neural Networks and Deep Learning*, chapter 1](http://neuralnetworksanddeeplearning.com/chap1.html): perceptrons and sigmoid neurons, with the same weights-and-bias picture.
+- Related: [Logistic regression](/learn/foundations/logistic-regression/), [The dot product](/learn/math/dot-product/), [Activation functions](/learn/neural-networks/activation-functions/).
+
+</Step>

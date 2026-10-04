@@ -1,0 +1,24 @@
+---
+import Base from '../layouts/Base.astro';
+import { getOrderedLessons } from '../lib/curriculum';
+const first = (await getOrderedLessons())[0];
+---
+<Base noindex title="Page not found"description="This page does not exist. Head back to the path or start with the first lesson.">
+  <div class="wrap page">
+    <p class="code num">404</p>
+    <h1>Loss: ∞. This page diverged.</h1>
+    <p class="lede">Nothing lives at this address. The learning rate was probably too high, or the link is old. Either way, the way back is short.</p>
+    <p class="ui links">
+      <a class="btn btn-primary" href="/path">See the path</a>
+      {first && <a class="btn" href={`/learn/${first.id}`}>Start: {first.data.title}</a>}
+    </p>
+  </div>
+</Base>
+<style>
+  .page { padding-block: var(--s-8) var(--s-6); }
+  .code { color: var(--accent); font-size: var(--step-1); margin: 0 0 var(--s-2); }
+  h1 { font-size: var(--step-4); }
+  .lede { max-width: var(--measure); color: var(--text-muted); }
+  .links { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-5); }
+  .links a { text-decoration: none; }
+</style>

@@ -1,0 +1,253 @@
+---
+title: "Optimizers: SGD, Momentum, RMSProp, Adam"
+summary: "Different update rules for the same gradients; race them on a loss landscape."
+day: 6
+track: neural-networks
+order: 1
+level: core
+duration: 35
+prereqs: ["foundations/gradient-descent", "neural-networks/backprop-mlp"]
+status: draft
+---
+
+import Step from '../../../components/ui/Step.astro';
+import OptimizerLab from '../../../components/widgets/OptimizerLab/OptimizerLab.svelte';
+
+Backpropagation hands you a slope for every weight. The slope says which way is uphill, toward higher loss. An **optimizer** is the rule that turns those slopes into an actual change to the weights: which way to move, and how far.
+
+Every rule in this lesson does the same three things on each update: read the slope, build a step from it, move the weights. They differ only in the middle part. We will look at one update at a time, then race four rules against each other.
+
+<Step title="An update follows the gradient">
+
+The simplest rule is **gradient descent**: take the slope, flip its sign so it points downhill, and scale it by a small number called the **learning rate**. That is the whole step.
+
+The figure has just two weights, $x$ and $y$, so the loss is a landscape you can draw. The gray curves join points with equal loss, like contour lines on a map. First the slope arrow appears, pointing uphill. Then it flips into the update, and the weights move along it into lower loss. Below the picture, the same step is written out as arithmetic: $-2.1 - 0.08 	imes (-5.945) = -1.624$ for $x$.
+
+<OptimizerLab client:visible mode="update" title="SGD makes a gradient step" />
+
+<details>
+<summary>Show the math</summary>
+
+
+For parameters $\theta=(x,y)$, objective $L(\theta)$, and learning rate $\eta$:
+
+$$\theta_{t+1}=\theta_t-\eta g_t,\qquad g_t=\nabla L(\theta_t).$$
+
+In this lab, the full objective is a rotated quadratic. Its exact gradient is $H\theta$. Each displayed step uses the mean gradient of a chosen batch from a fixed set of 16 quadratic examples.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+
+```python
+for batch in batches:
+    gradient = mean(loss(example, theta).grad for example in batch)
+    theta -= learning_rate * gradient
+```
+
+</details>
+
+</Step>
+
+<Step title="A mini-batch gives a sampled gradient">
+
+The loss is an average over training examples, so its slope is an average too. Each example on its own asks for a slightly different step: the thin gray arrows. Computing all of them on every update is expensive, so in practice we average a small random **mini-batch** and use that. This is what puts the "stochastic" in stochastic gradient descent (SGD).
+
+With batch size 1 the update follows one example and can point well away from the full-dataset arrow. Switch to Full batch and the two arrows land on each other. The "Spread between examples" slider makes the examples disagree more or less.
+
+<OptimizerLab client:visible mode="noise" title="Batch size changes the sampled gradient" />
+
+<details>
+<summary>Show the math</summary>
+
+
+For a batch $B_t$, the estimate is $g_t=\frac{1}{|B_t|}\sum_{i\in B_t}\nabla L_i(\theta_t)$. The lab's example offsets have zero mean, so taking all examples cancels their noise and returns the objective gradient. The noise control scales those offsets; it is not extra random motion added after the gradient.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+
+```python
+indices = seeded_sample_without_replacement(dataset, batch_size)
+gradient = mean(example_gradient(i, theta) for i in indices)
+```
+
+</details>
+
+</Step>
+
+<Step title="Momentum accumulates a moving direction">
+
+Picture a ball rolling downhill. It does not stop and re-aim at every bump; it keeps some of the speed it already had. **Momentum** gives the update the same memory. It keeps a running **velocity**: 0.9 of the previous velocity plus the newest slope.
+
+On update 1 there is no history yet, so momentum and plain SGD give the same arrow. Move the update number to 8: the dashed arrow (plain SGD) and the solid arrow (momentum) now point differently, because momentum is still carrying the direction of earlier steps. In a long valley this builds speed along the valley floor. It can also carry the weights past the bottom, which you will see in the race.
+
+<OptimizerLab client:visible mode="momentum" title="Momentum carries recent gradients forward" />
+
+<details>
+<summary>Show the math</summary>
+
+
+This lab uses heavy-ball momentum, $v_t=\beta v_{t-1}+g_t$ and $\theta_{t+1}=\theta_t-\eta v_t$, with $\beta=0.9$. Some libraries use a different convention that rescales the gradient contribution; always check the implementation when comparing exact numbers.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+
+```python
+velocity = beta * velocity + gradient
+theta -= learning_rate * velocity
+```
+
+</details>
+
+</Step>
+
+<Step title="RMSProp scales each coordinate">
+
+One learning rate for every weight is a compromise. A weight with steep slopes wants small steps, while a weight with gentle slopes wants big ones. **RMSProp** gives each weight its own scale. It tracks the typical recent size of that weight's slope (the square root of an average of squared slopes) and divides by it.
+
+At update 8, the recent slope size is 3.18 for $x$ and 4.28 for $y$, so $y$ is shrunk more. Because the two coordinates are scaled differently, the solid arrow turns as well as shrinking compared with the dashed plain-SGD arrow.
+
+<OptimizerLab client:visible mode="scaling" title="RMSProp adapts coordinate-wise step sizes" />
+
+<details>
+<summary>Show the math</summary>
+
+
+The uncentered form shown is $s_t=\alpha s_{t-1}+(1-\alpha)g_t^2$, then $\theta_{t+1}=\theta_t-\eta g_t/(\sqrt{s_t}+\epsilon)$. Squares and division are coordinate-wise. This lab sets $\alpha=0.9$; the small $\epsilon$ keeps the denominator away from zero.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+
+```python
+square_avg = alpha * square_avg + (1 - alpha) * gradient**2
+theta -= learning_rate * gradient / (sqrt(square_avg) + epsilon)
+```
+
+</details>
+
+</Step>
+
+<Step title="Adam combines moving averages and corrects their startup bias">
+
+**Adam** combines the two previous ideas: a momentum-like average of recent slopes, divided by an RMSProp-like average of their size. It is the default optimizer in much of deep learning.
+
+There is one wrinkle. Both averages start at zero, so after one update the slope average is only $0.1$ of the real slope; it has not had time to fill up. Adam divides by $1 - 0.9^t$ to undo this. On update 1 that divisor is $0.1$, which recovers the real slope exactly. Open the raw numbers in the figure to see the shrunken average and its corrected value side by side.
+
+<OptimizerLab client:visible mode="bias" title="Adam corrects its zero-initialized moments" />
+
+<details>
+<summary>Show the math</summary>
+
+
+Adam updates $m_t=\beta_1m_{t-1}+(1-\beta_1)g_t$ and $v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2$. It corrects the startup attenuation from zero initialization with $\hat m_t=m_t/(1-\beta_1^t)$ and $\hat v_t=v_t/(1-\beta_2^t)$, then uses $\theta_{t+1}=\theta_t-\eta\hat m_t/(\sqrt{\hat v_t}+\epsilon)$. At step one, $\hat m_1=g_1$ and $\hat v_1=g_1^2$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+
+```python
+m = beta1 * m + (1 - beta1) * gradient
+v = beta2 * v + (1 - beta2) * gradient**2
+m_hat, v_hat = m / (1 - beta1**step), v / (1 - beta2**step)
+theta -= learning_rate * m_hat / (sqrt(v_hat) + epsilon)
+```
+
+</details>
+
+</Step>
+
+<Step title="Race the rules on a ravine or saddle">
+
+Now run all four rules for 120 updates from the same start, with the same mini-batches. The landscape is a **ravine**: a long, narrow valley that is steep across and gentle along. Real loss surfaces have steep and gentle directions like this too, and that is where the rules differ most.
+
+At the default learning rate, plain SGD is the quickest here: its loss is 1.046 after 10 updates. Momentum overshoots and swings back across the valley before settling. Adam's steps are roughly the learning rate in size whatever the slope, so it walks at a steady pace and needs about 40 updates. Raise the learning rate and replay: the order changes. Treat the race as a picture of how each rule behaves, not as a ranking. A saddle landscape is under "Explore other update rules and landscapes".
+
+<OptimizerLab client:visible mode="race" title="Four update rules on the same toy landscape" />
+
+<details>
+<summary>Show the math</summary>
+
+
+For the ravine, the Hessian eigenvalues are $0.22$ and $3.4$; for the saddle, they are $-0.6$ and $1.8$. The objective is $L(\theta)=1+\frac12\theta^\mathsf{T}H\theta$. A negative eigenvalue means the saddle decreases along one direction, so an optimizer can move away from its center even when its step rule is implemented correctly.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+
+```python
+for name in ("SGD", "Momentum", "RMSProp", "Adam"):
+    states[name] = precompute(name, seeded_examples, settings, steps=120)
+frame = interpolate_recorded_states(states, timeline_time)
+shown_loss = objective(frame.position)  # evaluated at the displayed position
+```
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+
+- You might think a more sophisticated optimizer always finds a better solution. Actually, paths depend on the objective, learning rate, batch noise, and stopping point; these toy races do not establish a universal winner.
+- You might think momentum is a second gradient estimate. Actually, it is a running update direction that carries earlier gradients forward.
+- You might think RMSProp or Adam changes the objective. Actually, they scale the update based on gradient history; the lab evaluates the same objective for every rule.
+- You might think Adam's first moment is already the first gradient. Actually, its raw average is $(1-\beta_1)g_1$ when initialized at zero, so bias correction is part of the first update.
+
+
+</Step>
+
+<Step title="Check yourself">
+
+
+<details>
+<summary>Why does a full batch remove the lab's example noise?</summary>
+
+The 16 fixed offsets are paired so their mean is zero. Averaging every example therefore gives the exact quadratic-objective gradient. The noise control scales these offsets and has no effect when they are averaged over the full set.
+</details>
+
+<details>
+<summary>What does momentum remember?</summary>
+
+It remembers a decaying sum of earlier gradients, which changes the update direction and can build speed along consistent directions.
+</details>
+
+<details>
+<summary>What does RMSProp divide by?</summary>
+
+It divides each gradient coordinate by the square root of that coordinate's exponential average of squared gradients, plus a small epsilon.
+</details>
+
+<details>
+<summary>Why bias-correct Adam's moments?</summary>
+
+Both averages begin at zero and are initially pulled toward zero. Dividing by $1-\beta^t$ removes the attenuation caused by starting the moment averages at zero.
+</details>
+
+
+</Step>
+
+<Step title="Going deeper">
+
+
+- Kingma and Ba, [Adam: A Method for Stochastic Optimization](https://arxiv.org/abs/1412.6980) (2014).
+- PyTorch, [RMSprop optimizer documentation](https://docs.pytorch.org/docs/stable/generated/torch.optim.rmsprop.RMSprop_class.html), including its update equation and implementation options.
+- Hinton, Srivastava, and Swersky, [Lecture 6e: RMSProp](https://www.cs.toronto.edu/~tijmen/csc321/slides/lecture_slides_lec6.pdf).
+- [Backpropagation through a small network](/learn/neural-networks/backprop-mlp/) for where the gradient comes from.
+
+
+</Step>

@@ -1,0 +1,166 @@
+---
+title: "Agents: Loops, Planning, Memory"
+summary: "Agents run a model in a loop with tools, planning and memory until a goal is met, and small error rates compound over long tasks."
+day: 14
+track: applied
+order: 5
+level: advanced
+duration: 35
+prereqs: ["applied/tool-use"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+An agent is a model in a loop that acts, observes and decides what next.
+
+<Step title="From one call to a loop">
+
+An agent repeats the tool-use cycle: it looks at its context, chooses an action, runs it, adds the result, and decides again until it finishes or runs out of steps.
+
+{/*
+IDEA: observe -> think -> act -> observe, with a stop condition and a step limit. The loop, the tools and the context are real code (src/lib/applied/loop.ts). The policy that picks actions is a transparent scripted policy, labelled in the figure "Scripted policy (stands in for the model)": readable rules over the context. Say why in one line: no model small enough to run here can plan; the lesson is about the loop around it.
+ENVIRONMENT: the Elm Street Tool Library handbook (same corpus as vector-search and rag). Tools: search(query) = the real embedding search, read(id), calc(expr), answer(text).
+WIDGET: AgentTrace mode="loop" task="washer-weekend". Task: "Can I borrow the pressure washer from Friday to Monday, and what will it cost?" Transcript plus a loop diagram (observe, think, act) with the current phase lit.
+MOTION over t: each iteration lights the loop diagram in turn; the thought line, the action and the observation are appended to the transcript; a step counter and a context-token bar grow.
+TRY: scrub back to any iteration to see the context the policy saw then.
+QUOTE: number of iterations, tool calls, final context tokens.
+SHOW THE CODE: the 12-line loop (while steps under limit: action = policy(context); if answer: stop; obs = run(action); context.append) matching loop.ts.
+*/}
+
+</Step>
+
+<Step title="Planning: break the goal into steps">
+
+For a task with several parts, writing a plan first gives the loop a list of smaller goals to work through.
+
+{/*
+IDEA: task decomposition: the plan is text in the context; each subgoal is checked off; replanning when an observation contradicts the plan.
+WIDGET: AgentTrace mode="plan" task="washer-weekend". Plan panel (subgoals: find loan length rule, find fee, check weekend opening, compute cost, answer) beside the transcript.
+MOTION over t: plan is written first; subgoals tick off as matching observations arrive; at one point an observation ("closed on Sunday") triggers a replanning edit (strike-through, new subgoal).
+TRY: compare with the no-plan run (toggle "plan first" off): count the extra or missing steps.
+QUOTE: steps and correctness with and without the plan, on this task and over the 30-task suite.
+SOURCE for planning in LLM agents: Yao et al. 2023 ReAct (arXiv:2210.03629); Wang et al. 2023 "Plan-and-Solve Prompting", arXiv:2305.04091 (VERIFY).
+*/}
+
+</Step>
+
+<Step title="Short-term memory is the context window">
+
+Everything the agent knows about its current task lives in its context, which has a fixed size, so old observations eventually have to be dropped or summarised.
+
+{/*
+IDEA: short-term memory = the context window; strategies when it fills: drop oldest, or keep a summary. Dropping can remove a fact needed later (real failure, measured).
+WIDGET: AgentTrace mode="short-memory" task="three-items" budget=300. A longer task (cost of borrowing three tools) whose first observation is needed at the end. Context strip shows every message as a block sized by tokens, against the budget line.
+MOTION over t: blocks append; when the budget is crossed the oldest block slides out (drop) or collapses into a short summary block (summarise); at the end the policy needs the first fee: present or missing.
+TRY: switch the strategy between drop and summarise.
+QUOTE: tokens at the budget crossing, which fact was lost under drop, outcome under each strategy.
+*/}
+
+</Step>
+
+<Step title="Long-term memory is a searchable store">
+
+Facts that must outlive one task are written to an external store and retrieved later by search, the same way RAG retrieves documents.
+
+{/*
+IDEA: long-term memory = vector store of notes written by the agent, retrieved with the real embedding search (link /learn/applied/rag/). Second task benefits from a note saved in the first.
+WIDGET: AgentTrace mode="long-memory" tasks="washer-weekend,washer-again". Two tasks in sequence; a memory panel lists saved notes; on task 2 the policy queries memory before the handbook.
+MOTION over t: task 1 ends with a write to memory (note flies into the panel); task 2 starts with a memory search, the note's cosine score appears, and the agent skips two handbook searches.
+TRY: clear memory (button) and replay task 2.
+QUOTE: steps for task 2 with and without memory; the retrieved note's cosine.
+SOURCE: Park et al. 2023, "Generative Agents", arXiv:2304.03442; Packer et al. 2023, "MemGPT", arXiv:2310.08560 (VERIFY).
+*/}
+
+</Step>
+
+<Step title="Several agents, divided roles">
+
+A multi-agent system splits the work between agents with different instructions, such as one that does the task and one that checks it.
+
+{/*
+IDEA: roles exchange messages; a checker catches some errors at the cost of more calls and tokens. Same scripted policies, now two instances with different rules (worker, checker); errors injected at a seeded rate p so the checker has something to catch (labelled "simulated mistakes").
+WIDGET: AgentTrace mode="multi" p=0.1. Two lanes (worker, checker) with messages passing between them; 30-task suite tally below.
+MOTION over t: one task's messages pass between lanes, the checker rejects a wrong cost and the worker redoes the calculation; then the 30-task tallies (single vs pair) fill.
+TRY: raise p to 0.2.
+QUOTE: success rate and mean tool calls / tokens, single agent vs worker+checker, at p = 0.1 and 0.2.
+SOURCE: Du et al. 2023, "Improving Factuality and Reasoning through Multiagent Debate", arXiv:2305.14325 (VERIFY); Wu et al. 2023 "AutoGen", arXiv:2308.08155 (VERIFY).
+*/}
+
+</Step>
+
+<Step title="Small mistakes compound over long tasks">
+
+If each step goes wrong with a small probability, a task that needs many steps fails much more often, because every step has to succeed.
+
+{/*
+IDEA: success ≈ (1 − p)^n for n independent steps; long horizons are where agents fail. Measured over seeded runs, plotted against the closed form. Typical failure modes named with one example each from the runs: repeated action loops (caught by a repeat detector), wrong tool argument, stopping too early.
+WIDGET: AgentTrace mode="compound" p=0.05. Chart: success rate vs task length n (tasks of 2 to 20 steps, 200 seeded runs each), dots = measured, line = (1 − p)^n.
+MOTION over t: runs accumulate, dots settle toward the line; a failure-mode tally (loop, bad argument, early stop, step limit) fills beside it.
+TRY: set p to 0.01 and 0.1.
+QUOTE: measured and closed-form success at n = 5, 10, 20 for p = 0.05.
+SHOW THE MATH: P(success) = (1 − p)^n, and n for 50% success = ln 0.5 / ln(1 − p).
+*/}
+
+</Step>
+
+<Step title="Evaluating agents">
+
+Agents are evaluated by running them on a fixed set of tasks and checking the end state, while also counting cost, steps and failure types.
+
+{/*
+IDEA: outcome-based evaluation on a task suite, repeated runs because runs vary (pass@1 vs pass^k style reliability), plus cost. The 30-task suite with automatic checkers (gold answers) ships with the corpus.
+WIDGET: AgentTrace mode="eval" runs=5. Grid: 30 tasks x 5 seeded runs at p = 0.05, cells coloured pass/fail; side readouts: success per run, tasks solved in all 5 runs, mean steps and tokens.
+MOTION over t: grid fills column by column; tasks that pass sometimes but not always are outlined.
+TRY: click a failing cell to load its transcript (switches to the loop view for that run).
+QUOTE: mean success, share of tasks solved in all 5 runs vs in at least 1.
+SOURCE: Yao et al. 2024, "tau-bench", arXiv:2406.12045 (VERIFY, defines pass^k); Jimenez et al. 2024 "SWE-bench", arXiv:2310.06770; link /learn/alignment/evaluations/.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few beliefs about agents that do not hold up.
+
+{/*
+NO WIDGET. Intended misconceptions:
+1. "An agent is a different kind of model." It is a loop of ordinary model calls and tool calls.
+2. "More agents means better results." The checker helped at a cost; extra agents add calls, tokens and new failure points.
+3. "The model remembers previous tasks." Only what is in the context or written to a store is remembered.
+4. "95% per step is reliable." At 20 steps that is about 36% task success (compound step; quote the sim).
+5. "One successful run shows it works." Runs vary; evaluate with repeated runs.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Short questions to test the ideas above.
+
+{/*
+NO WIDGET. Questions:
+1. What stops an agent loop that never calls answer?
+2. Per-step success 0.98, 30 steps: rough task success?
+3. Why can dropping old messages make an agent repeat work?
+4. How is long-term memory retrieval related to RAG?
+5. Why report success over several runs of the same task?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources for going further.
+
+{/*
+NO WIDGET. Cite (VERIFY each):
+- Yao et al., "ReAct", arXiv:2210.03629.
+- Shinn et al., "Reflexion", arXiv:2303.11366.
+- Park et al., "Generative Agents", arXiv:2304.03442.
+- Packer et al., "MemGPT", arXiv:2310.08560.
+- Wu et al., "AutoGen", arXiv:2308.08155.
+- Jimenez et al., "SWE-bench", arXiv:2310.06770; Yao et al., "tau-bench", arXiv:2406.12045.
+- Anthropic, "Building effective agents" (Dec 2024, VERIFY URL).
+*/}
+
+</Step>

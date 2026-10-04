@@ -1,0 +1,199 @@
+---
+title: "Long Context"
+summary: "How models handle very long inputs, and where they still struggle."
+day: 15
+track: frontier
+order: 4
+level: frontier
+duration: 30
+prereqs: ["transformers/positional-encodings","llms/inference-kv-cache"]
+status: stub
+lastReviewed: 2026-09-29
+---
+
+Fitting a whole library in the prompt is hard for both memory and attention.
+
+import Step from '../../../components/ui/Step.astro';
+
+{/*
+LESSON BRIEF (skeleton, 2026-10-03). Widget: LongContextLab (plan: plans/day-15.md). Costs from src/lib/frontier/seqcost.ts.
+Tiny model: DEPENDS on the Day 9 core src/lib/transformer/ (see plan section 3): a 2-layer, 2-head, d=32 transformer with RoPE (configurable base and position scale), trained in a worker on a key-value retrieval task at length 64.
+Fallback if the core is late: a single attention head with hand-built RoPE queries/keys doing retrieval, labelled once as hand-set.
+All memory examples use a labelled hypothetical configuration (layers, KV heads, head dim, bytes) chosen by the writer; never a named real model unless its config is cited from an official source.
+
+(a) TEXTBOOK-STABLE MECHANISMS:
+- Attention scores form an L x L matrix: compute and (naive) memory grow as L^2; FlashAttention removes the L^2 memory but not the L^2 compute.
+- KV cache bytes = 2 x layers x kv_heads x head_dim x L x bytes_per_value; grouped-query attention shrinks kv_heads.
+- RoPE rotates each 2D pair of q/k dims by angle m * theta_i, theta_i = base^(-2i/d); low-frequency pairs never complete a turn in training, so longer positions give unseen angles.
+- Position interpolation divides positions by s; NTK-aware scaling raises the base; YaRN scales frequencies by band and adds an attention temperature.
+- Sliding-window attention costs L x w; stacked layers widen the reach to about layers x w; keeping a few initial "sink" tokens stabilises windowed attention.
+- Sparse patterns (local + global + random) cut the number of scored pairs.
+- Needle-in-a-haystack tests retrieval only; harder tests add multi-hop and aggregation.
+
+(b) RESEARCH LIST:
+R1 RoPE definition: Su et al. arXiv 2104.09864 (confirmed 2026-10-03).
+R2 Position interpolation arXiv 2306.15595 and YaRN arXiv 2309.00071 (both confirmed 2026-10-03): exact scaling formulas.
+R3 NTK-aware scaling original source (reddit/blog post, 2023): VERIFY; cite YaRN's description if the original is not a stable primary source.
+R4 Sliding window and sparse attention: Longformer arXiv 2004.05150 (VERIFY), BigBird arXiv 2007.14062 (VERIFY), attention sinks / StreamingLLM arXiv 2309.17453 (confirmed 2026-10-03).
+R5 Measuring use: Lost in the Middle arXiv 2307.03172 (confirmed 2026-10-03), RULER arXiv 2404.06654 (confirmed 2026-10-03), original needle test repo github.com/gkamradt/LLMTest_NeedleInAHaystack (VERIFY).
+R6 FlashAttention arXiv 2205.14135 (VERIFY): what it changes (memory traffic) and what it does not (FLOPs).
+R7 Current advertised context lengths and what long-context evaluations they publish: official model cards only, dated. Query: "context window model card 2026 long context evaluation".
+*/}
+
+<Step title="Every token looks at every other token">
+
+In attention, each new token is compared with every token before it, so the number of comparisons grows with the square of the input length.
+
+{/*
+IDEA: quadratic attention cost. Link /learn/transformers/self-attention/.
+WIDGET: LongContextLab mode="quadratic". A triangular causal score matrix drawn as a grid that zooms out as L grows; log-log readout of scored pairs and FLOPs vs L.
+T: t sweeps L from 1e2 to 1e6 (log); the grid zooms, the counter climbs.
+TRY: compare the pair count at 1e4 and 1e5: ten times the length, about a hundred times the work.
+QUOTE: scored pairs at L = 1e3, 1e4, 1e5, 1e6 (L(L+1)/2).
+MATH: pairs = L(L+1)/2; FLOPs about 4 L^2 d per layer.
+RESEARCH: R6 (one sentence: FlashAttention fixes memory traffic, not the count).
+*/}
+
+</Step>
+
+<Step title="The KV cache grows with every token">
+
+During generation the model stores a key and a value for every past token in every layer, and for long inputs that cache can outgrow the model's own weights.
+
+{/*
+IDEA: KV-cache memory. Link /learn/llms/inference-kv-cache/.
+WIDGET: LongContextLab mode="kvcache" kvHeads=8 (sliders: KV heads 1 to 32, bytes 1/2/4). Stacked bar: weights vs KV cache for a labelled hypothetical config; L on a log axis.
+T: t sweeps L from 1e3 to 1e6; the cache bar overtakes the weight bar.
+TRY: move KV heads from 32 to 8 (grouped-query attention) and find the new crossover length.
+QUOTE: cache bytes at L = 1e5 for kvHeads = 32 and 8 under the stated config; the crossover L.
+MATH: the KV formula.
+RESEARCH: GQA paper Ainslie et al. arXiv 2305.13245 (VERIFY).
+*/}
+
+</Step>
+
+<Step title="Positions the model never saw">
+
+Rotary position encodings turn each pair of dimensions by an angle that grows with position, and past the training length the slow-turning pairs reach angles the model has never seen.
+
+{/*
+IDEA: RoPE extrapolation failure. Link /learn/transformers/positional-encodings/.
+WIDGET: LongContextLab mode="extrapolate" trainLen=64. Left: one dial per frequency pair, the arc covered during training shaded, the current position's angle as a needle (outside the arc = --viz-neg). Right: the tiny model's retrieval accuracy vs test length 32 to 512.
+T: t moves the position from 0 to 512; fast dials spin many turns (always in range), slow dials leave their shaded arc after 64.
+TRY: watch the slowest dial leave its shaded arc, and the accuracy curve drop at the same length.
+QUOTE: accuracy at 64, 128, 256 with no scaling; the lowest pair's trained arc in degrees.
+MATH: theta_i = base^(-2i/d); angle = m theta_i.
+RESEARCH: R1.
+*/}
+
+</Step>
+
+<Step title="Stretching the positions: interpolation and frequency scaling">
+
+Context-extension methods rescale the rotation angles so that long inputs map back into the range of angles seen in training, at the cost of finer position detail.
+
+{/*
+IDEA: position interpolation vs NTK-aware base scaling vs YaRN band-wise scaling, each with a short fine-tune of the tiny model at length 256.
+WIDGET: LongContextLab mode="interpolate" method="pi" (buttons pi / ntk / yarn; default pi). Same dials as step 3 with the rescaled arcs; accuracy vs length for the chosen method beside the unscaled curve.
+T: t sweeps test length 32 to 1024; curves draw; dials show the rescaled angles.
+TRY: switch from pi to yarn and compare accuracy at 1024 and at short lengths.
+QUOTE: accuracy at 64 and 1024 for none / pi / ntk / yarn after the same fine-tune budget.
+MATH: PI: m -> m/s; NTK: base -> base * s^(d/(d-2)); YaRN ramp (from R2).
+RESEARCH: R2, R3.
+*/}
+
+</Step>
+
+<Step title="Look nearby: sliding-window attention">
+
+Sliding-window attention lets each token attend only to the last few hundred tokens, which makes cost grow linearly, and stacking layers lets information travel further.
+
+{/*
+IDEA: windowed attention, reach = layers x window, attention sinks.
+WIDGET: LongContextLab mode="window" window=8 layers=4 sinks=0 (toggle sinks=4). Mask matrix with the band; a token's reach cone grows layer by layer; cost readout L x w.
+T: t plays the reach growing layer by layer for one query token, then L sweeping.
+TRY: turn on 4 sink tokens and see the first column of the mask light up.
+QUOTE: scored pairs for L = 1e4, w = 512 vs full attention; reach after 4 layers.
+MATH: pairs about L w.
+RESEARCH: R4 (StreamingLLM's sink finding, cited with its conditions).
+*/}
+
+</Step>
+
+<Step title="Sparse patterns: local plus global">
+
+Other designs mix a local window with a few global tokens that see and are seen by everything, keeping cost low while any two tokens stay a couple of hops apart.
+
+{/*
+IDEA: Longformer/BigBird-style sparse attention.
+WIDGET: LongContextLab mode="sparse" window=4 global=2 random=2. Mask matrix showing the three pattern parts in distinct --viz-seq shades; readouts: nonzeros vs dense, maximum hops between two tokens.
+T: t builds the mask pattern part by part (window, then global rows/columns, then random), then sweeps L.
+TRY: remove the global tokens and watch the hop count jump.
+QUOTE: nonzero fraction at L = 64 and 4096; hops with and without globals.
+MATH: count of nonzeros.
+RESEARCH: R4.
+*/}
+
+</Step>
+
+<Step title="Measuring use: a needle in a haystack">
+
+To test whether a model actually uses a long input, hide one fact somewhere in filler text and ask for it, at many lengths and depths.
+
+{/*
+IDEA: needle-in-a-haystack heatmap on the tiny model; then harder multi-hop variant shows retrieval is not reasoning.
+WIDGET: LongContextLab mode="needle" task="single" (toggle task="multi-hop": the answer needs two chained lookups). Heatmap: x = context length (32 to 512), y = needle depth (0 to 100 percent); cells coloured by accuracy (--viz-seq ramp).
+T: t fills the heatmap cell by cell, each cell running its seeded test prompts.
+TRY: switch to multi-hop and compare the share of green cells.
+QUOTE: mean accuracy over the grid for single vs multi-hop; worst cell.
+MATH: none.
+RESEARCH: R5 (lost-in-the-middle shape and RULER's finding that needle tests overstate usable length; quote their wording), R7.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Long context is often misunderstood in a few predictable ways.
+
+{/*
+NO WIDGET. Misconceptions:
+1. A model with a 1M-token window uses all of it equally well (R5).
+2. FlashAttention makes attention linear (R6: it is exact attention with less memory traffic).
+3. Position interpolation is free (step 4: short-range resolution drops; needs fine-tuning, R2).
+4. Retrieval success means reasoning over the whole context (step 7 multi-hop).
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Use these questions to check your understanding.
+
+{/*
+NO WIDGET. Questions:
+1. Doubling length multiplies attention scores by how much? KV cache by how much?
+2. Why do low-frequency RoPE pairs break first when extrapolating?
+3. With window 512 and 8 layers, roughly how far back can information travel?
+4. What does a needle test not measure?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+The primary papers for long-context methods and their evaluation are below.
+
+{/*
+NO WIDGET. Sources (confirmed 2026-10-03 unless marked):
+- Su et al. 2021, RoFormer/RoPE, https://arxiv.org/abs/2104.09864
+- Chen et al. 2023, Position Interpolation, https://arxiv.org/abs/2306.15595
+- Peng et al. 2023, YaRN, https://arxiv.org/abs/2309.00071
+- Beltagy et al. 2020, Longformer, https://arxiv.org/abs/2004.05150 (VERIFY)
+- Xiao et al. 2023, StreamingLLM / attention sinks, https://arxiv.org/abs/2309.17453
+- Dao et al. 2022, FlashAttention, https://arxiv.org/abs/2205.14135 (VERIFY)
+- Liu et al. 2023, Lost in the Middle, https://arxiv.org/abs/2307.03172
+- Hsieh et al. 2024, RULER, https://arxiv.org/abs/2404.06654
+*/}
+
+</Step>

@@ -1,0 +1,213 @@
+---
+title: "Mechanistic Interpretability"
+summary: "Reverse-engineer the internal computations of networks with probes, sparse autoencoders and circuits."
+day: 15
+track: frontier
+order: 6
+level: frontier
+duration: 35
+prereqs: ["transformers/transformer-block"]
+status: stub
+lastReviewed: 2026-09-29
+---
+
+Can we read a network's algorithms from its weights and activations?
+
+import Step from '../../../components/ui/Step.astro';
+
+{/*
+LESSON BRIEF (skeleton, 2026-10-03). Widget: InterpLab (plan: plans/day-15.md).
+Two real tiny models, trained in a worker, seeded:
+  TOY: the "toy model of superposition": n sparse features x in [0,1]^n, h = W x (m dims), x_hat = ReLU(W^T h + b), importance-weighted MSE. Default n=6, m=2 for the picture; n=12, m=4 for the SAE.
+  TF: DEPENDS on the Day 9 core src/lib/transformer/ (plan section 3): a 2-layer attention-only transformer (d=32, 2 heads) trained on repeated random token sequences, so it learns previous-token and induction heads. Needs residual-stream activations per layer/position, attention patterns, and a forward with hooks to overwrite (patch) or zero (ablate) a head's output or a residual vector.
+If TF is late, steps 1, 2, 7, 8 use a 2-layer MLP on a toy task as a fallback (probe + patching still work; circuit step becomes "which hidden units carry the answer").
+
+(a) TEXTBOOK-STABLE MECHANISMS:
+- Linear probe: logistic regression from activations to a property; high accuracy shows the information is linearly decodable, not that the model uses it. Control tasks measure selectivity.
+- Superposition: with sparse features, a network stores more features than dimensions as non-orthogonal directions; interference is tolerated because features rarely co-occur.
+- Polysemantic neurons follow from superposition.
+- Sparse autoencoder: f = ReLU(W_e (x - b_d) + b_e), x_hat = W_d f + b_d, loss = |x - x_hat|^2 + lambda |f|_1; trade-off between reconstruction and L0; dead latents.
+- Activation patching: run clean and corrupted inputs, copy one activation from clean into corrupted, measure how much of the clean behaviour returns.
+- Induction circuit: a previous-token head in layer 0 composes with an induction head in layer 1 (Olsson et al.).
+
+(b) RESEARCH LIST:
+R1 Probes: Alain and Bengio arXiv 1610.01644 (confirmed 2026-10-03); control tasks Hewitt and Liang 2019 arXiv 1909.03368 (VERIFY).
+R2 Superposition: Elhage et al. "Toy Models of Superposition" arXiv 2209.10652 / transformer-circuits.pub/2022/toy_model (confirmed 2026-10-03).
+R3 SAEs: Bricken et al. "Towards Monosemanticity" transformer-circuits.pub/2023/monosemantic-features (confirmed 2026-10-03); Cunningham et al. arXiv 2309.08600 (confirmed 2026-10-03); Templeton et al. "Scaling Monosemanticity" transformer-circuits.pub/2024/scaling-monosemanticity (confirmed 2026-10-03); Gao et al. "Scaling and evaluating sparse autoencoders" arXiv 2406.04093 (VERIFY).
+R4 Patching and circuits: Meng et al. ROME arXiv 2202.05262 (VERIFY); Wang et al. IOI arXiv 2211.00593 (VERIFY); Olsson et al. induction heads transformer-circuits.pub/2022/in-context-learning-and-induction-heads (VERIFY).
+R5 Attribution graphs / circuit tracing: transformer-circuits.pub/2025/attribution-graphs/methods.html (confirmed 2026-10-03) and the companion "On the Biology of a Large Language Model" (VERIFY exact URL).
+R6 Current state and critiques (what SAEs miss, whether features are "real"; latest field reviews). Query: "sparse autoencoders limitations interpretability 2026", "open problems in mechanistic interpretability" (VERIFY: Sharkey et al. 2025, arXiv 2501.16496).
+*/}
+
+<Step title="Probing: is the information there?">
+
+A probe is a small classifier trained to read a property out of a network's hidden activations, which tells us whether that information is present at that layer.
+
+{/*
+IDEA: linear probing per layer.
+WIDGET: InterpLab mode="probe" target="repeated" (property: "has this token appeared earlier in the sequence?"). Bars: probe accuracy at embedding, after layer 0, after layer 1; a 2D PCA scatter of the chosen layer's residual vectors coloured by the property (--viz-pos / --viz-neg).
+T: t walks through the layers; the scatter morphs between layers and the bar for that layer grows.
+TRY: compare the probe accuracy before and after layer 0.
+QUOTE: probe accuracy at each layer on held-out positions.
+MATH: logistic regression on activations. CODE: sklearn-style 3 lines.
+RESEARCH: R1.
+*/}
+
+</Step>
+
+<Step title="A probe can find what the model ignores">
+
+A probe that succeeds shows the information can be read out, not that the model uses it, so probes need a comparison.
+
+{/*
+IDEA: decodable is not used; control task (random labels per token type) gives a baseline; selectivity = task accuracy minus control accuracy.
+WIDGET: InterpLab mode="probe" target="control". Same layout as step 1 but with the control task alongside, and a probe for a property irrelevant to the task (token id parity) that is still decodable from the embedding.
+T: t walks the layers; three bars per layer (task, control, irrelevant property).
+TRY: notice the irrelevant property is readable even though the task never needs it.
+QUOTE: selectivity per layer; accuracy on the irrelevant property at the embedding.
+MATH: none.
+RESEARCH: R1 (Hewitt and Liang control tasks, VERIFY).
+*/}
+
+</Step>
+
+<Step title="Superposition: more features than dimensions">
+
+When features are rare, a network can store more of them than it has dimensions by giving each one a direction that overlaps a little with the others.
+
+{/*
+IDEA: toy model of superposition.
+WIDGET: InterpLab mode="superposition" n=6 m=2 sparsity=0.9 (slider sparsity 0 to 0.99, precomputed runs). The columns of W drawn as arrows in the 2D hidden plane, length = how well each feature is stored; importance shown by arrow label.
+T: t = training step; arrows grow and rotate; at high sparsity they settle into a hexagon of 6 directions, at sparsity 0 only 2 survive at right angles.
+TRY: drag sparsity from 0 to 0.9 and count how many features are stored.
+QUOTE: features with norm above 0.5 at sparsity 0 and 0.9; the angle between neighbouring arrows at 0.9.
+MATH: x_hat = ReLU(W^T W x + b); importance-weighted loss.
+RESEARCH: R2 (phase diagram claims quoted from the paper).
+*/}
+
+</Step>
+
+<Step title="Polysemantic neurons">
+
+Because features share directions, a single neuron ends up responding to several unrelated features, which makes neurons hard to read one at a time.
+
+{/*
+IDEA: polysemanticity as a consequence of superposition.
+WIDGET: InterpLab mode="polysemantic" n=12 m=4. A grid: rows = 4 hidden neurons, columns = 12 features, cell = the neuron's response to that feature alone (--viz-pos / --viz-neg diverging).
+T: t lights one feature at a time and shows which neurons respond.
+TRY: pick neuron 2 and count the features it responds to strongly.
+QUOTE: per neuron, the number of features with response above 0.3.
+MATH: response = W column dot neuron axis.
+RESEARCH: R2, R3 (Bricken et al.'s example of a polysemantic neuron, quoted, not paraphrased from memory).
+*/}
+
+</Step>
+
+<Step title="Sparse autoencoders pull the features apart">
+
+A sparse autoencoder learns a larger set of directions and explains each activation with only a few of them, which tends to recover the underlying features.
+
+{/*
+IDEA: SAE objective; learned decoder directions match true features.
+WIDGET: InterpLab mode="sae" dict=16 lambda=0.01. Left: the 4D activations of the n=12, m=4 toy; right: the 16 learned decoder directions matched to the 12 true features by cosine (matrix), dead latents greyed.
+T: t = SAE training step; the cosine matrix sharpens into a near-permutation.
+TRY: count the true features recovered with cosine above 0.9.
+QUOTE: features recovered at the end; mean active latents per input (L0); reconstruction error.
+MATH: SAE equations and loss. CODE: PyTorch SAE in 8 lines.
+RESEARCH: R3.
+*/}
+
+</Step>
+
+<Step title="Sparsity against faithfulness">
+
+Pushing the autoencoder to use fewer features makes each one cleaner but explains less of the activation, so every sparse autoencoder sits on a trade-off.
+
+{/*
+IDEA: lambda trade-off; dead latents; dictionary size.
+WIDGET: InterpLab mode="sae-sweep". Curve: reconstruction error vs L0 for lambda from 0.001 to 0.1 (log), one curve per dictionary size 8, 16, 32; dead-latent count as dot size.
+T: t sweeps lambda; a cursor moves along each curve; the cosine matrix inset updates.
+TRY: find the lambda where recovered features peak.
+QUOTE: L0, error and recovered features at the smallest, best and largest lambda for dict 16.
+MATH: none.
+RESEARCH: R3 (Gao et al. on evaluating SAEs, VERIFY), R6.
+*/}
+
+</Step>
+
+<Step title="Causal tests: patch an activation">
+
+To test whether a part of the network matters, copy its activation from one input into a run on another input and see whether the output follows.
+
+{/*
+IDEA: activation patching on TF. Clean prompt: a repeated sequence where the induction answer is token A; corrupted: the first occurrence changed so the answer is B. Patch the residual at (layer, position) from clean into corrupted; metric = fraction of the clean logit difference restored.
+WIDGET: InterpLab mode="patch". Heatmap: rows = layers (embedding, after L0, after L1), columns = positions; cells = restored fraction (--viz-seq ramp).
+T: t fills the heatmap one patch at a time, showing the logit bar for the current patch.
+TRY: find the single cell that restores the most.
+QUOTE: clean and corrupted logit difference; restored fraction of the top 3 cells.
+MATH: restored = (patched - corrupted) / (clean - corrupted).
+RESEARCH: R4.
+*/}
+
+</Step>
+
+<Step title="Circuits: tracing the mechanism">
+
+A circuit is a small set of components and connections that together carry out a behaviour, such as one attention head finding the previous token and another using it to copy what came next.
+
+{/*
+IDEA: induction circuit in TF: layer-0 previous-token head plus layer-1 induction head. Ablate each head and measure in-context loss on repeated sequences.
+WIDGET: InterpLab mode="circuit". Graph of the 4 heads with edges sized by composition score; attention patterns of the selected head on a repeated sequence (the diagonal offset stripe); bars of loss increase when each head is ablated.
+T: t steps the attention pattern across query positions, then ablates heads one by one.
+TRY: ablate the previous-token head and watch the induction head's stripe vanish.
+QUOTE: loss on the second half of repeated sequences: intact, each head ablated.
+MATH: none. CODE: ablation as zeroing a head's output.
+RESEARCH: R4 (induction heads, VERIFY URL), R5 (one or two sentences on attribution graphs at scale, cited and dated), R6.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Interpretability results are easy to over-read in a few ways.
+
+{/*
+NO WIDGET. Misconceptions:
+1. A successful probe shows the model uses the property (step 2).
+2. Each neuron means one thing (steps 3 to 4).
+3. SAE features are the model's true units (step 6, R6: they depend on lambda and dictionary size).
+4. One circuit explains a whole model (R5 scope and caveats from the source).
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+These questions check the main ideas.
+
+{/*
+NO WIDGET. Questions:
+1. Why does superposition need sparse features?
+2. What does a control task measure?
+3. In activation patching, what does a restored fraction of 1.0 mean?
+4. What two terms are in an SAE's loss, and what does lambda trade?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+The key papers and articles in mechanistic interpretability are listed below.
+
+{/*
+NO WIDGET. Sources (confirmed 2026-10-03 unless marked):
+- Alain and Bengio 2016, Linear classifier probes, https://arxiv.org/abs/1610.01644
+- Elhage et al. 2022, Toy Models of Superposition, https://transformer-circuits.pub/2022/toy_model/
+- Olsson et al. 2022, In-context learning and induction heads, transformer-circuits.pub (VERIFY URL)
+- Bricken et al. 2023, Towards Monosemanticity, https://transformer-circuits.pub/2023/monosemantic-features/
+- Cunningham et al. 2023, Sparse autoencoders find highly interpretable features, https://arxiv.org/abs/2309.08600
+- Templeton et al. 2024, Scaling Monosemanticity, https://transformer-circuits.pub/2024/scaling-monosemanticity/
+- Ameisen et al. 2025, Circuit tracing (attribution graphs), https://transformer-circuits.pub/2025/attribution-graphs/methods.html (author list VERIFY)
+*/}
+
+</Step>

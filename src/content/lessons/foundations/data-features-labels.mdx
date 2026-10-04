@@ -1,0 +1,136 @@
+---
+title: "Data, Features and Labels"
+summary: "How examples are turned into numbers: inputs (features) and the answers we want (labels)."
+day: 1
+track: foundations
+order: 2
+level: intro
+duration: 15
+prereqs: ["foundations/what-is-a-model"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import DataTable from '../../../components/widgets/DataTable/DataTable.svelte';
+
+<Step title="A model only sees numbers">
+
+A model cannot look at a house. It cannot see the garden or feel the neighborhood. All it can ever receive is a list of numbers that *we* chose to describe the house with.
+
+Deciding what to write down is half the craft of machine learning. This lesson is about that description: how a pile of real things becomes a table a model can use.
+
+Below is a tiny table of ten houses, and next to it a plot of the same houses. Watch the timeline read the table row by row: each row flies into the plot and becomes exactly one dot.
+
+<DataTable client:visible labelToggle={false} title="Each row of the table becomes one point" />
+
+</Step>
+
+<Step title="Rows are examples, columns are features and a label">
+
+Each **row** is one **example** (also called a sample or an instance): one house. Each **column** records one measurement of it.
+
+Most columns are **features**, the inputs. Here the features are the area, the number of bedrooms and the age of the house. One column is special. The price is the **label** (also called the target): the answer we would like the model to produce from the features.
+
+Hover over a row, or over a dot, and the other one lights up. Then use the switch under the figure to choose which feature goes on the horizontal axis. The vertical axis always shows the label. Notice how the shape of the cloud changes. Area and price climb together, so the dots run upward to the right. Age has a weaker, downward pull: older houses tend to cost less, but not always.
+
+<DataTable client:visible labelToggle={false} xFeature="age" title="Same houses, different feature on the x-axis" />
+
+Writing it compactly: an example is a pair $(\mathbf{x}, y)$, where $\mathbf{x}$ is the vector of features and $y$ is the label. For house 5, $\mathbf{x} = (110, 3, 8)$ and $y = 300$. The model from the previous lesson generalizes to $\hat y = f(\mathbf{x};\, \theta)$: features go in, a prediction comes out, and the label is what we compare it against.
+
+</Step>
+
+<Step title="Turning everything into numbers">
+
+Area and age are already numbers. Many useful facts are not. The neighborhood of a house is a category: A, B or C. You cannot put the letter B into $w \cdot x + b$.
+
+A tempting fix is to code A, B, C as 1, 2, 3. That quietly claims that C is "three times A" and that B sits exactly halfway between them, which is false. The standard fix is **one-hot encoding**: give each category its own column holding 1 if the house belongs to it and 0 otherwise. Each house now has exactly one 1 in the three new columns.
+
+<DataTable client:visible encode labelToggle={false} title="A category becomes three 0/1 columns" />
+
+The same trick, with more work, covers other kinds of data:
+
+- A **photo** is a grid of pixels; each pixel is a brightness number (or three, for red, green and blue). A small 28 by 28 grayscale image is a row of 784 numbers.
+- **Text** is cut into pieces called tokens, and each token is replaced by an integer identifier.
+- **Sound** is a sequence of air-pressure measurements taken thousands of times per second.
+
+In every case the pipeline is the same: real thing, then a list of numbers, then the model. Later lessons cover how images and text are encoded well.
+
+</Step>
+
+<Step title="With labels and without">
+
+Our table has a label for every example. Learning from such data is called **supervised learning**: a teacher (the label) tells the model what the right answer was, so we can measure how wrong it is.
+
+Sometimes there is no label, only features. A shop might have records of what each customer bought and no notion of a "right answer". Learning from unlabeled data is **unsupervised learning**, and its goals are different: find groups, find structure, compress the data, or generate new examples like it.
+
+Tick "Hide the labels" under the figure. The price column turns into question marks and the dots collapse onto a strip: without labels there is no vertical coordinate telling us how to sort them. What remains is a set of positions along the feature axis, and the question changes from "what is the price?" to "what patterns do these positions have?".
+
+<DataTable client:visible title="Take the labels away" />
+
+Real projects also have in-between cases: a few labeled examples among many unlabeled ones, or labels that are made up from the data itself, as when a language model predicts the next word of ordinary text. We meet those on Day 10.
+
+</Step>
+
+<Step title="Why data limits the model">
+
+A model can only learn what is in its examples. A few consequences follow.
+
+**Garbage in, garbage out.** If the prices in the table are wrong, the best model of those prices is a model of the wrong numbers.
+
+**Missing features.** Neither the area nor the age tells you whether the house is beside a noisy road. If that fact matters and is not in a column, no model can use it.
+
+**Unrepresentative samples.** Our ten houses have areas between 45 and 175 m². If a model is trained on them and then asked about a 400 m² mansion, it is extrapolating far from anything it has seen, and its answer is a guess with no evidence behind it.
+
+**Biased labels.** If past decisions were unfair, and those decisions are the labels, the model will faithfully learn the unfairness.
+
+None of these is fixed by a cleverer algorithm. Better data is often the single biggest improvement available.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** features are things a person can see directly. **Actually** a feature is whatever number we compute for each example. It can be a raw measurement, or something derived, like price per square metre.
+- **You might think** the label is always a number. **Actually** it can also be a category ("spam" or "not spam"), which turns the task into classification rather than regression.
+- **You might think** encoding categories as 1, 2, 3 is harmless. **Actually** it invents an order and distances that are not there. One-hot columns avoid that.
+- **You might think** more columns always help. **Actually** irrelevant features add noise, and the model needs more examples to tell useful columns from useless ones.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>In the table, which columns are features and which is the label?</summary>
+
+Area, bedrooms and age are features. Price is the label.
+
+</details>
+
+<details>
+<summary>Encode neighborhood B with one-hot columns for (A, B, C).</summary>
+
+$(0, 1, 0)$.
+
+</details>
+
+<details>
+<summary>You have customer purchase records and no "right answer" column. Supervised or unsupervised?</summary>
+
+Unsupervised, because there is no label to learn from.
+
+</details>
+
+<details>
+<summary>Why is coding neighborhoods A, B, C as 1, 2, 3 risky?</summary>
+
+It tells the model that C is three times A and that B is exactly halfway between them, an order and spacing that the categories do not have.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Goodfellow, Bengio and Courville, [*Deep Learning*](https://www.deeplearningbook.org/), section 5.1.3 on supervised and unsupervised learning.
+- Google's [Machine Learning Crash Course: Working with categorical data](https://developers.google.com/machine-learning/crash-course/categorical-data): one-hot encoding in practice.
+- Sculley et al., ["Hidden Technical Debt in Machine Learning Systems"](https://papers.nips.cc/paper/2015/hash/86df7dcfd896fcaf2674f757a2463eba-Abstract.html), NeurIPS 2015: why the data pipeline dominates real projects.
+
+</Step>

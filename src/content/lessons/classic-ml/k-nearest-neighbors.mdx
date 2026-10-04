@@ -1,0 +1,186 @@
+---
+title: "k-Nearest Neighbors"
+summary: "Classify a point by voting among its k closest training examples."
+day: 3
+track: classic-ml
+order: 1
+level: intro
+duration: 20
+prereqs: ["foundations/train-val-test"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import KNNVoter from '../../../components/widgets/KNNVoter/KNNVoter.svelte';
+
+<Step title="The classifier that only remembers">
+
+Most models in this course learn weights. **k-nearest neighbours** (k-NN) learns nothing. "Training" is storing the examples. To classify a new point, it finds the $k$ stored examples closest to it, lets each cast one vote for its own class, and answers with the majority.
+
+In the figure, blue circles are class 1 and orange diamonds are class 0. The large dot is a **query**, a point we want to classify, and it drifts across the plane. Lines join it to its $k = 5$ nearest neighbours, and the panel on the right ranks those neighbours by distance. The background shows what the vote would say at every spot: the bluer the shade, the more of the five neighbours are blue. Watch the votes as the query crosses from the orange side to the blue side. Near the border the vote splits: at 4 orange to 1 blue the answer is still orange, but a little further on it reads 2 orange to 3 blue and the answer flips. You can also click the plane to put the query anywhere.
+
+<KNNVoter client:visible title="Five neighbours vote: the query drifts across the border" />
+
+Because nothing is trained, k-NN is "lazy": all the work happens at prediction time, when it has to measure the distance from the query to every stored point. That makes it a good first model to reason about, and a slow one on large data.
+
+</Step>
+
+<Step title="What counts as close? Distance metrics">
+
+"Nearest" needs a definition of distance. The usual one is **Euclidean**, the straight-line length. A second is **Manhattan** (city-block) distance, which adds up the movement along each axis. Both belong to one family, the Minkowski distance with exponent $p$:
+
+$$d_p(a, b) = \Big(\sum_i |a_i - b_i|^p\Big)^{1/p}, \qquad p = 2 \text{ is Euclidean}, \quad p = 1 \text{ is Manhattan}.$$
+
+The set of points within distance $r$ of the query is a **ball**. For $p = 2$ it is a circle. For $p = 1$ it is a diamond. Watch the dashed outline: it grows until it has swallowed the five nearest points, each lighting up as the edge reaches it, then $p$ slides from 2 down to 1.
+
+The query here is at $(-0.20, -0.20)$. With Euclidean distance the ball needs radius 0.35 to catch five points, and the vote is 3 blue to 2 orange, so it predicts blue. With Manhattan distance the radius is 0.38, two of the five neighbours are different, and the vote is 2 blue to 3 orange: the prediction changes. The metric is a modelling choice, not a detail.
+
+<KNNVoter client:visible mode="metric" title="From a circle to a diamond: the neighbours change" />
+
+<details>
+<summary>Show the math</summary>
+
+The edge of the ball $\{x : d_p(x, q) \le r\}$ satisfies $|x_1 - q_1|^p + |x_2 - q_2|^p = r^p$. At $p = 2$ this is a circle. At $p = 1$ it is $|x_1 - q_1| + |x_2 - q_2| = r$, a diamond with its corners on the axes. In between the shape is a rounded diamond. As $p \to \infty$ it becomes a square (Chebyshev distance).
+
+</details>
+
+</Step>
+
+<Step title="Voting among the k nearest">
+
+Once the $k$ nearest points are found, the vote is a simple count. If $N_k(q)$ is the set of $k$ neighbours of $q$, the prediction is
+
+$$\hat{y}(q) = \arg\max_c \; \big|\{\, i \in N_k(q) : y_i = c \,\}\big|.$$
+
+The shaded background is this vote computed at every spot on a grid. Its shade is the share of blue among the neighbours, so pale areas are close calls. With two classes, pick an odd $k$ so a tie cannot happen.
+
+The figure below starts at $k = 1$. Use **Neighbours k** to change it. With $k = 1$ the nearest point decides alone, and the plane splits into a patchwork around each training point. With $k = 9$ the borders are smoother, and a single stray point no longer carries a region with it. The next step looks at that effect properly.
+
+<KNNVoter client:visible k={1} title="One neighbour decides alone: try k = 1, 3, 5, 9" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def knn_predict(X_train, y_train, q, k=5):
+    d = np.linalg.norm(X_train - q, axis=1)          # distance to every stored point
+    nearest = np.argsort(d)[:k]                      # indices of the k closest
+    return np.bincount(y_train[nearest]).argmax()    # majority class
+```
+
+</details>
+
+</Step>
+
+<Step title="Choosing k: jagged or too smooth">
+
+Here is a noisy dataset: two overlapping, curved clouds of points, 50 training points per class. A separate validation set (50 per class, see [train, validation, test](/learn/foundations/train-val-test/)) measures how well the model generalises. The timeline steps through $k = 1, 5, 15, 31, 51, 75$.
+
+At $k = 1$ every training point is its own nearest neighbour, so training accuracy is 100%. The regions are jagged because every noisy point carves out its own territory, and validation accuracy is only 85%. At $k = 5$ the regions follow the overall shape of the classes, training accuracy is 92% and validation accuracy is 90%. As $k$ grows the vote averages over a wider and wider patch: at $k = 15$ validation accuracy has slipped to 84%, at $k = 31$ it is 80%, and at $k = 75$ it is 76%, because each vote now spans both classes and the model cannot bend around their shape.
+
+Small $k$ means low bias and high variance: the model fits the noise. Large $k$ means high bias and low variance: it is too stiff. The chart on the right shows the dashed training curve and the solid validation curve, and the best $k$ sits where validation accuracy peaks. This is the trade-off you will meet again in [overfitting and bias-variance](/learn/foundations/overfitting-bias-variance/). In real projects you choose $k$ on validation data, never on the test set.
+
+<KNNVoter client:visible mode="k" title="Sweeping k: from memorising noise to blurring the shape" />
+
+</Step>
+
+<Step title="Feature scaling: who gets to decide the distance?">
+
+Distance adds up differences across features, so a feature measured in big numbers drowns out one measured in small numbers. Suppose the class depends only on $x$, and $y$ is pure noise: each class forms a band in $x$, and the points are spread at random in $y$.
+
+With both axes in the same units, the regions are a clean left-right split and validation accuracy is 98%. Now multiply $y$ by a factor that grows to 100, as if it were recorded in millimetres while $x$ is in metres. The ball becomes a thin horizontal band, because two points only count as close if their $y$ values are almost equal. The nearest neighbours are whichever points happen to share the query's $y$, and validation accuracy falls to 56%, barely above the 50% you would get by guessing. The fix is to **standardise**: divide each feature by its own spread (and subtract its mean). Watch the stretch shrink back; once both axes have comparable spread, accuracy is back to 98%.
+
+The same thing happens with real features such as age in years and income in dollars. Always put features on a common scale before using a distance-based model.
+
+<KNNVoter client:visible mode="scale" title="Stretch one axis by 100, then standardise" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+mu, sigma = X_train.mean(axis=0), X_train.std(axis=0)
+X_train = (X_train - mu) / sigma
+X_test  = (X_test  - mu) / sigma     # reuse the training mean and spread
+```
+
+</details>
+
+</Step>
+
+<Step title="The curse of dimensionality">
+
+Real data has many features, and distance behaves strangely when there are many. The figure draws 200 random points in a unit cube with $d$ dimensions and plots their distances from one query, each divided by the average distance.
+
+With $d = 1$ the distances spread widely: the nearest point is 0.01 of the average distance away and the farthest is 2.10, so the ratio nearest $\div$ farthest is 0.00. As $d$ grows the histogram collapses into a spike. At $d = 10$ the ratio is 0.32, at $d = 50$ it is 0.64, at $d = 100$ it is 0.72, and at $d = 200$ the nearest point is 0.88 of the average distance and the farthest is 1.09, a ratio of 0.81. (The ratio is averaged over 30 queries; the histogram shows one of them.) Almost every point is about equally far from the query, so "nearest" barely separates anything, and a vote among the $k$ nearest becomes close to a vote among random points.
+
+In practice the useful structure often lies in far fewer dimensions than the raw features, which is why distance-based methods work better after the features are compressed, for example with [PCA](/learn/classic-ml/pca/).
+
+<KNNVoter client:visible mode="dims" title="More dimensions, less difference between near and far" />
+
+<details>
+<summary>Show the math</summary>
+
+For two independent uniform numbers $u, v$ on $[0, 1]$, $E[(u - v)^2] = 1/6$ and $\mathrm{Var}[(u - v)^2] = 7/180$. A squared distance in $d$ dimensions is a sum of $d$ of these, so its mean is $d/6$ and its standard deviation is $\sqrt{7d/180}$. The relative spread is therefore about $1.18/\sqrt{d}$, which shrinks as $d$ grows: distances pile up around the same value.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** k-NN is trained like other models. **Actually** there is no training step: the model is the stored data, and all the work is done at prediction time.
+- **You might think** a bigger $k$ is always safer. **Actually** a large $k$ averages over too wide a patch and blurs the real shape of the classes, so validation accuracy falls.
+- **You might think** $k = 1$ is perfect because its training accuracy is 100%. **Actually** each point is its own neighbour, so that number says nothing about new data. Only the validation score counts.
+- **You might think** the distance metric is a minor detail. **Actually** it decides which points are neighbours, and a badly scaled feature can take over the whole distance.
+- **You might think** more features can only help. **Actually** in high dimensions distances concentrate, and extra noisy features wash out the signal.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>A query's five nearest neighbours are 3 orange and 2 blue. What does k-NN predict, and how sure is it?</summary>
+
+Orange, because it has the majority. The vote share, 3 out of 5 or 60%, is a rough confidence, but with so few voters it is a noisy one.
+
+</details>
+
+<details>
+<summary>Why should you pick an odd $k$ for two classes?</summary>
+
+An odd number of voters cannot split evenly, so there is never a tie between the classes.
+
+</details>
+
+<details>
+<summary>At $k = 1$ the training accuracy is 100%. Why is that not evidence of a good model?</summary>
+
+Each training point is its own nearest neighbour, so it is always classified correctly. The model has memorised the noise, and only accuracy on held-out data shows how it does on new points.
+
+</details>
+
+<details>
+<summary>One feature is measured in kilometres and another in metres. What goes wrong, and what is the fix?</summary>
+
+Differences in the metre feature are numbers a thousand times larger, so it dominates the distance and the kilometre feature hardly matters. Standardise each feature to zero mean and unit spread first.
+
+</details>
+
+<details>
+<summary>In 200 dimensions the nearest and farthest points are almost equally far away. Why does that hurt k-NN?</summary>
+
+The k nearest neighbours are then barely closer than any other points, so they carry little information about the query's class, and the vote is close to random.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Cover and Hart (1967), *Nearest neighbor pattern classification*, IEEE Transactions on Information Theory: the result that, with enough data, 1-NN has at most twice the best possible error.
+- Hastie, Tibshirani and Friedman, [*The Elements of Statistical Learning*](https://hastie.su.domains/ElemStatLearn/), section 13.3 on nearest-neighbour classifiers and section 2.5 on local methods in high dimensions.
+- Beyer et al. (1999), *When is "nearest neighbor" meaningful?*: the paper that formalised distance concentration.
+- scikit-learn, [*Nearest Neighbors*](https://scikit-learn.org/stable/modules/neighbors.html): KD-trees and ball trees for fast neighbour search.
+
+</Step>

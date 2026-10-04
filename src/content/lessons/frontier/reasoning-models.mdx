@@ -1,0 +1,186 @@
+---
+title: "Reasoning Models and Test-Time Compute"
+summary: "Spend more computation at inference, via long chains of thought, to solve harder problems."
+day: 15
+track: frontier
+order: 1
+level: frontier
+duration: 35
+prereqs: ["alignment/rlvr","llms/inference-kv-cache"]
+status: stub
+lastReviewed: 2026-09-29
+---
+
+Some models get better simply by thinking for longer before answering.
+
+import Step from '../../../components/ui/Step.astro';
+
+{/*
+LESSON BRIEF (skeleton, 2026-10-03). Widget: TestTimeCompute (plan: plans/day-15.md).
+Toy task used throughout: add a list of n single digits and give the total mod 10.
+Two tiny MLPs from src/lib/nn, trained once per page in a worker:
+  DIRECT: one-hot of all n digits in, answer out (fixed depth, so fixed compute per answer).
+  STEP: (running total, next digit) in, next running total out; applied n times it "writes its working".
+Sampling the STEP model's softmax at temperature T gives real per-step mistakes, so chains can be sampled, voted on and checked.
+
+(a) TEXTBOOK-STABLE MECHANISMS (safe to demonstrate on the toy):
+- A fixed network does a fixed amount of computation per output token; writing intermediate tokens adds serial steps.
+- Self-consistency: sample several chains, majority-vote the final answers (Wang et al. 2022).
+- Best-of-N with a verifier; pass@N coverage = 1 - (1 - p)^N for independent samples with success p.
+- Majority vote plateaus when the most common wrong answer is likely; a perfect verifier does not plateau, a noisy one does.
+- Compute-optimal allocation: spend more samples on harder problems (Snell et al. 2024).
+- RL with verifiable rewards: REINFORCE with reward 1 for a checked-correct answer.
+
+(b) RESEARCH LIST (answer from primary sources before writing; cite link + date):
+R1 What exactly do current reasoning-model reports say about how they were trained (RL on verifiable rewards, SFT cold start, distillation)? Start with DeepSeek-R1 arXiv 2501.12948 (confirmed 2026-10-03); then the official reports of the current leading reasoning models. Query: "reasoning model technical report reinforcement learning verifiable rewards 2026".
+R2 Do the papers report response length growing during RL training? Where (figure number)? Source: 2501.12948. Query: "DeepSeek-R1-Zero average response length during training".
+R3 Test-time scaling evidence: Snell et al. arXiv 2408.03314 (confirmed 2026-10-03), Brown et al. "Large Language Monkeys" arXiv 2407.21787 (confirmed 2026-10-03). What are their exact claims and conditions?
+R4 Process vs outcome verifiers: Lightman et al. arXiv 2305.20050 (confirmed 2026-10-03). Cobbe et al. GSM8K verifiers arXiv 2110.14168 (VERIFY).
+R5 Limits and open questions: is the written chain of thought faithful to the computation? Monitoring CoT: Baker et al. arXiv 2503.11926 (confirmed 2026-10-03). Query: "chain of thought faithfulness reasoning models 2025 2026 paper".
+R6 Cost: how do labs report reasoning-token usage and pricing? Use official docs only; no numbers from memory. Query: "reasoning tokens billing documentation".
+R7 OpenAI "Learning to reason with LLMs" blog (Sep 2024), URL VERIFY: https://openai.com/index/learning-to-reason-with-llms/
+*/}
+
+<Step title="Writing out the steps is extra computation">
+
+A network does the same amount of work for every token it writes, so writing intermediate steps gives it more steps of computation before the final answer.
+
+{/*
+IDEA: chain of thought as extra serial compute. A model that must answer in one shot has a fixed computation budget; a model that writes running totals gets n small steps. Link /learn/neural-networks/mlp/ for the MLP.
+WIDGET: TestTimeCompute mode="cot" (no other props). Left: the digit list and the STEP model writing its running totals token by token; right: accuracy against list length n for DIRECT vs STEP (greedy decoding, T=0).
+T: t sweeps n from 2 to 12; the chain for the current n writes itself out, one running total per beat, and the accuracy curves draw up to the current n.
+TRY: watch the gap open as n grows: the DIRECT curve falls while the STEP curve stays high.
+QUOTE (from sim.ts, never guessed): DIRECT and STEP accuracy at n = 2, 6 and 12 on the fixed test set; tokens written per answer (1 vs n).
+MATH: none beyond "work per token is constant". CODE: tiny PyTorch loop applying the step model n times.
+RESEARCH: R1 (one sentence on how real reasoning models produce long chains; cite).
+*/}
+
+</Step>
+
+<Step title="Sample many answers and take a vote">
+
+If a model sometimes slips on a step, asking it several times and keeping the most common final answer often fixes the slip.
+
+{/*
+IDEA: self-consistency. Sampling the STEP model at temperature T gives chains that sometimes go wrong; independent mistakes rarely agree, so the majority answer is right more often than one sample.
+WIDGET: TestTimeCompute mode="vote" n=8 temperature=1. Rows of sampled chains (wrong steps outlined with --viz-neg), final answers dropping into a 10-bin histogram, majority bin highlighted with --accent.
+T: t = number of samples N, played on a log scale from 1 to 64; each new chain appears as a row, histogram bars grow, the accuracy-vs-N curve (log x axis) draws.
+TRY: pause at N = 1 and N = 15 and compare the majority accuracy.
+QUOTE: single-sample accuracy, majority-vote accuracy at N = 5, 15, 64 for n = 8, T = 1.
+MATH: majority vote = argmax over answers of the count; "Show the math" with the binomial argument for two answers.
+RESEARCH: R3; cite Wang et al. arXiv 2203.11171 (confirmed 2026-10-03) for self-consistency.
+*/}
+
+</Step>
+
+<Step title="A checker beats a vote">
+
+When answers can be checked, keeping any sample that passes the check improves faster with more samples than voting does, and a careless checker gives some of that back.
+
+{/*
+IDEA: best-of-N with a verifier. Exact verifier: coverage (pass@N) keeps rising. Majority vote plateaus. A noisy verifier (accepts a wrong answer with probability f, rejects a right one with probability r) plateaus lower.
+WIDGET: TestTimeCompute mode="verify" n=10 temperature=1.2 verifierNoise=0.1. Three curves vs N (log x): exact checker, noisy checker, majority vote.
+T: t = N from 1 to 256 (log); a cursor moves along the curves; sampled chains flash green tick / orange cross as the checker marks them.
+TRY: find the N where the majority-vote curve stops improving.
+QUOTE: the three accuracies at N = 1, 16, 256; the closed-form pass@N 1 - (1 - p)^N at the measured p, which the exact-checker curve must match.
+MATH: pass@N derivation for independent samples.
+RESEARCH: R3, R4. Brown et al. 2407.21787 report majority vote and reward models plateauing; quote only what the paper says.
+*/}
+
+</Step>
+
+<Step title="Spend more thinking on harder problems">
+
+With a fixed budget of samples, giving more of them to the hard problems and fewer to the easy ones solves more problems overall.
+
+{/*
+IDEA: compute-optimal test-time scaling. Easy problems are solved with one sample; hard ones need many. Uniform allocation wastes samples on easy problems.
+WIDGET: TestTimeCompute mode="budget" budget=320. A set of 40 problems with lengths n from 2 to 12; two allocations side by side: uniform (8 each) vs adaptive (estimated from a few probe samples, then reallocated). Bars per problem show samples given, coloured by solved/unsolved.
+T: t plays the budget being spent sample by sample under both policies; solved counts tick up.
+TRY: compare how many problems each policy has solved when the budget runs out.
+QUOTE: problems solved under uniform vs adaptive at the full budget, and at half the budget.
+MATH: none; CODE: the allocation rule (probe, estimate difficulty, reallocate).
+RESEARCH: R3, Snell et al. 2408.03314 (their "compute-optimal" strategy and its conditions; no numbers from memory).
+*/}
+
+</Step>
+
+<Step title="Training a model to reason with checkable rewards">
+
+Reasoning models are trained with reinforcement learning on problems whose answers can be checked automatically, so the reward is simply whether the final answer was right.
+
+{/*
+IDEA: RL with verifiable rewards. A tiny policy chooses, per problem, how many working steps to write before answering (0 = answer directly with the DIRECT model, up to n). Reward 1 if the checked answer is right, minus a small cost per step. REINFORCE learns to think longer on longer lists. Link /learn/alignment/rlvr/ and /learn/alignment/policy-gradients/.
+WIDGET: TestTimeCompute mode="rlvr" stepCost=0.01. Top: policy's chosen chain length for each n as bars; bottom: average reward and average chain length over training.
+T: t = training iteration (precomputed snapshots, interpolated only for drawing); bars grow for long lists and stay short for short lists.
+TRY: watch the average chain length rise while the reward rises.
+QUOTE: average chain length and accuracy at iterations 0 and final; chain length chosen for n = 2 vs n = 12 at the end.
+MATH: REINFORCE gradient with a baseline. Optional dependency: if Day 11 ships a REINFORCE helper (alignment/rlvr core), import it; otherwise keep the 10-line update in sim.ts.
+RESEARCH: R1, R2 (whether real reports show length growing; cite figure).
+*/}
+
+</Step>
+
+<Step title="What thinking longer costs">
+
+Every extra token of thinking costs time and money, and the accuracy it buys grows more slowly the more you spend.
+
+{/*
+IDEA: costs, limits, diminishing returns. Accuracy against total tokens spent for every strategy so far (one chain, vote, checker, adaptive), on one log x axis; cost per correct answer.
+WIDGET: TestTimeCompute mode="cost". Scatter/curves: x = tokens spent per problem (log), y = accuracy; a "cost per solved problem" readout for the selected strategy.
+T: t sweeps the token budget from 1 to 2048 per problem; each strategy's point slides along its curve.
+TRY: read off how many tokens each strategy needs to reach 90 percent on n = 10.
+QUOTE: tokens to reach 90 percent per strategy (or "never" if it plateaus below).
+MATH: none.
+RESEARCH: R5 (faithfulness, monitorability), R6 (how real usage is billed). One sentence each, cited.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few ideas about reasoning models sound right but are not.
+
+{/*
+NO WIDGET. Intended misconceptions (write as "You might think X. Actually Y."):
+1. The written chain of thought is exactly how the model got its answer. (Faithfulness is an open question: R5, Baker et al. 2503.11926.)
+2. More samples always help. (Majority vote and noisy verifiers plateau: step 3 numbers.)
+3. Reasoning models are a new architecture. (Same transformer; the difference is training and inference-time budget: R1.)
+4. Test-time compute replaces a bigger model in all cases. (Snell et al. find it depends on problem difficulty: R3.)
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Test your understanding of test-time compute with a few questions.
+
+{/*
+NO WIDGET. Questions as details/summary:
+1. Why does writing running totals help a fixed-size network add long lists?
+2. A sampler is right 30 percent of the time, independently. What is pass@4? (1 - 0.7^4 = 0.76.)
+3. Why can majority vote get stuck below 100 percent while an exact checker does not?
+4. What makes a reward "verifiable"? Give one task where it is and one where it is not.
+5. You have 100 samples for 10 problems, 5 easy and 5 hard. How would you split them, and why?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+The papers and reports below are the primary sources for this lesson.
+
+{/*
+NO WIDGET. Sources (all confirmed on 2026-10-03 unless marked):
+- Wei et al. 2022, Chain-of-thought prompting, https://arxiv.org/abs/2201.11903
+- Wang et al. 2022, Self-consistency, https://arxiv.org/abs/2203.11171
+- Cobbe et al. 2021, Training verifiers to solve math word problems, https://arxiv.org/abs/2110.14168 (VERIFY)
+- Lightman et al. 2023, Let's verify step by step, https://arxiv.org/abs/2305.20050
+- Brown et al. 2024, Large Language Monkeys, https://arxiv.org/abs/2407.21787
+- Snell et al. 2024, Scaling LLM test-time compute optimally, https://arxiv.org/abs/2408.03314
+- DeepSeek-AI 2025, DeepSeek-R1, https://arxiv.org/abs/2501.12948
+- Baker et al. 2025, Monitoring reasoning models for misbehavior, https://arxiv.org/abs/2503.11926
+- Plus the current leading labs' reasoning-model reports found under R1 (dated).
+*/}
+
+</Step>

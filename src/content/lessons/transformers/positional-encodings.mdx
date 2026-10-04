@@ -1,0 +1,225 @@
+---
+title: "Positional Encodings (Sinusoidal, RoPE)"
+summary: "Attention ignores order by itself, so position information must be injected."
+day: 9
+track: transformers
+order: 5
+level: advanced
+duration: 30
+prereqs: ["transformers/self-attention"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import PositionLab from '../../../components/widgets/PositionLab/PositionLab.svelte';
+
+"The dog bites the man" and "the man bites the dog" use the same words. How does a model that looks at all words at once know which one came first?
+
+<Step title="Attention does not see order">
+
+In [self-attention](/learn/transformers/self-attention/), each word gets a **query** and a **key**, and a word's attention on another word depends only on those two vectors. Nothing in them says where a word sits in the sentence. So if you shuffle the input words, every word still receives exactly the same output as before. The outputs come out shuffled in the same way, and that is all. This property is called **permutation equivariance**.
+
+Below, TinyLM's first attention layer reads the sentence in its real order (left) and in a shuffled order (right). Its position vectors are switched off, and so is the causal mask, which hides later words and is the subject of [a later lesson](/learn/transformers/causal-masking/). Each word is a row; its 16-number output strip travels with it. Press "Shuffle again" a few times. The largest difference between the two sets of strips, after putting the words back in order, is about $4 \times 10^{-16}$: computer rounding, so zero in practice.
+
+<PositionLab client:visible mode="shuffle" title="Shuffle the words: every word keeps its output" />
+
+<details>
+<summary>Show the math</summary>
+
+Let $P$ be a permutation matrix, which reorders the rows of whatever it multiplies. Shuffling the words shuffles the rows of $Q$, $K$ and $V$ the same way. The score matrix becomes $(PQ)(PK)^\top = P(QK^\top)P^\top$, and softmax works on each row separately, so it commutes with the reordering: $\mathrm{softmax}(PSP^\top) = P\,\mathrm{softmax}(S)\,P^\top$. Then
+
+$$\mathrm{softmax}\big((PQ)(PK)^\top\big)(PV) = P\,\mathrm{softmax}(QK^\top)\,P^\top P\,V = P\,\mathrm{softmax}(QK^\top)\,V,$$
+
+because $P^\top P = I$. The output is the original output with its rows reordered by $P$.
+
+</details>
+
+A causal mask breaks this symmetry a little, because early words see fewer words than late ones. That small signal is not enough on its own, and models add position information on purpose.
+
+</Step>
+
+<Step title="What breaks without positions">
+
+TinyLM was trained with a **position vector** added to every word: 16 learned numbers that say "this is word 0", "this is word 1", and so on. What happens if we take them away from the trained model?
+
+To measure that, we ask how much probability the model gives to **grammatical next words**: the words a grammar checker would accept as the next word of the sentence. A model that knows the grammar puts nearly all of its probability there. Real models feed BPE tokens instead of whole words ([tokenization](/learn/transformers/tokenization/)); TinyLM has 34 words.
+
+The figure shrinks the position vectors from full size to nothing and runs the model again at every size. For the sentence `[start] these small sheep chase a red fox`, each bar is one position's prediction. Across 200 sample sentences, the probability on grammatical words falls from **0.998 with positions to 0.869 without**. For this one sentence the average falls from 0.998 to 0.744.
+
+The damage is not spread evenly. At full size every position is above 0.99. With no position vectors, six positions stay above 0.98, but position 3 (after `sheep`) and position 7 (after `fox`) drop to **0.003**. Both follow a noun. After a noun, the right next word is a verb if it was the subject and a full stop if it was the object, and only word order says which noun this is. Scrub to about 50% of normal size: `fox` has already dropped to 0.941 while every other position is still above 0.99, so it collapses first. This tests a model that learned to rely on positions, not what a model trained without them could learn.
+
+<PositionLab client:visible mode="ablate" title="Fade the position vectors out and watch the predictions" />
+
+</Step>
+
+<Step title="Sinusoidal encodings">
+
+The original transformer ([Vaswani et al., 2017](https://arxiv.org/abs/1706.03762)) did not learn position vectors. It used a fixed pattern of waves, and the figure below shows that pattern, not TinyLM's. Think of a clock: the second hand moves fast, the minute hand slower, the hour hand slower still, and together they tell the time without ambiguity. Each position gets 16 numbers, made of sine and cosine waves with different **wavelengths**, the number of positions one full cycle takes. The vector is **added** to the word's vector, not attached beside it.
+
+$$PE(pos, 2i) = \sin\!\big(pos / 10000^{2i/d}\big), \qquad PE(pos, 2i+1) = \cos\!\big(pos / 10000^{2i/d}\big)$$
+
+With $d = 16$ there are 8 sine-cosine pairs. The fastest pair repeats every $2\pi \approx 6.28$ positions. The slowest repeats every $2\pi \times 10000^{14/16} \approx 19{,}869$ positions.
+
+Watch the cursor walk through positions 0 to 31. The top trace (dim 0) swings up and down about every 6 positions; dim 4 needs about 63 positions per cycle, so over 32 positions it covers only half a wave. The lowest rows of the heat map barely change: at position 5, dim 0 is $-0.96$ while dim 14 is 0.002. A position is identified by the whole column of 16 numbers, the way the clock hands are read together. The bottom strips show one position vector being added to a made-up word vector.
+
+<PositionLab client:visible mode="sinusoidal" title="Sixteen waves give every position a signature" />
+
+<details>
+<summary>Show the math</summary>
+
+Shifting by $k$ positions turns each sine-cosine pair by a fixed angle $\omega_i k$, where $\omega_i = 1/10000^{2i/d}$. With $a = \omega_i\,pos$ and $b = \omega_i k$,
+
+$$\begin{pmatrix}\sin(a+b)\\ \cos(a+b)\end{pmatrix} = \begin{pmatrix}\cos b & \sin b\\ -\sin b & \cos b\end{pmatrix}\begin{pmatrix}\sin a\\ \cos a\end{pmatrix}.$$
+
+So $PE(pos + k)$ is a linear function of $PE(pos)$ that depends only on $k$. That is why the authors expected the model to learn to attend by relative offset.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def sinusoidal(n_positions, d=16):
+    pos = np.arange(n_positions)[:, None]
+    i = np.arange(d // 2)[None, :]
+    angle = pos / 10000 ** (2 * i / d)
+    pe = np.zeros((n_positions, d))
+    pe[:, 0::2] = np.sin(angle)
+    pe[:, 1::2] = np.cos(angle)
+    return pe
+
+x = word_vectors + sinusoidal(len(word_vectors))   # added, not concatenated
+```
+
+</details>
+
+</Step>
+
+<Step title="Learned absolute positions">
+
+Instead of a formula, a model can keep a table with one vector per position and train it like a word embedding. This is what TinyLM and GPT-2 do. TinyLM's table has 10 rows, one for each position in its context. Before training they were random numbers.
+
+The left strips are those 10 vectors. The grid on the right shows their **cosine similarity**: 1 means two vectors point the same way, 0 means unrelated, and negative means opposite. If the model had learned a smooth ruler, neighbouring positions would look alike. They do not, quite. Positions 3 to 7 are more similar to their immediate neighbours than to distant positions (position 6 averages 0.43 with its two neighbours and $-0.17$ with positions three or more away; position 9 is left out of these averages), but position 0 is the reverse (its similarity with position 1 is $-0.49$), and position 2 is more similar to position 8 (0.28) than to position 3 (0.18). The model found a code that works for its 10 slots, not a tidy ruler.
+
+Position 9 is greyed out. It never appears as an input while TinyLM trains, because the longest sentence ends there, so that row is still the random starting values.
+
+A learned table has one more limit: it has no row for positions it never saw. A model trained with a context of 1,024 tokens has nothing to add at position 2,000.
+
+<PositionLab client:visible mode="learned" title="TinyLM's ten learned position vectors" />
+
+</Step>
+
+<Step title="RoPE: rotate queries and keys">
+
+Rotary position embedding, or **RoPE** ([Su et al., 2021](https://arxiv.org/abs/2104.09864)), adds nothing to the word vector. Instead it changes the query and key just before they are compared. Split each into pairs of numbers; each pair is an arrow in a plane. At position $m$, RoPE turns the arrow by the angle $m\theta$, where $\theta$ is a fixed rotation per position (each pair gets its own, fast to slow, much like the wavelengths above). It is used by many recent open models; for example, the LLaMA paper says it removes absolute position embeddings and adds RoPE at each layer. TinyLM does not use it, so this figure shows the formula on one pair with $\theta = 0.5$ radians per position.
+
+The attention score is the dot product of the query arrow and the key arrow. In the left plane, the query sits at position $m$ and the key at position $n$, and both arrows have turned. In the right plane both are turned back by $m$ steps. The angle between them is the same in both planes, so the dot product is too. While the two words move forward together with $n = m - 2$, the dot product stays at $-0.56$.
+
+Now drag only $m$. Make $m = 3$ with $n = 0$, and the gap grows to 3 positions: the dot product becomes $-1.11$.
+
+<PositionLab client:visible mode="rope" title="Turn the query and key by their positions" />
+
+<details>
+<summary>Show the math</summary>
+
+Let $R(\alpha)$ be the 2D rotation by angle $\alpha$. Then $R(\alpha)^\top = R(-\alpha)$ and $R(\alpha)R(\beta) = R(\alpha + \beta)$, so
+
+$$\big(R(m\theta)\,q\big)\cdot\big(R(n\theta)\,k\big) = q^\top R(-m\theta)\,R(n\theta)\,k = q^\top R\big((n-m)\theta\big)\,k.$$
+
+Only $n - m$ appears.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def rope(x, pos, d=16):            # x: (d,) query or key at position pos
+    theta = 10000 ** (-np.arange(0, d, 2) / d)   # one angle per pair
+    a, b = x[0::2], x[1::2]
+    c, s = np.cos(pos * theta), np.sin(pos * theta)
+    out = np.empty_like(x)
+    out[0::2], out[1::2] = c * a - s * b, s * a + c * b
+    return out
+
+score = rope(q, m) @ rope(k, n)    # depends on n - m only
+```
+
+</details>
+
+</Step>
+
+<Step title="Relative position falls out of the dot product">
+
+Because the rotated score depends only on $n - m$, a RoPE model knows how far apart two words are without being told where either of them is. The figure uses the full 16 numbers, so every pair rotates at its own speed, and fixes one query vector $q$ and one key vector $k$ for every position. Each grid shows the score between the query at position $m$ (row) and the key at position $n$ (column). The left grid adds the sinusoidal vectors straight to $q$ and $k$ (the clean comparison; real models first pass them through learned matrices). The right grid rotates them with RoPE. Colour shows how far each score is from its own grid's average.
+
+A **diagonal** collects the cells with the same gap $n - m$. The RoPE grid is constant along every diagonal, which gives its stripes, while the added-vector grid is not. On the main diagonal, where each key sits at the query's own position, 16 cells have identical RoPE scores (to rounding), while the added-vector scores differ by up to 3.83. Hover over any cell and compare it with its dashed neighbour one step down the diagonal.
+
+<PositionLab client:visible mode="relative" title="The same score, two ways of encoding position" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **"Transformers read words in order like RNNs."** Actually, without position information attention treats the input as a set of words. Order has to be supplied.
+- **"Position vectors are attached to the word vector."** Actually, sinusoidal and learned vectors are added to it. RoPE adds nothing to the word and instead rotates the query and key.
+- **"Sinusoidal encodings let a model handle any length."** Actually, you can compute the pattern for any position, but a model trained on short texts still degrades on longer ones ([Press et al., 2022](https://arxiv.org/abs/2108.12409)).
+- **"Position enters only at the input."** Actually, RoPE is applied inside every attention layer, to the query and key of every head.
+- **"A model with a causal mask and no positions knows nothing about order."** Actually, the mask leaks some of it: early words see fewer words than late ones ([Haviv et al., 2022](https://arxiv.org/abs/2203.16634)).
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>Why does permuting the input permute the output of plain self-attention?</summary>
+
+Scores depend only on the contents of query and key vectors. Reordering the words reorders the rows and columns of the score grid in the same way, so every word attends to the same words with the same weights, and the output rows are just reordered.
+
+</details>
+
+<details>
+<summary>In a sinusoidal encoding with d = 16, which dimensions change fastest with position?</summary>
+
+The first pair, dimensions 0 and 1, with a wavelength of $2\pi \approx 6.28$ positions. The last pair changes slowest.
+
+</details>
+
+<details>
+<summary>A learned-position model was trained with context 1,024. What happens at position 2,000?</summary>
+
+It has no learned vector for that position, so the input is undefined for it. Learned tables cannot go beyond the trained context length without extra work.
+
+</details>
+
+<details>
+<summary>With RoPE, a query at position 10 and a key at position 7 give score s. What is the score at positions 110 and 107 for the same vectors?</summary>
+
+It is also $s$. The score depends only on the gap, which is 3 in both cases.
+
+</details>
+
+<details>
+<summary>Why is adding a position vector to the word vector not a problem for the word's identity?</summary>
+
+The model can learn to read both from the sum, because the vectors live in a high-dimensional space where the two pieces of information can occupy different directions. The model learns to separate them during training.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- [Vaswani et al., "Attention Is All You Need" (2017), section 3.5](https://arxiv.org/abs/1706.03762): the sinusoidal encoding.
+- [Gehring et al., "Convolutional Sequence to Sequence Learning" (ICML 2017)](https://arxiv.org/abs/1705.03122): learned position embeddings.
+- [Shaw, Uszkoreit and Vaswani, "Self-Attention with Relative Position Representations" (NAACL 2018)](https://arxiv.org/abs/1803.02155): putting relative distances into attention.
+- [Su et al., "RoFormer: Enhanced Transformer with Rotary Position Embedding" (2021)](https://arxiv.org/abs/2104.09864): RoPE.
+- [Press, Smith and Lewis, "Train Short, Test Long" (ICLR 2022)](https://arxiv.org/abs/2108.12409): ALiBi, and why length extrapolation is hard.
+- [Haviv et al., "Transformer Language Models without Positional Encodings Still Learn Positional Information" (2022)](https://arxiv.org/abs/2203.16634): the causal mask leaks order.
+- [EleutherAI, "Rotary Embeddings: A Relative Revolution" (2021)](https://blog.eleuther.ai/rotary-embeddings/): an accessible RoPE walkthrough.
+- [Touvron et al., "LLaMA: Open and Efficient Foundation Language Models" (2023)](https://arxiv.org/abs/2302.13971): a model that uses RoPE at every layer.
+
+Next: [The transformer block, which puts attention and the MLP together](/learn/transformers/transformer-block/).
+
+</Step>

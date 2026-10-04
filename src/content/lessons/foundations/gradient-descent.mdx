@@ -1,0 +1,207 @@
+---
+title: "Gradient Descent"
+summary: "Repeatedly step opposite the gradient to roll down the loss surface."
+day: 1
+track: foundations
+order: 5
+level: core
+duration: 35
+prereqs: ["foundations/linear-regression","math/derivatives"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import GradientDescent2D from '../../../components/widgets/GradientDescent2D/GradientDescent2D.svelte';
+
+<Step title="Rolling downhill in the fog">
+
+Imagine standing on a hillside in thick fog. You cannot see the valley. You can only feel the slope under your feet. A sensible strategy: feel which way the ground tilts downward, take a step that way, and repeat. You will not find the best path, but you will end up lower.
+
+That is **gradient descent**, and it is how nearly every neural network is trained. The "hillside" is the loss as a function of the model's knobs, which you met in the last two lessons. The "slope under your feet" is a derivative. The ball in the figure is a model whose two knobs are the ball's position; its height is the loss.
+
+Watch the ball roll. The magenta arrow is the step it is about to take, pointing downhill.
+
+<GradientDescent2D client:visible lockSurface title="A ball rolling down a loss surface" />
+
+</Step>
+
+<Step title="The loss as a landscape">
+
+Two knobs give a landscape you can draw. Each position $(\theta_1, \theta_2)$ is one setting of the parameters, and the height is the loss there. On the flat page we draw it as a **contour map**: each curve joins positions with the same loss, and the curves are packed close together where the ground is steep.
+
+This surface is a bowl, $L = \tfrac12(\theta_1^2 + 8\theta_2^2)$. It curves eight times more sharply across the map (the vertical direction) than along it (the horizontal direction), so its contours are long thin ellipses. The minimum, where the loss is zero, is at the centre. Real networks have millions of knobs rather than two, and their landscape cannot be drawn, but the same picture applies.
+
+The dashed ring marks where the ball started. Drag it, or use the start sliders under the figure, and watch the ball roll from the new place.
+
+<GradientDescent2D client:visible lockSurface title="Move the start: the ball always rolls to the bottom of the bowl" />
+
+</Step>
+
+<Step title="The gradient points uphill">
+
+Which way is downhill? Calculus answers. The **gradient** of the loss is the vector of its partial derivatives, one per knob:
+
+$$\nabla L = \left(\frac{\partial L}{\partial \theta_1},\ \frac{\partial L}{\partial \theta_2}\right).$$
+
+Each partial derivative says how fast the loss rises when only that knob is nudged upward. Put together, the gradient points in the direction of **steepest ascent**, straight uphill, and its length says how steep it is. To go downhill, go the opposite way: $-\nabla L$.
+
+The small chart on the right shows this from the ball's point of view. It plots the loss along the line through the ball in the downhill direction. The ball is the filled dot at distance zero, and the curve slopes down to its right. The dashed magenta line is the tangent, whose slope is minus the length of the gradient. The steeper the ground, the steeper the tangent and the bigger the step.
+
+<GradientDescent2D client:visible lockSurface title="The gradient at the ball, seen from the side" />
+
+<details>
+<summary>Show the math</summary>
+
+For $L(\theta_1, \theta_2) = \tfrac12(\theta_1^2 + 8\theta_2^2)$ the partial derivatives are $\partial L/\partial\theta_1 = \theta_1$ and $\partial L/\partial\theta_2 = 8\theta_2$, so $\nabla L = (\theta_1,\ 8\theta_2)$. At the start $(3,\ 1.3)$ this is $(3,\ 10.4)$: the ground rises far more steeply in the second direction. The directional derivative in a unit direction $\mathbf u$ is $\nabla L \cdot \mathbf u$, which is largest when $\mathbf u$ points along $\nabla L$ itself (Cauchy-Schwarz), and that is why the gradient is the direction of steepest ascent.
+
+</details>
+
+</Step>
+
+<Step title="The update rule">
+
+Now the whole algorithm fits on one line. From the current knobs $\theta$, step against the gradient by a scaled amount:
+
+$$\theta \leftarrow \theta - \eta\,\nabla L(\theta).$$
+
+The number $\eta$ (eta) is the **learning rate**: how much of the gradient to step. Repeat until the steps become tiny. Cauchy described this method in 1847, for solving systems of equations.
+
+For our bowl the update is easy to write out. With $\eta = 0.1$: $\theta_1 \leftarrow \theta_1 - 0.1\,\theta_1 = 0.9\,\theta_1$ and $\theta_2 \leftarrow \theta_2 - 0.1\cdot 8\theta_2 = 0.2\,\theta_2$. So the vertical coordinate shrinks fast (it is multiplied by 0.2 every step) and the horizontal one shrinks slowly (0.9 per step). The ball first dives toward the valley floor and then crawls along it. That is exactly the path in the figure.
+
+The numbers: the loss starts at 11.26, falls to 0.547 after 10 steps, and to 0.00018 after 48. Drag the timeline through the steps and read the loss in the readout.
+
+<GradientDescent2D client:visible lockSurface lr={0.1} title="Updating: theta is minus eta times the gradient, over and over" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def grad(theta):                          # gradient of 0.5 * (t1**2 + 8 * t2**2)
+    return np.array([theta[0], 8 * theta[1]])
+
+theta, eta = np.array([3.0, 1.3]), 0.1
+for step in range(48):
+    theta = theta - eta * grad(theta)     # the update rule
+```
+
+</details>
+
+</Step>
+
+<Step title="The learning rate: too small, just right, too big">
+
+The learning rate is the one knob you set by hand, and it matters enormously. Use the slider under the figure, or watch the timeline of each case below.
+
+- **Too small** ($\eta = 0.02$). The steps are tiny, so progress crawls. After 48 steps the loss is still 0.647, over a thousand times worse than with $\eta = 0.1$.
+- **About right** ($\eta = 0.1$). Smooth, fast descent.
+- **Too large, but not too much** ($\eta = 0.24$). The ball overshoots the valley floor on every step, hopping from one wall to the other, and still spirals in, because each hop is a little smaller than the last. It is at 0.0023 after 48 steps, slower than $\eta = 0.1$ despite the bigger steps.
+- **Too large** ($\eta = 0.26$). Each hop is now *bigger* than the last. The ball gets thrown higher and higher up the walls. The loss is 31.5 after 10 steps, higher than the starting 11.26, and about 10,900 after 48. This is **divergence**.
+
+There is a sharp threshold. Along the steep direction, the update is $\theta_2 \leftarrow (1 - 8\eta)\,\theta_2$. The multiplier's size is below 1 only when $0 \lt \eta \lt 2/8 = 0.25$. That number, $2/L$ where $L$ is the largest curvature of the surface, is the critical learning rate for any bowl.
+
+Try it: set the slider to 0.24, then 0.26, and watch the readout's status and the slice chart. In the slice, the open dot shows where the next step lands. With a good rate it lands lower than the ball. With a rate that is too large it lands *higher*, on the opposite wall.
+
+<GradientDescent2D client:visible lockSurface lr={0.24} title="Learning rate: 0.24 zigzags but converges; 0.26 diverges" />
+
+<details>
+<summary>Show the math</summary>
+
+On a quadratic $L(\theta) = \tfrac12 \sum_j \lambda_j \theta_j^2$, gradient descent multiplies coordinate $j$ by $1 - \eta\lambda_j$ each step. It converges for every coordinate exactly when $|1 - \eta\lambda_j| \lt 1$, that is $\eta \lt 2/\lambda_j$ for all $j$, so the binding constraint is $\eta \lt 2/\lambda_{\max}$. Here $\lambda_{\max} = 8$. The best fixed rate balances the fastest and slowest directions: $\eta = 2/(\lambda_{\max} + \lambda_{\min})$. When $\lambda_{\max}/\lambda_{\min}$ (the condition number) is large, the steep direction forces a small $\eta$ and the flat direction then crawls. This slow, zigzag behavior is what the optimizers of Day 6 (momentum, Adam) are designed to fix.
+
+</details>
+
+</Step>
+
+<Step title="Local minima, saddles and plateaus">
+
+A bowl has one bottom, so descent always finds it. Real loss surfaces are not that kind. Two other terrains show what can go wrong.
+
+**Two valleys.** This surface has a shallow valley on the right and a deeper one on the left. Gradient descent only ever goes downhill, so it settles in whichever valley it starts above. From the default start on the right it ends in the right valley at loss 0.57. Drag the start to the left side and it ends in the deep valley at $-0.63$. A valley that is not the lowest is a **local minimum**.
+
+<GradientDescent2D client:visible lockSurface={false} surface="multi" title="Two valleys: where you start decides where you end" />
+
+**Saddles and plateaus.** The next surface has a **saddle** at the centre: it curves up in one direction and down in the other, like a horse's saddle. Right at the saddle the gradient is zero, but it is not a minimum. Near it the gradient is tiny, so the ball moves very slowly, lingering for roughly 15 steps before it slides off sideways. Flat regions where the gradient is almost zero for a long stretch are called **plateaus**, and they slow training in the same way.
+
+In networks with millions of knobs, saddles turn out to be far more common than bad local minima, and much of the difficulty of training is getting through flat stretches, not being trapped.
+
+<GradientDescent2D client:visible lockSurface={false} surface="saddle" title="A saddle: the gradient nearly vanishes, then the ball slides off" />
+
+</Step>
+
+<Step title="Stochastic gradients">
+
+There is a practical problem. The loss of a real model is an average over *all* the training examples, and computing the exact gradient means passing over every one of them: millions of examples for a single step.
+
+The fix, due in spirit to Robbins and Monro (1951), is to estimate the gradient from a small random sample. This is **stochastic gradient descent** (SGD), and the sample is called a **mini-batch**. The estimate is noisy but points downhill on average, and it is thousands of times cheaper. So we take many cheap, noisy steps instead of a few expensive, exact ones.
+
+Tick "Noisy gradient (SGD)" under the figure. In this figure the noise is added to the true gradient at every step (the faint grey arrow is the true gradient, the magenta arrow the noisy one that is actually used). The ball still heads to the bottom, but it wanders, and near the minimum it jitters around instead of settling exactly, because the noise does not vanish when the true gradient does. Real training handles this by shrinking the learning rate over time.
+
+<GradientDescent2D client:visible lockSurface sgd title="SGD: cheaper noisy steps that still go downhill on average" />
+
+<details>
+<summary>Show the math</summary>
+
+If the loss is an average over $N$ examples, $L(\theta) = \frac1N\sum_i \ell_i(\theta)$, the mini-batch estimate uses a random subset $B$: $\hat g = \frac1{|B|}\sum_{i\in B}\nabla\ell_i(\theta)$. It is **unbiased**, $\mathbb E[\hat g] = \nabla L(\theta)$, and its variance falls as $1/|B|$. The figure's noise, a fixed Gaussian added to each gradient component, is a simplified stand-in for that; in real models the noise level depends on the batch and the point.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** gradient descent always finds the best possible parameters. **Actually** it finds a point where the gradient is nearly zero: possibly a local minimum, possibly a saddle. Whether that is good depends on the landscape.
+- **You might think** a bigger learning rate just means faster learning. **Actually** past a threshold ($2/L$ on a bowl) it makes things worse, and beyond it the loss explodes.
+- **You might think** the gradient points at the minimum. **Actually** it points straight uphill from where you stand. On a stretched bowl that direction is far from the direction of the minimum, which is why the ball zigzags.
+- **You might think** SGD is a sloppy approximation used only because we are lazy. **Actually** the noise is cheap to produce, unbiased, and can even help by shaking the ball out of shallow dips.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>The loss is $L = \theta^2$ and $\theta = 3$. Compute one step with $\eta = 0.1$.</summary>
+
+The gradient is $2\theta = 6$, so $\theta \leftarrow 3 - 0.1 \cdot 6 = 2.4$.
+
+</details>
+
+<details>
+<summary>On $L = \tfrac12\lambda\theta^2$, what is the largest learning rate that still converges?</summary>
+
+$\eta \lt 2/\lambda$. At exactly $2/\lambda$ the ball just bounces between $\pm\theta$ forever.
+
+</details>
+
+<details>
+<summary>Why does the ball zigzag on a stretched bowl?</summary>
+
+The gradient points straight uphill, which on a stretched bowl mostly points across the narrow direction rather than along the valley, so each step overcorrects across the valley while making slow progress along it.
+
+</details>
+
+<details>
+<summary>Why do we use mini-batches instead of the full dataset?</summary>
+
+A mini-batch gradient is unbiased and far cheaper than a pass over all the data, so many cheap noisy steps beat a few exact ones.
+
+</details>
+
+<details>
+<summary>Gradient descent stops at a point with zero gradient. Is it necessarily a minimum?</summary>
+
+No. It could be a local minimum, a saddle point or the middle of a plateau.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Cauchy (1847), "Méthode générale pour la résolution des systèmes d'équations simultanées", *Comptes Rendus* 25: 536–538: the first description of gradient descent.
+- Robbins and Monro (1951), ["A Stochastic Approximation Method"](https://doi.org/10.1214/aoms/1177729586), *Annals of Mathematical Statistics* 22(3): the origin of stochastic gradient methods.
+- Goodfellow, Bengio and Courville, [*Deep Learning*](https://www.deeplearningbook.org/), section 4.3 (gradient-based optimization) and chapter 8 (optimization for training).
+- 3Blue1Brown, [*Gradient descent, how neural networks learn*](https://www.youtube.com/watch?v=IHZwWFHWa-w).
+- Ruder, ["An overview of gradient descent optimization algorithms"](https://arxiv.org/abs/1609.04747): where the story goes next.
+
+</Step>

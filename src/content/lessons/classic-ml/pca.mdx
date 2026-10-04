@@ -1,0 +1,160 @@
+---
+title: "Principal Component Analysis"
+summary: "Rotate to the directions of greatest variance and keep only the top few."
+day: 3
+track: classic-ml
+order: 6
+level: core
+duration: 25
+prereqs: ["math/matrices","classic-ml/k-means"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import PCAProjector from '../../../components/widgets/PCAProjector/PCAProjector.svelte';
+
+<Step title="Variance is the information">
+
+Most high-dimensional data really lives near a much smaller flat surface. Take a cloud of points in the plane that is long and thin. Two numbers describe each point, yet the points hug a single tilted line. If we had to describe the cloud with only **one** number per point, which line should we pick?
+
+Try this. Put a line through the middle of the cloud and let every point drop straight down onto it, like a shadow cast at a right angle. Each point is now described by one number: where its shadow lies along the line. A good line keeps the shadows **spread out**, so different points still have different numbers. A bad line piles them on top of each other and the points become indistinguishable. The spread of the shadows is their **variance**, the average squared distance from the centre. More spread means more of the original information survives.
+
+Watch the figure. The line starts across the cloud, the worst choice, then turns through half a circle. The teal bar marks the spread of the shadows; the magenta segments are the distances the points had to travel to reach the line. The two curves on the right record both numbers for every angle. The variance peaks at 27.6°, the long direction of the cloud, and the distance curve bottoms out at the very same angle. You can also drag inside the scatter to aim the line yourself.
+
+<PCAProjector client:visible mode="rotate" title="Turn the line: the shadows spread most along the long axis" />
+
+The two curves are not a coincidence. A point, its shadow and the centre form a right triangle, so by Pythagoras the squared length of the point splits into a shadow part and a distance part. Averaged over all points, variance plus mean squared distance always equals the same total, here $2.96$ (the dashed line). At the worst angle the shadows keep only $0.24$ of it and $2.72$ is lost. At the best angle it is the other way round. So **maximising the variance kept and minimising the error are the same problem.** That direction is the first **principal component**, PC1.
+
+</Step>
+
+<Step title="The covariance matrix and its eigenvectors">
+
+Turning a line and reading off a curve is fine in two dimensions, but we want a recipe that works for 100. There is one. Collect how the coordinates vary together into the **covariance matrix** $C$: the diagonal holds the variance of each coordinate, and the off-diagonal entry holds how much the two rise and fall together (positive when the cloud tilts up to the right).
+
+For the cloud above,
+
+$$C = \begin{bmatrix} 2.19 & 1.02 \\ 1.02 & 0.77 \end{bmatrix}.$$
+
+The variance of the shadows on a line with unit direction $\mathbf{v}$ is $\mathbf{v}^\top C\,\mathbf{v}$. The direction that makes this largest is one that $C$ only *stretches* without turning: a vector with $C\mathbf{v} = \lambda\mathbf{v}$, an **eigenvector** of $C$, with stretch factor $\lambda$, its **eigenvalue**. And $\lambda$ is exactly the variance along that direction.
+
+Watch the figure. The short dashed arrow is a unit vector $\mathbf{v}$, and the teal arrow is $C\mathbf{v}$. At first they point in different directions, because $C$ drags every vector toward the long axis. As $\mathbf{v}$ turns onto PC1 the two line up, and the teal arrow is $\lambda_1 = 2.72$ times as long. A quarter turn later, on PC2, they line up again with $\lambda_2 = 0.24$. The readout checks it with numbers: for PC1, $C\mathbf{v}_1 = (2.41, 1.26)$ and $\lambda_1\mathbf{v}_1 = (2.41, 1.26)$. The two solid arrows, PC1 and PC2, are drawn with length $\sqrt{\lambda}$, the spread of the data along each, so together they trace the dashed ellipse around the cloud. Use the tilt slider to rotate the cloud and watch $C$ and the eigenvectors follow.
+
+<PCAProjector client:visible mode="eigen" title="C·v lines up with v only on an eigenvector" />
+
+Because $C$ is symmetric, its eigenvectors are perpendicular and always exist (this is the spectral theorem from [matrices](/learn/math/matrices/)). So PCA is: compute $C$, find its eigenvectors, sort them by eigenvalue. PC1 is the largest, PC2 the next and perpendicular to it, and so on.
+
+<details>
+<summary>Show the math</summary>
+
+Centre the data so each column has mean 0, and stack the $n$ points as rows of $X$. Then $C = \tfrac{1}{n}X^\top X$. For a unit vector $\mathbf{v}$ the shadows have coordinates $X\mathbf{v}$ and variance $\tfrac{1}{n}\lVert X\mathbf{v}\rVert^2 = \mathbf{v}^\top C\mathbf{v}$. Maximising this under $\mathbf{v}^\top\mathbf{v} = 1$ with a Lagrange multiplier gives $2C\mathbf{v} - 2\lambda\mathbf{v} = 0$, that is $C\mathbf{v} = \lambda\mathbf{v}$, and the value reached is $\mathbf{v}^\top C\mathbf{v} = \lambda$. The largest variance is the largest eigenvalue. The total variance is the trace of $C$, which equals $\lambda_1 + \lambda_2$ ($2.72 + 0.24 = 2.96$). This lesson divides by $n$; dividing by $n-1$ rescales every eigenvalue and leaves the directions unchanged.
+
+</details>
+
+</Step>
+
+<Step title="Project onto the top component">
+
+Now use it. Keep only PC1: replace each point $\mathbf{x}$ by its single coordinate $z = \mathbf{v}_1\cdot\mathbf{x}$. That is **compression**, two numbers down to one. To get an approximate 2D point back we **reconstruct** it as $\hat{\mathbf{x}} = z\,\mathbf{v}_1$, which lies on the line.
+
+Watch the points slide perpendicularly onto the line. The ringed point started at $(-0.22, 1.41)$, far from the line. Its coordinate is $z = 0.47$ and it is rebuilt at $(0.41, 0.22)$. When the magenta segments appear they show the error, what the compression threw away. Averaged over the cloud, the squared error is $0.238$, which is exactly $\lambda_2$, the eigenvalue of the direction we dropped. The variance kept is $92\%$ of the total.
+
+Now press **Keep PC2** and see what the wrong choice costs: the same two-into-one compression keeps only $8\%$ of the variance and the error jumps to $2.722$, which is $\lambda_1$. Dropping a direction always costs exactly its eigenvalue, so drop the smallest.
+
+<PCAProjector client:visible mode="project" title="Two numbers become one, and the error is the eigenvalue you dropped" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+X = X - X.mean(axis=0)                 # centre
+C = X.T @ X / len(X)                   # covariance (divide by n)
+vals, vecs = np.linalg.eigh(C)         # ascending order
+vals, vecs = vals[::-1], vecs[:, ::-1] # largest first
+z = X @ vecs[:, :1]                    # compress: one number per point
+X_hat = z @ vecs[:, :1].T              # reconstruct
+err = ((X - X_hat) ** 2).sum(axis=1).mean()   # equals vals[1]
+```
+
+</details>
+
+</Step>
+
+<Step title="Explained variance: how many components to keep">
+
+Real data has many more than two features. Here are 150 samples with six correlated measurements each. The bars show the **explained variance ratio** of each principal component, $\lambda_i / \sum_j \lambda_j$: the share of the total variance it carries. Such a chart is called a **scree plot**, and the line above the bars is the running total.
+
+PC1 carries $65\%$ and PC2 another $29\%$, so two components already hold $94\%$ of the variance. The remaining four share the last $6\%$, roughly $1$ to $2\%$ each. They are mostly noise. So six numbers per sample can be reduced to two with little loss.
+
+Watch the components being dropped one at a time, weakest first. Dropping the first few moves the error only a little: with $k = 3$ kept the mean squared reconstruction error is $0.571$, with $k = 2$ it is $0.833$. Then dropping PC2 causes a jump to $4.811$ at $k = 1$, and on the right the cloud of points flattens onto a line. Use the slider to choose $k$ yourself. A common rule of thumb is to keep enough components to pass a target such as $90\%$ (the dashed line), or to stop at the elbow where the bars fall off. The error is always the sum of the dropped eigenvalues, out of a total variance of $13.88$.
+
+In real models, the choice of $k$ depends on the task: a downstream classifier may need more than the reconstruction does, so check the result you actually care about.
+
+<PCAProjector client:visible mode="scree" title="Drop components and watch the variance and the error" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think the principal components are just the original features with the least useful ones removed.** Actually each component is a new direction made of a mix of all the features. PCA rotates the axes first, and only then drops some.
+
+**You might think PCA keeps the most predictive directions.** Actually it keeps the directions of most variance and never looks at labels. A low-variance direction can be the one that separates two classes.
+
+**You might think a small component is always noise.** Actually it is small in variance, which often means noise but need not. Check what you lose.
+
+**You might think PCA finds curved structure.** Actually it finds only flat directions (a line, a plane). Data curled into a spiral needs a nonlinear method, such as an [autoencoder](/learn/graphs-generative/autoencoders/).
+
+**You might think you can skip centring.** Actually the recipe assumes the mean is zero. Without centring, the first component mostly points at the mean.
+
+**You might think features with different units are fine to mix.** Actually a feature measured in large units dominates the variance. Rescale features to comparable spread first.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>The covariance matrix of a 2D cloud is $\begin{bmatrix}4 & 0\\ 0 & 1\end{bmatrix}$. What are the principal components and how much variance does PC1 keep?</summary>
+
+The matrix is diagonal, so the axes are already the eigenvectors: PC1 is the horizontal axis with $\lambda_1 = 4$ and PC2 the vertical axis with $\lambda_2 = 1$. PC1 keeps $4/5 = 80\%$ of the variance.
+
+</details>
+
+<details>
+<summary>You keep PC1 of a cloud with eigenvalues $2.72$ and $0.24$. What is the mean squared reconstruction error?</summary>
+
+$0.24$ (the dropped eigenvalue, $0.238$ in the figure), $8\%$ of the total of $2.96$.
+
+</details>
+
+<details>
+<summary>Why does the direction of most variance also give the smallest reconstruction error?</summary>
+
+A point's squared length is its shadow squared plus its distance to the line squared (Pythagoras). The total is fixed, so a bigger shadow part means a smaller distance part.
+
+</details>
+
+<details>
+<summary>Six components have explained variance of $65\%$, $29\%$, $2\%$, $2\%$, $1\%$, $1\%$. How many do you keep to reach 90%?</summary>
+
+Two: $65 + 29 = 94\%$. One component gives only $65\%$.
+
+</details>
+
+<details>
+<summary>Why subtract the mean before PCA?</summary>
+
+Variance and the covariance matrix are measured around the centre. Without subtracting the mean, the direction of most "spread" is distorted by the offset of the whole cloud from the origin.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Karl Pearson (1901), [*On lines and planes of closest fit to systems of points in space*](https://doi.org/10.1080/14786440109462720): the original PCA, framed as the closest-fitting line, which is the error view of the first step.
+- Harold Hotelling (1933), *Analysis of a complex of statistical variables into principal components*: the variance-maximising view.
+- Jonathon Shlens, [*A Tutorial on Principal Component Analysis*](https://arxiv.org/abs/1404.1100): a clear derivation with eigenvectors and the SVD.
+- Gilbert Strang, [*Introduction to Linear Algebra*](https://math.mit.edu/~gs/linearalgebra/), the chapters on symmetric matrices and the SVD.
+- Related: [k-means](/learn/classic-ml/k-means/) often runs on PCA-reduced data, and [autoencoders](/learn/graphs-generative/autoencoders/) are a nonlinear cousin of PCA.
+
+</Step>

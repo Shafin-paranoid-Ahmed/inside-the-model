@@ -1,0 +1,212 @@
+---
+title: "Efficient Inference: Quantization, Speculative Decoding, Distillation"
+summary: "Make models cheaper and faster to serve without losing much quality."
+day: 15
+track: frontier
+order: 5
+level: frontier
+duration: 35
+prereqs: ["llms/inference-kv-cache"]
+status: stub
+lastReviewed: 2026-09-29
+---
+
+Serving a model is often more expensive than training it.
+
+import Step from '../../../components/ui/Step.astro';
+
+{/*
+LESSON BRIEF (skeleton, 2026-10-03). Widget: InferenceLab (plan: plans/day-15.md).
+Three tiny real systems, all seeded:
+  QUANT: a 2-16-16-3 MLP (src/lib/nn) trained on a 3-class 2D dataset; its 16x16 hidden weight matrix is quantized and the network re-evaluated.
+  SPEC: two character n-gram language models built from a small public-domain corpus bundled as a short string: target p = trigram, draft q = bigram (both add-k smoothed). Real speculative sampling with the Leviathan/Chen acceptance rule. (A Day 9 transformer pair can replace them later; n-grams keep the bundle small and exact.)
+  DISTILL: teacher = wide MLP, student = narrow MLP on two spirals; student trained on hard labels vs teacher soft targets at temperature T; training in a worker.
+Costs are counted (bytes moved, model calls), never milliseconds.
+
+(a) TEXTBOOK-STABLE MECHANISMS:
+- Decoding one token reads every weight once; at small batch the bound is memory bandwidth, so fewer bytes per weight means faster tokens.
+- Symmetric absmax quantization: scale = max|w| / (2^(b-1) - 1), q = round(w / scale); error up to scale/2; one outlier inflates the scale for all weights in its group; per-channel / group-wise scales fix this.
+- Speculative sampling: accept draft token x with probability min(1, p(x)/q(x)); on rejection sample from normalise(max(0, p - q)); the output distribution equals p exactly.
+- Acceptance rate alpha = sum_x min(p(x), q(x)); expected tokens per target call with gamma drafts = (1 - alpha^(gamma+1)) / (1 - alpha) (i.i.d. approximation from Leviathan et al.).
+- Distillation: minimise T^2 * KL(softmax(z_t/T) || softmax(z_s/T)) plus the hard-label loss.
+
+(b) RESEARCH LIST:
+R1 Speculative decoding: Leviathan et al. arXiv 2211.17192 and Chen et al. arXiv 2302.01318 (both confirmed 2026-10-03): exact rule, proof, speedup formula and reported conditions.
+R2 Quantization methods: GPTQ arXiv 2210.17323 (confirmed 2026-10-03); LLM.int8() arXiv 2208.07339 (VERIFY, outlier features); AWQ arXiv 2306.00978 (VERIFY); SmoothQuant arXiv 2211.10438 (VERIFY).
+R3 Distillation: Hinton, Vinyals, Dean arXiv 1503.02531 (confirmed 2026-10-03). Current use of distillation in released small models: official reports only (e.g. DeepSeek-R1 2501.12948 distilled models, confirmed 2026-10-03).
+R4 Current low-precision formats in production (FP8, 4-bit floating formats): vendor docs / papers, dated. Query: "FP4 inference format specification paper 2025".
+R5 Serving-side techniques worth one sentence (continuous batching, paged KV cache: vLLM arXiv 2309.06180, VERIFY).
+*/}
+
+<Step title="Why serving is slow: moving weights, not doing maths">
+
+When a model writes one token at a time, most of the time goes into reading its weights from memory, not into the arithmetic.
+
+{/*
+IDEA: decode is memory-bound at small batch; bytes per weight and batch size set throughput. Motivates quantization (fewer bytes) and speculative decoding (more tokens per weight read).
+WIDGET: InferenceLab mode="memory" batch=1 (slider batch 1 to 256). Two bars per token: bytes moved and arithmetic done, against a labelled example hardware ratio (writer picks round numbers and labels them as an example).
+T: t sweeps batch from 1 to 256 (log); arithmetic per byte rises until it hits the compute limit.
+TRY: find the batch size where the bound switches from memory to compute.
+QUOTE: arithmetic intensity at batch 1 and at the crossover, from the stated example ratio.
+MATH: intensity = FLOPs / bytes; roofline min(bandwidth x intensity, peak).
+RESEARCH: R5; no real GPU numbers unless cited from a vendor datasheet with date.
+*/}
+
+</Step>
+
+<Step title="Quantization: fewer bits per weight">
+
+Quantization rounds each weight to one of a small number of levels, so it can be stored in fewer bits, and the rounding error decides how much quality is lost.
+
+{/*
+IDEA: absmax rounding; error grows as bits fall.
+WIDGET: InferenceLab mode="quantize" grouping="tensor". The 16x16 weight matrix as a heat grid (--viz-pos/--viz-neg), its histogram with the quantization levels as ticks, rounding arrows; readouts: bits, mean squared error, network accuracy.
+T: t sweeps bits from 8 down to 2; the level ticks spread apart, weights snap to them, accuracy updates.
+TRY: pause at 4 bits and at 3 bits and compare the accuracy.
+QUOTE: weight MSE and accuracy at 8, 4, 3, 2 bits (per-tensor).
+MATH: scale, round, clamp; max error scale/2. CODE: 5-line numpy quantize/dequantize.
+RESEARCH: R2 (one sentence on what real methods add, e.g. GPTQ's error compensation).
+*/}
+
+</Step>
+
+<Step title="Outliers and smaller groups">
+
+A single very large weight stretches the scale for everything that shares it, so practical schemes give each row or small group of weights its own scale.
+
+{/*
+IDEA: outlier sensitivity; per-channel and group-wise scales.
+WIDGET: InferenceLab mode="outliers" bits=4 outlier=true (buttons grouping tensor / row / group-8). Same grid with one weight multiplied by 20; histogram shows most weights collapsed onto the zero level under per-tensor scaling.
+T: t animates the scale shrinking as grouping goes tensor -> row -> group of 8; weights re-snap.
+TRY: switch from tensor to group-8 and compare how many weights round to zero.
+QUOTE: weights rounded to zero and accuracy for each grouping at 4 bits with the outlier; extra bits per weight spent on scales.
+MATH: overhead = scale bits / group size.
+RESEARCH: R2 (LLM.int8 outlier finding, AWQ activation-aware scaling: quote their statements).
+*/}
+
+</Step>
+
+<Step title="Speculative decoding: draft, then verify">
+
+A small fast model guesses several tokens ahead, and the large model checks all the guesses at once, keeping the ones it agrees with.
+
+{/*
+IDEA: draft gamma tokens with q, score them with p in one target call, accept/reject left to right.
+WIDGET: InferenceLab mode="speculate" gamma=4. Text being generated; each round: draft tokens appear grey, then each gets the target's p and the draft's q as small paired bars and a uniform draw u; accepted tokens turn --viz-forward, the first rejection turns --viz-neg and is replaced by a resampled token; counter "tokens per target call".
+T: t plays 20 rounds of real seeded speculative sampling; phases Draft / Check / Accept or resample.
+TRY: pause on a rejection and compare u with p/q for that token.
+QUOTE: tokens per target call over the 20 rounds; acceptance rate measured vs alpha computed.
+MATH: the acceptance rule. CODE: 12-line numpy speculative sampling step.
+RESEARCH: R1.
+*/}
+
+</Step>
+
+<Step title="The acceptance rule keeps the large model's answers">
+
+The accept-or-resample rule is designed so that the text produced has exactly the same probabilities as if the large model had written it alone.
+
+{/*
+IDEA: exactness proof made visible.
+WIDGET: InferenceLab mode="exact" context="th". For one fixed context: three histograms over next characters: target p, draft q, and the empirical distribution of speculative outputs.
+T: t runs 1 to 20000 seeded trials (log); the empirical histogram converges onto p, not q.
+TRY: watch the bar for the character where p and q differ most.
+QUOTE: total variation distance between empirical and p, and between q and p, at 20000 trials; alpha for this context.
+MATH: Show the math: P(output = x) = q(x) min(1, p/q) + (1 - alpha) * max(0, p - q)/(1 - alpha) = p(x).
+RESEARCH: R1 (proof as stated in the papers).
+*/}
+
+</Step>
+
+<Step title="How much faster? Draft length and agreement">
+
+The speed-up depends on how often the two models agree and how many tokens the draft guesses each round.
+
+{/*
+IDEA: expected tokens per call (1 - alpha^(gamma+1))/(1 - alpha); with draft cost c relative to target, speed-up has an optimum gamma.
+WIDGET: InferenceLab mode="speedup" draftCost=0.1. Curves of speed-up vs gamma for alpha = 0.5, 0.7, 0.9 plus the measured point from the n-gram pair.
+T: t sweeps gamma from 1 to 10; cursors ride the curves; the best gamma per alpha is marked.
+TRY: find the best gamma for alpha = 0.7.
+QUOTE: best gamma and speed-up for each alpha at c = 0.1; the n-gram pair's measured alpha and speed-up.
+MATH: the speed-up formula from R1.
+RESEARCH: R1 (the paper's walltime model and assumptions).
+*/}
+
+</Step>
+
+<Step title="Distillation: a small model learns from a large one">
+
+A small student model can learn more from a large teacher's full probability outputs than from the right answers alone, because the probabilities show which mistakes are close.
+
+{/*
+IDEA: soft targets carry information about similarity between classes ("dark knowledge"); temperature softens them.
+WIDGET: InferenceLab mode="distill" T=4 (slider T 1 to 8). Left: teacher's soft targets for one point at T; right: student decision boundary trained on hard labels vs on soft targets; accuracy curves over epochs.
+T: t = training epoch (precomputed in a worker); both student boundaries evolve; curves draw.
+TRY: set T = 1 and compare the soft-target student's final accuracy with T = 4.
+QUOTE: final test accuracy of teacher, hard-label student and distilled student at T = 1 and T = 4.
+MATH: the distillation loss with the T^2 factor. CODE: PyTorch loss line.
+RESEARCH: R3.
+*/}
+
+</Step>
+
+<Step title="Trading quality for speed and cost">
+
+Each method trades a little quality for a lot of speed or memory, and the best choice depends on what the deployment needs.
+
+{/*
+IDEA: trade-offs, Pareto front.
+WIDGET: InferenceLab mode="tradeoffs". Scatter of configurations of the toy systems: x = counted cost (bytes moved per token, log), y = quality (accuracy or exact-match); points for bits (8/4/3/2), student vs teacher, and speculative (same quality, fewer target calls); the Pareto front drawn.
+T: t adds configurations one family at a time, then traces the front.
+TRY: find the cheapest configuration within one point of the teacher's accuracy.
+QUOTE: that configuration's cost ratio and accuracy.
+MATH: none.
+RESEARCH: R4 (one sentence on formats in production, cited, dated).
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few common beliefs about efficient inference are wrong.
+
+{/*
+NO WIDGET. Misconceptions:
+1. Speculative decoding changes the output quality. With the exact rule, it does not (step 5, R1).
+2. Quantization error is spread evenly. Outliers dominate (step 3, R2).
+3. Distillation just copies the teacher's answers. Soft targets carry more (step 7, R3).
+4. Faster arithmetic always means faster decoding. Small-batch decoding is memory-bound (step 1).
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Check your understanding with these questions.
+
+{/*
+NO WIDGET. Questions:
+1. Weights in [-1.27, 1.27] at 8 bits absmax: what is the scale? (0.01.)
+2. p(x) = 0.2, q(x) = 0.5: with what probability is x accepted? (0.4.)
+3. alpha = 0.8, gamma = 3: expected tokens per target call? (1 - 0.8^4)/0.2 = 2.95.
+4. Why multiply the distillation loss by T^2?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+The primary papers for each technique are below.
+
+{/*
+NO WIDGET. Sources (confirmed 2026-10-03 unless marked):
+- Hinton, Vinyals, Dean 2015, Distilling the knowledge, https://arxiv.org/abs/1503.02531
+- Dettmers et al. 2022, LLM.int8(), https://arxiv.org/abs/2208.07339 (VERIFY)
+- Frantar et al. 2022, GPTQ, https://arxiv.org/abs/2210.17323
+- Lin et al. 2023, AWQ, https://arxiv.org/abs/2306.00978 (VERIFY)
+- Leviathan, Kalman, Matias 2022, Speculative decoding, https://arxiv.org/abs/2211.17192
+- Chen et al. 2023, Speculative sampling, https://arxiv.org/abs/2302.01318
+- Kwon et al. 2023, vLLM / PagedAttention, https://arxiv.org/abs/2309.06180 (VERIFY)
+*/}
+
+</Step>

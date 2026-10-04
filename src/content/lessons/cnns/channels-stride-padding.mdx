@@ -1,0 +1,136 @@
+---
+title: "Channels, Stride, Padding and Pooling"
+summary: "The knobs that control output size and how many feature maps a layer has."
+day: 7
+track: cnns
+order: 2
+level: core
+duration: 25
+prereqs: ["cnns/convolution"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ConvShapes from '../../../components/widgets/ConvShapes/ConvShapes.svelte';
+
+<Step title="A colour image has three layers, so a filter does too">
+
+In the [previous lesson](/learn/cnns/convolution/) one 3×3 filter slid over a grey picture. A colour picture is not one grid of numbers but several stacked on top of each other, one per **channel** (red, green and blue, for instance). We write its shape as channels × height × width, so a small colour image is $3 \times 6 \times 6$.
+
+To read all three layers, a filter needs a 3×3 slice of weights for each of them, so its shape is $3 \times 3 \times 3$. At every position the window covers the same 3×3 patch in all three channels. Each channel's patch is multiplied by its own slice and summed, the three sums are added together with one **bias** (a single number the filter adds at the end), and that is **one** output cell. A second filter does the same with different weights and fills a second grid. Those grids are the output's channels, so two filters turn $3 \times 6 \times 6$ into $2 \times 4 \times 4$.
+
+Watch filter 1 sweep. When the window reaches output row 2, column 2 (pause there or scrub to it): channel 1 adds +9, channel 2 adds +3, channel 3 adds −9, the bias adds +1, and the output cell is 4. Then filter 2 starts. It ignores channel 1 completely (its weights there are all zero) and fills the second grid.
+
+<ConvShapes client:visible mode="channels" title="Three channels in, one number out per window" />
+
+Count what has to be learned. One filter has $3 \times 3 \times 3 = 27$ weights plus 1 bias, so 28 numbers. Two filters need $2 \times 28 = 56$. In general a layer with $C_{in}$ input channels, $C_{out}$ filters and $k \times k$ windows learns $C_{out}(C_{in}k^2 + 1)$ numbers, however big the picture is.
+
+</Step>
+
+<Step title="Stride: how far the window jumps">
+
+So far the window moved one cell at a time. The **stride** is the number of cells it jumps between positions. With stride 2 it skips every other position, so it visits fewer places and produces a smaller output.
+
+Both panels use the same 7×7 picture and the same 3×3 filter. Stride 1 makes 25 windows (a 5×5 output, 225 multiplications). Stride 2 makes 9 (a 3×3 output, 81 multiplications) and finishes after about 3.6 seconds while stride 1 is still going. Compare the numbers: each stride 2 output equals the stride 1 output at the same spot. Stride 2 does not compute anything different; it leaves out the positions in between.
+
+<ConvShapes client:visible mode="stride" title="The same filter with stride 1 and stride 2" />
+
+Stride is a cheap way to shrink a picture: halving the height and width leaves a quarter of the cells for the next layer to process.
+
+</Step>
+
+<Step title="Padding: giving the border a fair share">
+
+Without help, the output is smaller than the input, and pixels at the edge are seen by fewer windows than pixels in the middle. **Padding** adds a border of zeros around the image before sliding.
+
+Here each input cell counts how many windows have covered it so far. On the 5×5 image with no padding, the corner pixel ends up in just 1 window while the centre pixel is in 9, and the output shrinks to 3×3. With padding 1 (the dashed border of zeros), a 3×3 filter fits 25 times, the output is 5×5, the same size as the input, and the corner pixel is now in 4 windows. Edge pixels still see fewer windows than centre ones, but they are no longer nearly ignored.
+
+<ConvShapes client:visible mode="padding" title="Counting how many windows see each pixel" />
+
+Padding 1 with a 3×3 filter (or 2 with 5×5) is often called "same" padding because it keeps the size. Padding 0 is called "valid".
+
+</Step>
+
+<Step title="The output-size formula">
+
+The three settings combine into one rule. An input of width $n$ padded by $p$ on each side has $n + 2p$ cells. A filter of size $k$ must fit inside, so moving one cell at a time its left edge has $n + 2p - k + 1$ places to start. With stride $s$ it takes every $s$-th of those:
+
+$$\text{out} = \left\lfloor \frac{n + 2p - k}{s} \right\rfloor + 1.$$
+
+The brackets mean "round down". Try the sliders. The starting values are $n=8$, $k=3$, $s=2$, $p=0$: $(8 + 0 - 3)/2 = 2.5$, rounded down to 2, plus 1 gives 3. The hatched last row and column are never reached, because the third window covers columns 5 to 7 (counting from 1) and a fourth would stick out past column 8. Set the stride to 1 and the division comes out whole: output 6. Set stride 1 and padding 1 and the output is 8, the input size again. Make $k$ larger than the padded input and no window fits at all.
+
+<ConvShapes client:visible mode="size" title="Output size from n, k, s and p" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def out_size(n, k, s=1, p=0):
+    return (n + 2 * p - k) // s + 1   # // rounds down
+
+out_size(8, 3, 2)      # 3
+out_size(32, 3, 1, 1)  # 32
+```
+
+</details>
+
+</Step>
+
+<Step title="Pooling: shrinking without learning">
+
+A **pooling** layer shrinks a feature map by summarising each small window with one number. It slides a window (2×2 here) with a stride equal to the window size, so the windows do not overlap. Height and width halve while the number of channels stays the same: $64 \times 32 \times 32$ becomes $64 \times 16 \times 16$.
+
+**Max pooling** keeps the largest value in the window; **average pooling** keeps the mean. Neither has weights, so pooling learns nothing. The difference shows on a spike. In the first window the values are 1, 7, 0, 1: max pooling keeps the 7 (ringed in the input), average pooling gives 2.25 and the spike is diluted. The third window holds 2, 1, 9, 2: max 9, average 3.5. Max pooling answers "was the pattern found anywhere in this window?", which is why it is the usual choice after a filter that detects a feature.
+
+<ConvShapes client:visible mode="pool" title="Max and average over 2 by 2 windows" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** a filter on a colour image has one 3×3 grid of weights. **Actually** it has one slice per input channel, 27 weights for a 3×3 filter on 3 channels, and it still produces a single output channel.
+- **You might think** the number of output channels depends on the input. **Actually** it equals the number of filters, which you choose.
+- **You might think** stride 2 gives different answers at each place. **Actually** it computes the same values as stride 1 and skips the positions in between.
+- **You might think** padding adds information. **Actually** the added zeros carry none; they let the filter be centred on border pixels and keep the size.
+- **You might think** the formula always divides evenly. **Actually** when it does not, the leftover rows and columns are dropped.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>A 28×28 image goes through a 5×5 filter, stride 1, no padding. What is the output size?</summary>
+
+$\lfloor (28 - 5)/1 \rfloor + 1 = 24$, so 24×24.
+
+</details>
+
+<details>
+<summary>How many weights and biases does a layer with 16 filters of size 3×3 on a 3-channel input learn?</summary>
+
+Each filter has $3 \cdot 3 \cdot 3 = 27$ weights plus a bias, 28 numbers. $16 \times 28 = 448$.
+
+</details>
+
+<details>
+<summary>What padding keeps a 5×5 filter's output the same size as its input at stride 1?</summary>
+
+$n + 2p - 5 + 1 = n$ gives $p = 2$.
+
+</details>
+
+<details>
+<summary>Input 7, filter 3, stride 2, padding 1: output size, and is anything left over?</summary>
+
+$\lfloor (7 + 2 - 3)/2 \rfloor + 1 = 4$. The division is exact, so nothing is left over.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Dumoulin and Visin (2016), "A guide to convolution arithmetic for deep learning": every stride and padding case with diagrams.
+- Stanford CS231n, [Convolutional Neural Networks](https://cs231n.github.io/convolutional-networks/): layer shapes and parameter counts.
+- Next: [receptive fields](/learn/cnns/receptive-fields/) show how stacking these layers lets deep units see large parts of the image.
+
+</Step>

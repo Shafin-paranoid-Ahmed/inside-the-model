@@ -1,0 +1,81 @@
+@import "./tokens.css";
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: 4rem; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: var(--step-0) / var(--leading-body) var(--font-body);
+  font-optical-sizing: auto; text-rendering: optimizeLegibility;
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+main { flex: 1; }
+img, svg, canvas, video { max-width: 100%; height: auto; }
+a { color: var(--accent); text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
+a:hover { color: var(--accent-hover); text-decoration-thickness: 2px; }
+button { font: inherit; color: inherit; }
+::selection { background: var(--accent-soft); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-1); }
+
+.wrap { max-width: var(--wide); margin-inline: auto; padding-inline: var(--gutter); }
+.ui { font-family: var(--font-ui); }
+.num { font-family: var(--font-code); font-variant-numeric: tabular-nums; }
+.muted { color: var(--text-muted); }
+
+h1, h2, h3, h4 { font-family: var(--font-ui); line-height: 1.2; letter-spacing: -0.015em; font-weight: 650; margin: 0; }
+
+/* Lesson / long-form prose */
+.prose { max-width: var(--measure); }
+.prose > * + * { margin-top: 1em; }
+.prose h2 { font-size: var(--step-2); margin-top: 2.2em; }
+.prose h3 { font-size: var(--step-1); margin-top: 1.8em; }
+.prose h2 + *, .prose h3 + * { margin-top: 0.6em; }
+.prose ul, .prose ol { padding-left: 1.4em; }
+.prose li + li { margin-top: 0.35em; }
+.prose blockquote { margin-inline: 0; padding-left: 1em; border-left: 3px solid var(--rule); color: var(--text-muted); }
+.prose hr { border: 0; border-top: 1px solid var(--rule); margin-block: 2em; }
+.prose code { font: 0.86em var(--font-code); background: var(--bg-sunken); padding: 0.1em 0.3em; border-radius: var(--r-1); }
+.prose pre { font: 0.85rem/1.55 var(--font-code); background: var(--bg-sunken); padding: var(--s-4); border-radius: var(--r-2); overflow-x: auto; }
+.prose pre code { background: none; padding: 0; font-size: inherit; }
+.prose :not(pre) > code { overflow-wrap: anywhere; }
+.prose table { border-collapse: collapse; display: block; overflow-x: auto; font: var(--step--1) / 1.5 var(--font-ui); }
+.prose th, .prose td { padding: 0.4em 0.8em; border-bottom: 1px solid var(--rule); text-align: left; }
+.prose th { border-bottom-color: var(--text-muted); font-weight: 600; }
+.prose details { border: 1px solid var(--rule); border-radius: var(--r-2); padding: var(--s-2) var(--s-4); }
+.prose summary { cursor: pointer; font: 600 var(--step--1) var(--font-ui); }
+
+/* KaTeX: display math scrolls instead of overflowing */
+.katex-display { overflow-x: auto; overflow-y: hidden; padding-block: 0.25em; }
+.katex-display > .katex { max-width: 100%; }
+/* MDX can render long equations as inline math inside details. Keep their
+   horizontal scrolling local rather than widening the whole lesson. */
+.prose .katex:not(.katex-display > .katex) {
+  display: inline-block; max-width: 100%; overflow-x: auto;
+  overflow-y: hidden; vertical-align: middle; padding-block: 0.15em;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--s-2); cursor: pointer;
+  font: 600 var(--step--1) var(--font-ui); text-decoration: none;
+  padding: 0.6em 1.1em; border-radius: var(--r-2);
+  border: 1px solid var(--rule); background: var(--bg-raised); color: var(--text);
+  transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.btn:hover { border-color: var(--text-muted); color: var(--text); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Presentation mode */
+[data-present] body { font-size: 1.5rem; }
+[data-present] .site-header, [data-present] .site-footer { display: none; }
+[data-present] .prose { max-width: 52rem; }
+
+@media print { .site-header, .site-footer, .theme-toggle { display: none !important; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

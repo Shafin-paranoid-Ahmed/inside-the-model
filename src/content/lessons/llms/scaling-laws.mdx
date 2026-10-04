@@ -1,0 +1,240 @@
+---
+title: "Scaling Laws"
+summary: "Loss falls predictably as a power law in parameters, data and compute, which tells you how to split a compute budget."
+day: 10
+track: llms
+order: 3
+level: advanced
+duration: 25
+prereqs: ["llms/pretraining"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import ScalingLab from '../../../components/widgets/ScalingLab/ScalingLab.svelte';
+
+Before spending months of GPU time on a model, a lab wants to know roughly how good it will be. The answer comes from small, cheap training runs.
+
+<Step title="Train many models, plot every loss">
+
+To find a scaling law you train a family of models of different sizes on different amounts of text and record the **loss** each one reaches on held-out text. Loss here is the average surprise per character in nats, as in [pretraining](/learn/llms/pretraining/); lower is better. Three quantities matter. **N** is the number of parameters. **D** is the amount of training text, counted here in characters (real language models count BPE tokens, see [tokenization](/learn/transformers/tokenization/)). **C** is the training compute, about $6ND$ floating-point operations: roughly two per parameter per token going forward and four going backward.
+
+Our sweep is real. It is 42 training runs of the same tiny transformer as the pretraining lesson: 7 widths, from 2,614 to 106,662 parameters, each trained on 6 amounts of Alice in Wonderland, from 8,448 to 270,592 characters, which is one pass over the training text. Compute runs from $1.3\times10^{8}$ to $1.7\times10^{11}$ FLOP. For orientation, a model that knows only how often each letter occurs scores 3.00 on the held-out text, and one that knows the previous letter scores 2.38.
+
+Watch the compute axis sweep to the right and every run draw its loss falling. Then the accent line appears. It joins the lowest loss any run had reached at or below each compute, and it ends at 2.1385 for the 35,822-parameter model trained on all 270,592 characters. Small models win at small compute; the winners get wider as compute grows. Hover a curve, or pick a run from the list, to read its size and final loss.
+
+<ScalingLab client:visible mode="sweep" />
+
+</Step>
+
+<Step title="A straight line on log-log axes">
+
+A **power law** is a curve of the form $y = a\,x^{-b}$. Take logarithms and it becomes a straight line, $\log y = \log a - b\log x$, with slope $-b$. That is why scaling plots use log-log axes: a power law shows up as a ruler-straight line, and its slope is the exponent $b$ that says how fast loss falls as compute grows.
+
+Real text cannot be predicted perfectly, so the loss should level off at some floor $E$, the **irreducible loss**. The law becomes $L = E + a\,C^{-b}$, and it is the part above the floor, $L - E$, that falls on a straight line. We do not know $E$ in advance, so the fit searches for it: for each candidate floor it draws the best straight line through the best run at each compute, and keeps the floor where the line misses the data least.
+
+Watch the search. The floor starts at 0 and rises. Each frame is a real least-squares fit at that candidate, and the line settles at $E = 0.887$ with exponent $b = 0.0887$; the dots miss it by about 0.05 nats. Now untick the floor box. Without a floor the fit is almost as good, $R^2$ 0.9609 against 0.9616, but the exponent drops to 0.0583. The sweep cannot tell the two apart, yet they disagree outside it: extended to $10^{15}$ FLOP the fit with a floor predicts a loss of 1.43 and the one without predicts 1.23. For comparison, [Kaplan et al. (2020)](https://arxiv.org/abs/2001.08361) published a compute exponent of 0.050 for much larger models on a different data set, so the exponent depends on the setting and ours is not meant to match it.
+
+<ScalingLab client:visible mode="compute" />
+
+<details>
+<summary>Show the math</summary>
+
+For a fixed floor $E$, take logarithms of $L = E + a\,C^{-b}$:
+
+$$\log(L - E) = \log a - b\,\log C .$$
+
+This is a straight line in $\log C$, so ordinary least squares gives $b$ and $\log a$. The floor is found by a one-dimensional search: try 600 values from 0 up to just below the lowest measured loss, fit each, and keep the one with the smallest squared error measured in loss units (not log units, which would reward a floor that sits close to the data). The sweep's own summary file reports $E = 0.885$ from a coarser search; ours is $0.887$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def fit(C, L, E):
+    x, y = np.log(C), np.log(L - E)
+    b = -np.polyfit(x, y, 1)[0]
+    a = np.exp(y.mean() + b * x.mean())
+    return a, b
+
+def best_floor(C, L):
+    grid = np.linspace(0, 0.98 * L.min(), 601)
+    err = lambda E: np.sum((E + fit(C, L, E)[0] * C ** -fit(C, L, E)[1] - L) ** 2)
+    return min(grid, key=err)
+```
+
+</details>
+
+</Step>
+
+<Step title="Two knobs: parameters and data">
+
+Compute is only the product of two knobs, and loss depends on each separately. A bigger model has more capacity. More data gives it more to learn from. If either one is too small it holds the loss up, however large the other is.
+
+Each curve in the figure fixes the amount of training text and shows loss against model size. Watch them appear from the least data to the most. Two things stand out. Most of each curve slopes down, so a bigger model helps, but the curves are far apart, so data helps more. With only 8,448 characters, growing the model from 2,614 to 106,662 parameters (41 times) lowers the loss from 3.0353 to 2.7909, a drop of 0.24. Giving the 2,614-parameter model 270,592 characters instead (32 times more data) lowers it from 3.0353 to 2.4873, a drop of 0.55.
+
+At the most data the curve is no longer smooth: the best model is the one with 35,822 parameters, at 2.1385, and the two larger models are worse. Now use the control to plot loss against training characters, one curve per model size. Over the 32 times more data every size falls by about half a nat (0.55 for the smallest, 0.49 for the largest), while the seven sizes start only 0.24 apart at 8,448 characters.
+
+<ScalingLab client:visible mode="params-data" />
+
+</Step>
+
+<Step title="Compute-optimal training">
+
+You have a fixed compute budget $C$. Since $C \approx 6ND$, choosing a model size $N$ also chooses the amount of data $D = C/6N$: a bigger model means fewer training characters. Too big and the model is starved of data; too small and it runs out of capacity. Plotting loss against $N$ at one fixed $C$ should therefore give a U, and the bottom of the U is the **compute-optimal** size. This is the **IsoFLOP** method of [Hoffmann et al. (2022)](https://arxiv.org/abs/2203.15556), the paper that introduced the Chinchilla model: *iso-FLOP* means same compute.
+
+Our data shows only part of the U. Each solid or hollow dot is a size read at $D = C/6N$; hollow dots are read between a size's two nearest data amounts, because no run lands exactly on that budget. A curve stops on the left where $D$ would need more than one pass over the 270,592 training characters. What remains is the right-hand side: at $5.0\times10^{9}$ FLOP the 5,054-parameter model reaches 2.460 and the 61,574-parameter model, with far too little data, reaches 2.741. The dashed curve is a power-law surface $L(N,D)=E+A/N^{\alpha}+B/D^{\beta}$ fitted to all 42 runs (typical miss 0.043 nats), and its ring marks the bottom of the U. For this budget it sits near 1.7k parameters and 276 characters per parameter. That is far from the 20 tokens per parameter reported by Chinchilla, and it lies outside the sizes we trained, so treat it as a trend rather than a measurement. Across budgets the fitted surface gives $N_{\mathrm{opt}} \propto C^{0.24}$, so most of each extra bit of compute goes to data; Chinchilla found an exponent near 0.5, an equal split.
+
+Watch the budgets appear and the rings follow the bottoms of their curves. Then drag the budget slider. The best size we can measure moves right as the budget grows, from 2,614 parameters at $10^{9}$ FLOP to 35,822 at $3\times10^{10}$, because the smaller sizes run out of data.
+
+<ScalingLab client:visible mode="isoflop" />
+
+<details>
+<summary>Show the math</summary>
+
+With the fitted surface, put $D = C/6N$ and minimise over $N$:
+
+$$L(N) = E + A N^{-\alpha} + B\left(\frac{C}{6N}\right)^{-\beta}.$$
+
+Setting $dL/dN = 0$ gives
+
+$$N_{\mathrm{opt}} = \left(\frac{\alpha A}{\beta B}\right)^{\frac{1}{\alpha+\beta}} \left(\frac{C}{6}\right)^{\frac{\beta}{\alpha+\beta}},$$
+
+so $N_{\mathrm{opt}} \propto C^{a}$ with $a = \beta/(\alpha+\beta)$ and $D_{\mathrm{opt}} \propto C^{1-a}$. Our fit has $\alpha = 0.336$ and $\beta = 0.108$, so $a = 0.24$.
+
+</details>
+
+</Step>
+
+<Step title="The published laws">
+
+The same fitting done on real language models gives formulas that labs use to plan training runs. Two studies disagree in an instructive way. [Kaplan et al. (2020)](https://arxiv.org/abs/2001.08361) fitted models of up to 1.5 billion non-embedding parameters and recommended growing the model much faster than the data, $N_{\mathrm{opt}} \propto C^{0.73}$ and $D_{\mathrm{opt}} \propto C^{0.27}$. [Hoffmann et al. (2022)](https://arxiv.org/abs/2203.15556) found roughly equal growth, exponents of 0.46 to 0.54 depending on the method, and concluded that large models of the time were undertrained. They tested it: **Chinchilla** has 70 billion parameters trained on 1.4 trillion tokens, and **Gopher** has 280 billion trained on 300 billion tokens. Both used about the same compute, and Chinchilla outperformed Gopher across their evaluations. For scale, GPT-3 had 175 billion parameters on 300 billion tokens ([Brown et al., 2020](https://arxiv.org/abs/2005.14165)), under 2 tokens per parameter; Chinchilla used 20.
+
+The figure is a map of the published loss formula over model size (across) and training tokens (up). Thin lines join combinations with equal predicted loss, and the black line is a compute budget: every point on it costs the same. The blue line marks the best size at each budget according to the Chinchilla-style formula; the dashed orange line is the Kaplan-style rule $N = 1.3\times10^{9}\,(C/8.64\times10^{19})^{0.73}$. Watch the budget slide up to the one Gopher and Chinchilla share, about $5.9\times10^{23}$ FLOP, and pause there. The Chinchilla-style optimum is 73B parameters on 1.3T tokens with predicted loss 1.974, right at the Chinchilla dot. The Kaplan-style rule asks for 816B parameters on 120B tokens, and the same formula predicts 2.037 for that, worse by 0.063.
+
+The formula here is the 2024 re-estimate by [Besiroglu et al.](https://arxiv.org/abs/2404.10102): $L = 1.82 + 482/N^{0.348} + 2085/D^{0.366}$. They refitted the data points that Hoffmann et al. plotted after finding that the constants printed in the 2022 paper, $1.69 + 406.4/N^{0.34} + 410.7/D^{0.28}$, fit those points poorly. Choose the printed fit in the list under the figure and the best size at this budget jumps to 32B parameters on 3.0T tokens, not the 70B and 1.4T that the authors actually trained. The gap between Kaplan's recommendation and Chinchilla's has been partly explained by how parameters were counted and by training-schedule differences ([Pearce and Song, 2024](https://arxiv.org/abs/2406.12907); [Porian et al., 2024](https://arxiv.org/abs/2406.19146)). Every element in this figure is a published fit, not one of our runs.
+
+<ScalingLab client:visible mode="published" />
+
+<details>
+<summary>Show the math</summary>
+
+The fitted loss is $L(N,D) = E + A N^{-\alpha} + B D^{-\beta}$. At budget $C = 6ND$, substitute $D = C/6N$ and minimise over $N$ exactly as in the previous step:
+
+$$N_{\mathrm{opt}} = \left(\frac{\alpha A}{\beta B}\right)^{\frac{1}{\alpha+\beta}} \left(\frac{C}{6}\right)^{\frac{\beta}{\alpha+\beta}}.$$
+
+For the 2024 refit, $\beta/(\alpha+\beta) = 0.513$, so model size and data grow together. For the printed 2022 constants it is $0.28/0.62 = 0.452$. At the Chinchilla budget the refit gives $N_{\mathrm{opt}} = 7.3\times10^{10}$ and $D_{\mathrm{opt}} = 1.34\times10^{12}$, which is 18.4 tokens per parameter.
+
+</details>
+
+</Step>
+
+<Step title="Extrapolation and its limits">
+
+The point of a scaling law is to predict a model you have not trained. The test is simple: fit on the small runs, predict the bigger ones, and compare with what was measured.
+
+We fit on the smallest few of the 15 best runs and extend the line to the rest. At the start the fitted line is solid where it was fitted and dashed where it predicts. Then the held-out runs drop in one at a time, with a vertical stick for each miss. With the default of 4 runs the prediction fails badly: it says the biggest run would reach 2.783 and it reached 2.139, an error of +0.645 nats. The reason is visible in the filled dots. The four smallest runs all sit near 3.0, the loss of a model that only knows letter frequencies, before the models had learned much. A line through them is almost flat, with an exponent of 0.014, and it cannot know that the loss is about to fall.
+
+Now drag the slider to use more runs. With 7 runs the error on the largest is +0.091. With 8 it is +0.001, and with 10 it is −0.053, although some of the middle runs are still missed by 0.1 or more. A power law is only as good as the range it was fitted on: it needs points that are already on the trend, and enough of them to pin down the slope. What a fit like this cannot say is what the model will be able to do. Loss predictions say nothing about which abilities appear, which is the subject of [emergent abilities and in-context learning](/learn/llms/emergent-icl/).
+
+<ScalingLab client:visible mode="extrapolate" />
+
+</Step>
+
+<Step title="Over-training small models for cheaper inference">
+
+Training happens once, but a model that millions of people use answers questions for years. Every generated token costs about $2N$ floating-point operations, so a smaller model is cheaper to serve. If it is trained on much more text than the compute-optimal amount it can reach the same loss, so for a model with heavy use the cheapest plan is smaller and trained for longer ([Sardana et al., 2024](https://arxiv.org/abs/2401.00448)).
+
+The figure fixes a target loss, the one the published refit predicts for Chinchilla, 1.974, and asks what size of model reaches it at the lowest total cost, training plus serving. The dashed line is training only. With no serving the cheapest model is 73.0B parameters on 1.34T tokens, which is 18 tokens per parameter. Watch the number of tokens served grow from nothing to $10^{13}$. The solid curve rises on the right, where bigger models cost more to serve, and its lowest point slides left: the cheapest model shrinks to 34.5B parameters and trains on 3.75T tokens, 109 tokens per parameter. At $10^{13}$ served tokens that plan costs $1.47\times10^{24}$ FLOP in total, 28% less than serving the 73B model, which would cost $2.05\times10^{24}$.
+
+Real models go much further. [Llama 3](https://ai.meta.com/blog/meta-llama-3/) 8B was trained on over 15 trillion tokens, about 1,900 tokens per parameter, although Meta put the Chinchilla-optimal amount for an 8B model at around 200 billion tokens. Its authors found it kept improving. The published formula is stretched here, far outside the range it was fitted on, and a small model cannot reach this target loss however long it trains (the 2024 refit needs at least 10.7B parameters).
+
+<ScalingLab client:visible mode="overtrain" />
+
+<details>
+<summary>Show the math</summary>
+
+Training costs $6ND$ and serving $D_{\mathrm{inf}}$ tokens costs $2ND_{\mathrm{inf}}$, so the total is
+
+$$\text{cost}(N) = N\,(6D + 2D_{\mathrm{inf}}), \qquad D = \left(\frac{B}{L^{*}-E-A N^{-\alpha}}\right)^{1/\beta},$$
+
+where the second equation solves $L(N,D)=L^{*}$ for the data needed to hit the target loss $L^{*}$. We minimise over $N$ numerically. With $D_{\mathrm{inf}}=0$ this is the Chinchilla optimum; larger $D_{\mathrm{inf}}$ favours smaller $N$ with larger $D$.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think scaling laws are laws of nature.** They are fits to measurements, for one architecture, data set and training recipe. Our own exponent for compute is 0.058 or 0.089 depending on whether we allow a floor, and Chinchilla's constants changed when the data were refitted.
+
+**You might think lower loss means every ability improves smoothly.** Loss is an average over all the text. A particular skill can look flat and then jump, which is explored in [emergent abilities](/learn/llms/emergent-icl/).
+
+**You might think a bigger model is always better at the same compute.** At a fixed budget, a bigger model gets less data. At $5.0\times10^{9}$ FLOP our 61,574-parameter model would score 2.741 against 2.460 for the 5,054-parameter one.
+
+**You might think Chinchilla-optimal is how every model should be trained.** It minimises the cost of training one model. If the model will be served a lot, the cheaper plan is smaller and trained longer, as the last figure showed.
+
+**You might think the power law keeps falling to zero.** There is a floor, the entropy of the text plus what the model cannot capture. Our sweep cannot pin it down, which is why predictions far outside the data are unreliable.
+
+</Step>
+
+<Step title="Check yourself">
+
+Use the formulas from this lesson to answer.
+
+<details>
+<summary>1. If the reducible loss is $a\,C^{-0.05}$, how much more compute does it take to halve it?</summary>
+
+Halving means $C^{-0.05}$ must fall by a factor 2, so $C$ must grow by $2^{1/0.05} = 2^{20}$, about a million times.
+
+</details>
+
+<details>
+<summary>2. At 20 tokens per parameter, how many tokens does a 7B model need, and how much compute?</summary>
+
+$D = 20 \times 7\times10^{9} = 1.4\times10^{11}$ tokens, and $C = 6ND = 6 \times 7\times10^{9} \times 1.4\times10^{11} \approx 5.9\times10^{21}$ FLOP.
+
+</details>
+
+<details>
+<summary>3. Why does a fit without a floor tend to overpredict how good very large models will be?</summary>
+
+Without a floor the curve keeps falling toward zero as compute grows, but real text has irreducible uncertainty. In our sweep, extended to $10^{15}$ FLOP, the fit without a floor predicts 1.23 and the one with a floor 1.43.
+
+</details>
+
+<details>
+<summary>4. A model will be used to generate ten times as many tokens as it was trained on. Is the cheapest model bigger or smaller than the Chinchilla-optimal one?</summary>
+
+Smaller. Serving cost grows with model size, so it pays to shrink the model and train it on more data to keep the same loss.
+
+</details>
+
+<details>
+<summary>5. What does an IsoFLOP curve hold fixed, and what does it vary?</summary>
+
+It holds the compute $C = 6ND$ fixed and varies the model size $N$; the amount of data follows as $D = C/6N$.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+The primary papers on scaling laws and their refinements.
+
+- Joel Hestness et al., ["Deep Learning Scaling is Predictable, Empirically"](https://arxiv.org/abs/1712.00409), 2017.
+- Jared Kaplan et al., ["Scaling Laws for Neural Language Models"](https://arxiv.org/abs/2001.08361), 2020: $L(C_{\min})$ exponent 0.050 and $N_{\mathrm{opt}} \propto C_{\min}^{0.73}$ (Table 5 and Table 6).
+- Jordan Hoffmann et al., ["Training Compute-Optimal Large Language Models"](https://arxiv.org/abs/2203.15556), 2022: Chinchilla, and the fit $1.69 + 406.4/N^{0.34} + 410.7/D^{0.28}$ (appendix D.2).
+- Tamay Besiroglu et al., ["Chinchilla Scaling: A replication attempt"](https://arxiv.org/abs/2404.10102), 2024: the refit used in this lesson.
+- Nikhil Sardana et al., ["Beyond Chinchilla-Optimal: Accounting for Inference in Language Model Scaling Laws"](https://arxiv.org/abs/2401.00448), 2024.
+- Niklas Muennighoff et al., ["Scaling Data-Constrained Language Models"](https://arxiv.org/abs/2305.16264), 2023: what happens when data is repeated.
+- Tim Pearce and Jinyeop Song, ["Reconciling Kaplan and Chinchilla Scaling Laws"](https://arxiv.org/abs/2406.12907), 2024.
+- Tomer Porian et al., ["Resolving Discrepancies in Compute-Optimal Scaling of Language Models"](https://arxiv.org/abs/2406.19146), 2024.
+- Abhimanyu Dubey et al., ["The Llama 3 Herd of Models"](https://arxiv.org/abs/2407.21783), 2024: 405B parameters on 15.6T tokens; the 8B figure is from Meta's [Llama 3 announcement](https://ai.meta.com/blog/meta-llama-3/).
+
+Next: [inference and the KV cache](/learn/llms/inference-kv-cache/).
+
+</Step>

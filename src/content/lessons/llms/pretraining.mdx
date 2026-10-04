@@ -1,0 +1,206 @@
+---
+title: "Pretraining: Next-Token Prediction at Scale"
+summary: "Train on vast text to predict the next token; the loss is cross-entropy."
+day: 10
+track: llms
+order: 1
+level: core
+duration: 30
+prereqs: ["transformers/transformer-block","foundations/softmax-cross-entropy"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import PretrainLab from '../../../components/widgets/PretrainLab/PretrainLab.svelte';
+
+A language model is trained on one small task, repeated billions of times: look at some text, guess what comes next. This lesson follows that task from a single guess up to a whole training run, using one tiny model you can inspect.
+
+<Step title="Guess the next character">
+
+A **language model** reads text and gives a **probability** to every possible next piece of text. A piece is called a **token**. In this lesson a token is one character, so there are only 38 choices: 26 letters, space, new line and nine punctuation marks, plus one slot for anything else. Real models use larger pieces called BPE tokens; see [tokenization](/learn/transformers/tokenization/). The idea is identical.
+
+**Pretraining** is making those guesses better, one position at a time, on a huge pile of text. Our model is a two-layer transformer with 35,822 parameters, trained on Lewis Carroll's two Alice books. The sentence below comes from a part of the books it never trained on.
+
+Watch the cursor walk along the sentence. At each step the bars show the model's eight most likely next characters, and the true next character is outlined. After `alic` the model is certain: it gives `e` a probability above 0.99. After `alice␣` (the space after the name) it is much less sure, and gives the true `w` only 0.11, because many words can follow a name.
+
+<PretrainLab client:visible mode="objective" />
+
+</Step>
+
+<Step title="Cross-entropy: the score being minimised">
+
+To train, we need a single number that says how good the guesses were. For one position, take the probability the model gave to the character that really came next, and compute minus its natural logarithm. This is the **loss** at that position, measured in **nats**. A confident right guess (probability near 1) costs almost nothing; a confident wrong guess (probability near 0) costs a lot. The **cross-entropy** loss of a text is the average of these costs.
+
+A model that knows nothing gives every character the same probability, 1/38, and pays $\ln 38 = 3.64$ nats at every position. That is the blind-guess line. **Perplexity** is $e^{L}$, read as "the number of equally likely choices the model is torn between"; blind guessing has perplexity 38.
+
+Watch the columns grow, one per character. On this sentence the average comes to **1.30 nats**, a perplexity of **3.68**, far below 3.64 nats. Over the whole held-out part of the books the loss is **1.504 nats** (perplexity 4.50). The tallest column, in orange, is the `c` after `kno` (5.55 nats); the `k` that starts `knocked` is almost as tall (5.54). After `and kno` the model gave `w` probability 0.96, expecting "know", so the `c` of `knocked` was a confident wrong guess.
+
+<PretrainLab client:visible mode="loss" />
+
+<details>
+<summary>Show the math</summary>
+
+For a text $x_1,\dots,x_T$ and a model with parameters $\theta$,
+
+$$L = -\frac{1}{T-1}\sum_{t=1}^{T-1} \ln p_\theta(x_{t+1}\mid x_1,\dots,x_t), \qquad \text{perplexity} = e^{L}.$$
+
+A uniform model has $p = 1/V$ everywhere, so $L = \ln V$. Training lowers $L$ by gradient descent; see [softmax and cross-entropy](/learn/foundations/softmax-cross-entropy/).
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+Position $t$ predicts token $t+1$, so the inputs and targets are the same text shifted by one.
+
+```python
+import torch.nn.functional as F
+
+# x: (batch, T) token ids; the model returns logits of shape (batch, T, V)
+logits = model(x)
+loss = F.cross_entropy(
+    logits[:, :-1].reshape(-1, V),   # predictions at positions 0 .. T-2
+    x[:, 1:].reshape(-1),            # the tokens that actually came next
+)
+```
+
+</details>
+
+</Step>
+
+<Step title="Where the text comes from">
+
+The text that models train on starts as a scrape of the web. Raw scrapes are full of copies and junk, so pipelines clean them first. [FineWeb](https://arxiv.org/abs/2406.17557) (Penedo et al., 2024), for example, is a 15-trillion-token dataset built from 96 Common Crawl snapshots, with deduplication and filtering studied in detail.
+
+Copies matter because repeated text is memorised and wastes compute ([Lee et al., 2022](https://arxiv.org/abs/2107.06499)). The figure runs three real filters on twelve short documents. The documents were written for this figure, except the openings of Alice and of Pride and Prejudice, which are public domain.
+
+1. **Exact copies.** Lower-case the text, drop punctuation, collapse spaces and hash it. Documents with the same hash as an earlier one are removed.
+2. **Near copies.** Cut each document into **shingles**, every run of five consecutive words, and compare documents by **Jaccard similarity**: shared shingles divided by all shingles. Comparing every pair of big documents is slow, so a **MinHash** signature keeps, for each of 128 hash functions, the smallest hash over a document's shingles. The fraction of positions where two signatures agree estimates the Jaccard similarity.
+3. **Quality rules** of the kind used for Gopher ([Rae et al., 2021](https://arxiv.org/abs/2112.11446), appendix): enough words, a mean word length of 3 to 10 letters, few `#` or `...` marks per word, mostly real words, few lines ending in `...`, and no single phrase covering more than 20% of the text. The paper requires 50 words; the sample documents are short, so the figure requires 10.
+
+Watch the documents pass the gates. At the default threshold of 0.70, document 5 (the Alice opening with one word changed) is removed as a near copy: its MinHash estimate is 0.73 (exact Jaccard 0.77). Document 8, with two words changed, scores 0.59 and survives. Drag the threshold to 0.80 and document 5 survives too; drag it to 0.55 and document 8 goes. At the default, 4 of 12 documents and 733 of 1,942 characters remain.
+
+<PretrainLab client:visible mode="data" />
+
+<details>
+<summary>Show the math</summary>
+
+$$J(A,B)=\frac{|A\cap B|}{|A\cup B|},\qquad \hat J=\frac{1}{k}\sum_{i=1}^{k}\mathbf 1\!\left[\min_{s\in A}h_i(s)=\min_{s\in B}h_i(s)\right].$$
+
+For a random hash function the two minima agree exactly when the smallest hash over $A\cup B$ falls in $A\cap B$, which has probability $J(A,B)$. Averaging $k=128$ hash functions gives an estimate within a few hundredths of $J$.
+
+</details>
+
+</Step>
+
+<Step title="How much compute pretraining takes">
+
+Training cost is counted in **floating-point operations**, FLOP: one addition or multiplication of two numbers. For a transformer with $N$ parameters trained on $D$ tokens, a good estimate is
+
+$$C \approx 6\,N\,D.$$
+
+The 6 comes from the forward pass (about 2 FLOP per parameter per token: one multiply and one add) plus the backward pass (about twice the forward cost, 4 FLOP) ([Kaplan et al., 2020](https://arxiv.org/abs/2001.08361)).
+
+Our house model has $N$ = 35,822 and was trained on $D$ = 6,144,000 tokens (6,000 steps of 16 windows of 64 characters), so $C$ = **1.32 × 10¹²** FLOP. The figure puts it on a log axis beside runs from the papers: GPT-3 (175B parameters, 300B tokens; [Brown et al., 2020](https://arxiv.org/abs/2005.14165)), Chinchilla (70B and 1.4T; [Hoffmann et al., 2022](https://arxiv.org/abs/2203.15556)) and Llama 3 405B (405B and 15.6T; [Dubey et al., 2024](https://arxiv.org/abs/2407.21783)). With $C = 6ND$, GPT-3 comes to 3.15 × 10²³ FLOP (the paper's own count is 3.14 × 10²³), about 2.4 × 10¹¹ times the house model. Llama 3 405B comes to 3.79 × 10²⁵, matching the 3.8 × 10²⁵ in its paper.
+
+Batches scale too. Each optimizer step of the house model reads 1,024 tokens; GPT-3 used 3.2 million tokens per step. Drag the sliders for "your model": a 1-billion-parameter model on 20 billion tokens costs 1.2 × 10²⁰ FLOP, about 2,600 times less than GPT-3.
+
+<PretrainLab client:visible mode="compute" />
+
+</Step>
+
+<Step title="What the model learns along the way">
+
+A model starts with random weights, so its first guesses are worse than blind guessing. The curve tracks the **validation loss**: the loss on text held out from training, measured as training goes on. Two simple guessing rules give reference lines. A **letter-frequency** guess ignores context and just uses how common each character is, costing 3.00 nats. A **letter-pair** guess looks only at the previous character, costing 2.38 nats.
+
+The curve starts at 3.80, above blind guessing (3.64). It first drops below the letter-frequency line at logged step 100, and below the letter-pair line at step 400, and ends at 1.50 at step 6,000. The text panel shows a sample the model wrote at each saved step, from the same prompt, and the bars show the chance it gives the next character in three fixed contexts. After `the q` it gives `u` only 0.04 at step 100 but 0.91 at step 400 and 0.98 at the end. After `said alic` it gives `e` 0.62 at step 400 and 0.997 at the end. After `the queen sh` the right next letter is `o`, but it stays near 0.10: several words fit, and no amount of training removes that uncertainty.
+
+Scrub to step 400, where the curve crosses the letter-pair line. The sample there is mostly noise but already contains whole short words such as `that` and `her`. At step 3,200 it writes `a little alice the whistant double`: real words, still not sentences.
+
+<PretrainLab client:visible mode="learning" />
+
+</Step>
+
+<Step title="A base model is not an assistant">
+
+A pretrained model only continues text in the style of its training data. It was never asked to answer anything, so a question is, to it, just the start of a document. Assistants come later, from fine-tuning on examples of good answers ([supervised fine-tuning](/learn/alignment/sft/)) and from learning human preferences ([RLHF](/learn/alignment/rlhf/)).
+
+Give the house model a question. The figure types out three continuations of 48 characters each: greedy (always the likeliest character) and two samples (a random draw from the model's probabilities, see [sampling](/learn/llms/sampling/)). The three small characters under each letter are the model's three likeliest choices there; fainter means less likely. The greedy continuation is `"i don't see that she had some the course to he`, starting with a space: quotation marks and dialogue, as in the book, and no answer. Try your own prompt and watch the model keep writing story-like text.
+
+<PretrainLab client:visible mode="base" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think the model stores the training text and looks things up.** It stores only weights, 35,822 numbers for ours. It can memorise passages that appear many times, which is one reason for deduplication ([Carlini et al., 2021](https://arxiv.org/abs/2012.07805)), but mostly it compresses statistics of the text.
+
+**You might think lower loss means the model is more truthful.** Loss measures how well it predicts text, true or false. See [hallucination](/learn/llms/hallucination/).
+
+**You might think predicting the next token can only learn shallow statistics.** Our tiny model went from letter frequencies to letter pairs to words using the same objective. Predicting text well at larger scale requires modelling grammar, facts and some reasoning, and nothing in the objective changes.
+
+**You might think pretraining makes a chatbot.** It makes a base model. The continuation in the previous figure shows it writing dialogue instead of answering.
+
+**You might think more data always helps equally.** Duplicated or low-quality text can hurt, which is why the pipeline in the data figure removes 8 of its 12 documents.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try these before opening the answers.
+
+<details>
+<summary>1. A model gives the correct next token probability 0.5. What is the loss at that position?</summary>
+
+$-\ln 0.5 = \ln 2 \approx 0.69$ nats.
+
+</details>
+
+<details>
+<summary>2. Why is ln V the loss of a model that knows nothing, and what was it for our vocabulary?</summary>
+
+It gives every token probability $1/V$, so every position costs $-\ln(1/V)=\ln V$. Our vocabulary has 38 entries, so $\ln 38 = 3.64$ nats, the dashed line in the loss figure.
+
+</details>
+
+<details>
+<summary>3. Estimate the training compute for a 1B-parameter model on 20B tokens.</summary>
+
+$6 \times 10^{9} \times 2\times 10^{10} = 1.2\times 10^{20}$ FLOP, the default "your model" in the compute figure.
+
+</details>
+
+<details>
+<summary>4. Why remove near-duplicates and not just exact copies?</summary>
+
+Copies are rarely byte-identical: mirrored pages differ by a menu, a date or a changed word. In the data figure, document 5 differs from document 1 by one word and passes the exact gate, yet shares most of its text. Only the Jaccard comparison catches it.
+
+</details>
+
+<details>
+<summary>5. What will a base model most likely do with "Q: What is the capital of France? A:"?</summary>
+
+Continue it as a document. If question-and-answer text like this was common in its training data it may well answer, but nothing forces it to. Our house model, given a similar question, wrote more dialogue.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+Primary papers and hands-on resources on pretraining.
+
+- Claude Shannon, ["Prediction and Entropy of Printed English"](https://archive.org/details/bstj30-1-50), Bell System Technical Journal, 1951.
+- Yoshua Bengio et al., ["A Neural Probabilistic Language Model"](https://www.jmlr.org/papers/v3/bengio03a.html), JMLR, 2003.
+- Alec Radford et al., ["Language Models are Unsupervised Multitask Learners"](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) (the GPT-2 report), OpenAI, 2019.
+- Tom Brown et al., ["Language Models are Few-Shot Learners"](https://arxiv.org/abs/2005.14165), 2020: GPT-3, 175B parameters on 300B tokens, batch size 3.2M tokens (Table 2.1).
+- Jared Kaplan et al., ["Scaling Laws for Neural Language Models"](https://arxiv.org/abs/2001.08361), 2020: the $C \approx 6ND$ estimate.
+- Jordan Hoffmann et al., ["Training Compute-Optimal Large Language Models"](https://arxiv.org/abs/2203.15556), 2022: Chinchilla, 70B on 1.4T tokens.
+- Katherine Lee et al., ["Deduplicating Training Data Makes Language Models Better"](https://arxiv.org/abs/2107.06499), 2021.
+- Jack Rae et al., ["Scaling Language Models: Methods, Analysis and Insights from Training Gopher"](https://arxiv.org/abs/2112.11446), 2021: the quality filters.
+- Guilherme Penedo et al., ["The FineWeb Datasets"](https://arxiv.org/abs/2406.17557), 2024.
+- Abhimanyu Dubey et al., ["The Llama 3 Herd of Models"](https://arxiv.org/abs/2407.21783), 2024: 405B parameters, 15.6T tokens, 3.8 × 10²⁵ FLOP.
+- Andrej Karpathy, ["Let's build GPT: from scratch, in code, spelled out"](https://www.youtube.com/watch?v=kCc8FmEb1nY) and the [nanoGPT](https://github.com/karpathy/nanoGPT) repository.
+
+Corpus: Lewis Carroll, *Alice's Adventures in Wonderland* and *Through the Looking-Glass*, from Project Gutenberg (public domain). Next: [sampling](/learn/llms/sampling/).
+
+</Step>

@@ -1,0 +1,220 @@
+---
+title: "Computational Graphs"
+summary: "Write any calculation as a graph of small operations so gradients can be computed mechanically."
+day: 5
+track: neural-networks
+order: 1
+level: core
+duration: 25
+prereqs: ["neural-networks/mlp"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import BackpropViz from '../../../components/widgets/BackpropViz/BackpropViz.svelte';
+
+<Step title="Is a formula secretly a picture?">
+
+Here is a formula: $L = (a \cdot b + c)^2$. Read it aloud and you already describe a procedure. Multiply $a$ and $b$. Add $c$. Square the result. Nobody, human or computer, evaluates it in a single leap; it always happens in small steps, and each step uses the answers of the steps before it.
+
+Represent those steps as operation nodes and connect each node to the nodes whose answers it needs, and you have a **computational graph**. This lesson is about that picture, because everything in the rest of the day, the chain rule, the backward pass, PyTorch's autograd, is built on top of it.
+
+Watch it run with $a = 2$, $b = -3$, $c = 10$. Values enter on the left and flow rightward, one operation at a time, until the last node holds $L = 16$.
+
+<BackpropViz client:visible mode="expr" loopPhase="forward" title="A formula evaluated as a graph" />
+
+Why would anyone want the picture? Because a graph is something a program can hold in memory and walk over, in either direction. A formula on a page is just text. Once it is a graph, a machine can compute how sensitive $L$ is to each input without anyone deriving a formula by hand.
+
+</Step>
+
+<Step title="Nodes are operations, edges carry values">
+
+The vocabulary is small.
+
+- A **node** is one operation: multiply, add, square, $\tanh$, and so on. Each node does one job and has one output value.
+- An **edge** carries a value from the node that produced it into the node that uses it. Edges have a direction: from producer to consumer.
+- A node with no incoming edges is a **leaf**. Here the leaves are the inputs $a$, $b$ and $c$. In a neural network the leaves are the data and the weights.
+- The node with no outgoing edges is the **output**. For learning it is always the loss $L$, a single number.
+
+For our formula the graph has three operation nodes:
+
+- $m = a \cdot b$ takes edges from $a$ and $b$.
+- $s = m + c$ takes edges from $m$ and $c$.
+- $L = s^2$ takes one edge from $s$.
+
+With the numbers in the figure: $m = 2 \cdot (-3) = -6$, then $s = -6 + 10 = 4$, then $L = 4^2 = 16$. The figure below holds still at the moment every value is known, which is also how the network will look during the backward pass: every intermediate value has been computed and kept.
+
+<BackpropViz client:visible mode="expr" loopPhase="loss" title="Every node holds one value" />
+
+Notice that the graph has no cycles. A value can only depend on values computed earlier, so there is always an order in which the nodes can be evaluated, with every node after everything it needs. That order is called a **topological order**. Here it is forced: $m$, then $s$, then $L$.
+
+</Step>
+
+<Step title="Change an input and watch it recompute">
+
+The graph is not a diagram of one calculation; it is a recipe. Feed different numbers in and the same nodes give different values.
+
+Try it: in the figure below, set $c = 0$. Now $m = -6$ is unchanged, but $s = m + 0 = -6$, and $L = (-6)^2 = 36$. Only the nodes downstream of $c$ changed. The node $m$ did not, because nothing on its path to the leaves ($a$ and $b$) was touched.
+
+That observation, that a change to a leaf only reaches the nodes downstream of it, is the seed of the whole idea of gradients. Later in the day you will ask how much the output moves for a tiny change in $c$, and the answer will come from following exactly these edges.
+
+<BackpropViz client:visible mode="expr" loopPhase="forward" title="Edit a, b or c below the figure" />
+
+</Step>
+
+<Step title="Every node knows one small derivative">
+
+The graph earns its keep in one property. Each node performs a **very simple operation**, and for a very simple operation the derivative is a known formula. A node does not need to know about the rest of the graph to answer: *if my input changed a little, how much would my output change?* That is its **local derivative**.
+
+<table>
+<thead>
+<tr><th scope="col">Node</th><th scope="col">Output</th><th scope="col">Local derivatives</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">add</th><td>a + b</td><td>∂/∂a = 1, ∂/∂b = 1</td></tr>
+<tr><th scope="row">multiply</th><td>a · b</td><td>∂/∂a = b, ∂/∂b = a</td></tr>
+<tr><th scope="row">square</th><td>a²</td><td>∂/∂a = 2a</td></tr>
+<tr><th scope="row">tanh</th><td>tanh(a)</td><td>∂/∂a = 1 − tanh²(a)</td></tr>
+<tr><th scope="row">ReLU</th><td>max(0, a)</td><td>∂/∂a = 1 if a &gt; 0, else 0</td></tr>
+<tr><th scope="row">exp</th><td>eᵃ</td><td>∂/∂a = eᵃ</td></tr>
+</tbody>
+</table>
+
+Look at the multiply row: the local derivative with respect to one input is *the other input*. In our graph the multiply node has $a = 2$ and $b = -3$, so it reports $\partial m/\partial a = -3$ and $\partial m/\partial b = 2$. Those are exactly the numbers you will see on the edges when the gradient wave arrives. Click node $b$ in the figure to see the local derivatives in place; the panel on the right writes them out with the numbers.
+
+<BackpropViz client:visible mode="expr" loopPhase="backward" select="b" title="Local derivatives sit on the edges" />
+
+These numbers are computed at the values from the forward pass, so the forward values have to be kept. Combining them is the job of the next lesson, [the chain rule, visually](/learn/neural-networks/chain-rule-visually/).
+
+</Step>
+
+<Step title="When a value is used twice">
+
+So far every value fed exactly one node. Real formulas reuse values. Take $f = a \cdot b + a$. The variable $a$ appears twice, so the graph has **two edges leaving $a$**: one into the multiply node and one into the add node.
+
+The two edges are different routes by which $a$ influences $f$. The multiply route says: raising $a$ by 1 raises $a \cdot b$ by $b$. The add route says: raising $a$ by 1 raises the sum by 1 directly. Both happen at once, so the total effect is the sum:
+
+$$\frac{\partial f}{\partial a} = b + 1.$$
+
+With $a = 2$ and $b = -3$ we get $f = -4$ and $\partial f/\partial a = -3 + 1 = -2$. You can check it without any calculus: set $a = 2.001$ and get $f = 2.001 \cdot (-3) + 2.001 = -4.002$, a drop of $0.002$ for a step of $0.001$, so a slope of $-2$. When one value feeds several nodes, the gradients coming back along the separate edges **add up**. The lesson after next shows this in the network, where every input feeds three hidden units.
+
+<BackpropViz client:visible loopPhase="backward" initialPhase="update" select="x1" title="A network input fans out along three routes; its gradients add" />
+
+The network below demonstrates the same reuse rule with three consumers of $x_1$, rather than the two consumers in the scalar example above. Select $x_1$ to inspect each path's contribution.
+
+</Step>
+
+<Step title="The same function can have different graphs">
+
+The graph is not part of the mathematical function; it is a choice of how finely to cut the computation. The function $\tanh(z)$ could be one node with the local derivative $1 - \tanh^2(z)$. Or you could write $\tanh(z) = (e^{z} - e^{-z})/(e^{z} + e^{-z})$ and let the graph contain an exponential, a negation, two of them, an addition, a subtraction and a division. Both graphs compute the same numbers, and both give the same gradient.
+
+The difference is cost and convenience. Coarse nodes make short graphs but need someone to have derived and implemented each node's local derivative. Fine nodes need only a few primitives, but there are many more of them and each stores its own intermediate values. Real frameworks pick the middle: a library of a few hundred well-tested operations, each with a hand-written local derivative, and a graph made of them.
+
+</Step>
+
+<Step title="A neural network is a bigger graph">
+
+Now take the network from [Backpropagation Through an MLP](/learn/neural-networks/backprop-mlp/), the 2-3-1 network with tanh hidden units and squared-error loss. Cut it into single operations and count.
+
+- Each hidden unit has two multiplies, one add and one tanh: 4 nodes, so 12 for three units.
+- The output has three multiplies and two adds: 5 nodes.
+- The loss has a subtraction and a square: 2 nodes.
+
+That is 19 operation nodes fed by 12 leaves (two inputs, the target, and nine weights). The figure groups the operations inside each hidden unit and the output sum into larger nodes; its weighted connections are shown as edges. Underneath, it is one graph like the small one. The forward pass evaluates it in an order where every node comes after its inputs.
+
+<BackpropViz client:visible loopPhase="forward" title="The 2-3-1 network is a graph of 31 nodes" />
+
+The method did not change; only the size did. A large model is the same construction repeated, with one difference in practice: nodes hold whole arrays (a matrix multiply is one node) instead of single numbers, so a network with billions of numbers still has a graph of only some thousands of nodes.
+
+</Step>
+
+<Step title="Why the graph view is worth it">
+
+Three things follow from having the graph, and each matters later in the day.
+
+1. **It can be walked backward.** Every edge that carried a value forward can carry a derivative back. That is backpropagation, and it needs nothing beyond the local derivatives in the table above.
+2. **It can be built automatically.** When a program runs, an autodiff library can record each operation as it happens, creating the graph as a side effect. You never draw it. The lesson on [automatic differentiation](/learn/neural-networks/autodiff/) shows how.
+3. **It makes the cost predictable.** The backward pass visits each node once, so its cost is proportional to the size of the graph, roughly the cost of the forward pass.
+
+<details>
+<summary>Show the code</summary>
+
+A graph node in about ten lines of Python. Each node remembers its value, the nodes it came from and the operation, which is everything backpropagation will later need.
+
+```python
+class Value:
+    def __init__(self, data, children=(), op=''):
+        self.data, self.children, self.op = data, children, op
+
+    def __add__(self, other): return Value(self.data + other.data, (self, other), '+')
+    def __mul__(self, other): return Value(self.data * other.data, (self, other), '*')
+    def __pow__(self, k):     return Value(self.data ** k, (self,), f'**{k}')
+
+a, b, c = Value(2.0), Value(-3.0), Value(10.0)
+L = (a * b + c) ** 2
+
+print(L.data)                         # 16.0
+print(L.op, [n.op for n in L.children])   # **2 ['+']
+```
+
+Building `L` did two things at once: it computed the number and it recorded the graph. This is the whole trick behind PyTorch's autograd.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think the graph is a picture of the neural network's architecture. Actually** it is a picture of one *computation*: a specific forward pass on specific inputs, including the loss. The architecture is a template; the graph is what you get after you plug in data.
+
+**You might think the graph has to be drawn by the programmer. Actually** frameworks build it as the code runs, one node per operation. You write ordinary code and the graph appears as a by-product.
+
+**You might think each node needs to understand the whole formula. Actually** a node knows only its own operation and its own local derivative. All the global structure lives in how the nodes are connected.
+
+**You might think the graph is unique for a formula. Actually** the same function can be cut into coarser or finer nodes. All the cuts give identical values and identical gradients; they differ only in memory and speed.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. Draw the graph of f = (x + y) · x. How many operation nodes does it have, and how many edges leave x?</summary>
+
+**Two operation nodes**, an add ($x + y$) and a multiply. Two edges leave $x$: one into the add node and one into the multiply node. That fan-out is why gradients from two routes will have to be added.
+
+</details>
+
+<details>
+<summary>2. In the graph of (a·b + c)² with a = 2, b = −3, c = 10, which nodes change if you change only c from 10 to 0?</summary>
+
+Only $s$ and $L$. The node $m = a \cdot b = -6$ does not depend on $c$. New values: $s = -6$ and $L = 36$.
+
+</details>
+
+<details>
+<summary>3. Why must the graph have no cycles?</summary>
+
+A node's value is computed from the values of its inputs. If the graph had a cycle, some node's value would depend on itself and there would be no starting point for the forward pass. (Recurrent networks have loops in time, but they are **unrolled** into an acyclic graph, one copy per time step.)
+
+</details>
+
+<details>
+<summary>4. What is the local derivative of a multiply node m = u · v with respect to u?</summary>
+
+$v$, the other input, evaluated at the value it had in the forward pass.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Christopher Olah, [Calculus on Computational Graphs: Backpropagation](https://colah.github.io/posts/2015-08-Backprop/). The clearest introduction to the graph view and to why the direction of the sweep matters.
+- Andrej Karpathy, [micrograd](https://github.com/karpathy/micrograd). A complete scalar graph and backward pass in roughly a hundred lines.
+- Andreas Griewank and Andrea Walther, *Evaluating Derivatives: Principles and Techniques of Algorithmic Differentiation* (SIAM, 2nd ed., 2008). The reference text; it calls the recorded list of operations the "evaluation trace".
+- Baydin, Pearlmutter, Radul and Siskind, "Automatic differentiation in machine learning: a survey", *Journal of Machine Learning Research* 18 (2018). Graphs, tapes and how frameworks use them.
+
+Next: [the chain rule, visually](/learn/neural-networks/chain-rule-visually/).
+
+</Step>

@@ -1,0 +1,181 @@
+---
+title: "RLHF: Reward Models and PPO"
+summary: "Learn a reward model from human comparisons between responses, then optimise the policy against it with PPO while a KL penalty keeps it close to where it started."
+day: 12
+track: alignment
+order: 4
+level: advanced
+duration: 40
+prereqs: ["alignment/sft","alignment/ppo"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+People find it easier to rank two answers than to write a perfect one.
+
+<Step title="Comparing two answers">
+
+Instead of writing ideal responses, labelers are shown two responses to the same prompt and pick the one they prefer, which is faster and works even when they could not write the better answer themselves.
+
+{/*
+IDEA: preference data. Pairs sampled from the SFT policy (from /learn/alignment/sft/). Labelers are noisy and have biases.
+WIDGET: PreferenceLab mode="pairs" labels="human" pairs=200 seed=4. The day's policy over 8 candidate responses per prompt (src/lib/align). Simulated labelers choose by Bradley-Terry on gold utility plus a bias toward length and flattery, plus noise.
+MOTION over t: pairs appear as two response cards; the chosen card slides to the "chosen" column; a tally shows agreement with the gold ranking and how often the longer answer won.
+TRY: find a pair where the labeler picked the longer but wrong answer.
+NUMBERS: share of 200 labels that agree with gold; share where the longer response was chosen.
+Say once: the gold utility stands for what the person really wanted; real projects never see it, we can because we built the toy.
+*/}
+
+</Step>
+
+<Step title="The Bradley-Terry reward model">
+
+A reward model gives every response a score, trained so that the probability of preferring one response over another is the sigmoid of the difference of their scores.
+
+{/*
+IDEA: Bradley-Terry: P(y_w preferred to y_l) = sigma(r(y_w) - r(y_l)); train by logistic regression on pairs; scores are only defined up to a constant.
+WIDGET: PreferenceLab mode="reward-model" labels="human" pairs=200 steps=200. Feature-weight bars of the reward model next to the gold weights; pairwise accuracy on held-out pairs; the loss curve.
+MOTION over t: RM weights grow from 0 per training step; loss draws; accuracy counts.
+TRY: compare the reward model's weight on "length" with the gold weight.
+NUMBERS: held-out pairwise accuracy; RM vs gold weight on correct and on length.
+SHOW THE MATH: BT likelihood and loss -log sigma(r_w - r_l). SHOW THE CODE: reward-model loss in PyTorch.
+*/}
+
+</Step>
+
+<Step title="What the reward model learned">
+
+The reward model learns whatever predicted the labels, including the labelers' biases, and it is only checked on the kinds of responses it saw.
+
+{/*
+IDEA: a proxy. RM score vs gold score scatter for every candidate of every prompt; the rambling-wrong candidates sit off-trend, far outside the length range of training pairs.
+WIDGET: PreferenceLab mode="rm-bias". Scatter (x = gold, y = RM score), points coloured by candidate type; shaded band = range of lengths seen in training pairs.
+MOTION over t: points appear grouped by candidate type; a fitted trend line draws; the off-trend group highlights with --accent at the end.
+TRY: find the candidate with the highest RM score and read its gold score.
+NUMBERS: rank correlation between RM and gold (in-range vs all); RM and gold score of the top-RM candidate.
+*/}
+
+</Step>
+
+<Step title="Optimising the policy with PPO">
+
+The policy is then trained to produce responses the reward model scores highly, applying Day 11 PPO's clipped objective alongside a separate penalty for moving away from the SFT policy.
+
+{/*
+IDEA: application of /learn/alignment/ppo/, not a second introduction to PPO. Reuse its advantages, frozen old log-probabilities and clipped surrogate; here the actions are responses and the reward is learned. RL loop: sample responses from the current policy, score them, compute advantages, update with the PPO clipped objective; reward includes -beta (log pi - log pi_ref).
+WIDGET: PreferenceLab mode="ppo" labels="human" beta=0.1 iters=200 batch=64 seed=6. Top: candidate probability bars for one prompt (SFT reference as ghost bars). Bottom: three curves vs iteration: RM reward (proxy, --viz-forward), gold reward (--text dashed), KL to reference.
+MOTION over t: each iteration: 64 sampled responses fly as dots into the batch, get a score, bars and theta tween; curves draw.
+TRY: watch gold reward rise along with the proxy.
+NUMBERS: proxy, gold and KL at iterations 0 and 200; gold improvement over SFT.
+SHOW THE MATH: objective E[r(y)] - beta KL(pi || pi_ref); InstructGPT per-sample KL reward. Mention the per-prompt mean baseline stands in for PPO's value network.
+*/}
+
+</Step>
+
+<Step title="Inside one PPO update">
+
+Apply the clipped objective from Day 11 PPO to response probabilities, and inspect how the batch changes them over several epochs.
+
+{/*
+IDEA: link /learn/alignment/ppo/ for the general clipped objective and its limits; this step applies it to responses, rather than teaching PPO from scratch. Old policy = the policy that collected this batch; the SFT reference stays fixed across iterations. Ratio rho = pi_new(y)/pi_old(y); clipped surrogate min(rho A, clip(rho, 1-eps, 1+eps) A); clip fraction.
+WIDGET: PreferenceLab mode="ppo-clip" beta=0.1 iter=20 epochs=4 eps=0.2. One recorded iteration zoomed: histogram of ratios for the batch across the 4 epochs, the clip band shaded, samples with positive advantage in --viz-pos and negative in --viz-neg; the surrogate curve as a function of ratio for one sample.
+MOTION over t: four epochs play; ratios spread out; samples on the favourable-direction plateau fade; out-of-band samples on the penalized side still contribute. Clipping does not enforce a hard ratio or KL bound.
+TRY: compare the favourable-direction plateau fraction with the fraction whose ratios lie outside the band at epoch 4.
+NUMBERS: out-of-band fraction and favourable-direction plateau fraction per epoch for this iteration; probe and label them separately.
+SHOW THE MATH: recall PPO-clip from /learn/alignment/ppo/ (Schulman et al. 2017), then distinguish the refreshed collection policy from the fixed SFT reference.
+*/}
+
+</Step>
+
+<Step title="The KL penalty to the reference model">
+
+The KL penalty charges the policy for drifting from the SFT model, and its strength sets how much reward it is allowed to chase.
+
+{/*
+IDEA: beta trades proxy reward against staying close; the KL is computed exactly here (sum over 8 candidates, averaged over prompts).
+WIDGET: PreferenceLab mode="kl-sweep" betas="0.5,0.1,0.02,0" iters=200. Final gold reward and final KL for each beta as points; their training paths as faint lines in the (KL, reward) plane.
+MOTION over t: four runs advance together along their paths; dots move; gold and proxy readouts per run.
+TRY: find the beta with the best final gold reward.
+NUMBERS: final KL, proxy and gold per beta.
+*/}
+
+</Step>
+
+<Step title="Reward hacking">
+
+With no penalty, the policy finds the responses that the reward model overrates and puts nearly all its probability on them, so the measured reward climbs while the true quality falls.
+
+{/*
+IDEA: Goodhart. The proxy is exploited outside its training distribution.
+WIDGET: PreferenceLab mode="ppo" labels="human" beta=0 iters=200 seed=6. Same view as step 4, beta 0.
+MOTION over t: bars collapse onto the rambling-wrong candidate; proxy keeps rising; gold rises briefly then falls; an annotation marks the gold peak iteration.
+TRY: scrub to the gold peak and read the response the policy prefers there, then at the end.
+NUMBERS: gold peak iteration and value; final proxy and gold; final probability on the rambling candidate. PROBE FIRST: the effect must be visible; if not, the sim author tunes the bank/annotator bias (see plans/day-11.md).
+*/}
+
+</Step>
+
+<Step title="Over-optimisation as a curve">
+
+Plotting true quality against how far the policy has moved shows the typical shape: it rises at first, then falls once the policy starts exploiting the reward model.
+
+{/*
+IDEA: Gao et al. 2022: gold reward vs sqrt(KL) rises then falls, while proxy keeps rising.
+WIDGET: PreferenceLab mode="overopt" beta=0 iters=400. x = sqrt(KL) to reference, y = reward; proxy and gold curves of the beta 0 run; points of the kl-sweep runs overlaid.
+MOTION over t: both curves trace out as the run advances; the gap between them shades in.
+TRY: read the KL at which gold peaks.
+NUMBERS: sqrt(KL) at the gold peak; final gap between proxy and gold.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Common misunderstandings about RLHF.
+
+{/*
+NO WIDGET. Misconceptions:
+1. "The reward model knows what is good." It predicts labeler choices on the data it saw.
+2. "Higher reward-model score is always better." Past some point it means exploitation (Gao et al.).
+3. "The KL penalty is just regularisation for stability." It also keeps the policy where the reward model is trustworthy.
+4. "RLHF adds knowledge." It reweights behaviours the model can already produce.
+5. "Reward scores are absolute." Bradley-Terry scores are defined only up to a constant.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Questions on reward models and PPO.
+
+{/*
+NO WIDGET. Questions:
+1. Scores r(A) = 1.2, r(B) = 0.2: what preference probability does Bradley-Terry give?
+2. Why does the RM overrate the rambling answer even though labelers saw few of them?
+3. What does PPO's clip prevent?
+4. With beta = 0, why does the policy put almost all its probability on one candidate?
+5. How could you detect reward hacking without the gold reward? (held-out human evals, length audits)
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Primary papers on learning from human preferences.
+
+{/*
+NO WIDGET. References:
+- Paul Christiano et al., "Deep Reinforcement Learning from Human Preferences", arXiv:1706.03741.
+- Daniel Ziegler et al., "Fine-Tuning Language Models from Human Preferences", arXiv:1909.08593.
+- Nisan Stiennon et al., "Learning to summarize from human feedback", arXiv:2009.01325.
+- Long Ouyang et al., "Training language models to follow instructions with human feedback", arXiv:2203.02155.
+- Yuntao Bai et al., "Training a Helpful and Harmless Assistant with Reinforcement Learning from Human Feedback", arXiv:2204.05862.
+- John Schulman et al., "Proximal Policy Optimization Algorithms", arXiv:1707.06347.
+- Ralph Bradley and Milton Terry, "Rank Analysis of Incomplete Block Designs: I", Biometrika 39, 1952.
+- Leo Gao, John Schulman and Jacob Hilton, "Scaling Laws for Reward Model Overoptimization", arXiv:2210.10760.
+- Prasann Singhal et al., "A Long Way to Go: Investigating Length Correlations in RLHF", arXiv:2310.03716 (VERIFY).
+- Nathan Lambert, "Reinforcement Learning from Human Feedback" (online book, rlhfbook.com, VERIFY).
+Next: /learn/alignment/dpo/
+*/}
+
+</Step>

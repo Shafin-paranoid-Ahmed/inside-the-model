@@ -1,0 +1,197 @@
+---
+title: "Learning Rates and Schedules"
+summary: "Choose a workable learning rate, warm up Adam, decay the rate, and compare batch sizes."
+day: 6
+track: neural-networks
+order: 2
+level: core
+duration: 30
+prereqs: ["neural-networks/optimizers"]
+status: draft
+---
+
+import Step from '../../../components/ui/Step.astro';
+import ScheduleLab from '../../../components/widgets/ScheduleLab/ScheduleLab.svelte';
+
+The learning rate is the single number that most often decides whether training works. Too small and nothing happens; too large and the loss explodes. And the best value is not fixed: early in training you want big steps to make progress, late in training you want small ones to settle. A **schedule** changes the learning rate as training goes on.
+
+Every figure here trains the same two-weight ravine from the [optimizers lesson](/learn/neural-networks/optimizers/), so you can see every update. The top plot shows the learning rate; the bottom plot shows how far the loss is above its lowest possible value, on a log scale where each gridline is ten times smaller than the one above.
+
+<Step title="The learning rate scales an update">
+
+In gradient descent, the learning rate $η$ multiplies the slope before it is subtracted from the weights. Double the rate and every step doubles in length.
+
+Two runs start from the same weights. After 80 updates, the small rate (0.015) is still 0.017 above the minimum: it is heading the right way, just slowly. The workable rate (0.12) gets to within 0.0003. The box under the plots works out one update of the run you pick, so you can see the rate turn into an actual weight change.
+
+<ScheduleLab client:visible mode="rate" title="A small and a workable learning rate" />
+
+<details>
+<summary>Show the math</summary>
+
+For parameters $θ$, gradient $g_t$, and learning rate $η_t$, SGD updates
+
+$$θ_{t+1} = θ_t - η_t g_t.$$
+
+The toy ravine has curvature 3.4 along its steep direction. For full-batch gradient descent on this quadratic, a rate above $2/3.4 ≈ 0.588$ is unstable in that direction. The figure compares 0.015, 0.12, and 0.7, so the last path grows instead of settling.
+
+</details>
+
+</Step>
+
+<Step title="Too large a rate overshoots, then explodes">
+
+Now add a rate of 0.7. Across the steep side of the ravine, each step jumps past the valley floor and lands higher up the far wall than it started. The next step overshoots by even more. The loss grows on every update and leaves the top of the chart within a few steps; by update 80 it is about $10^{23}$.
+
+Where the cutoff sits depends on how steep the landscape is. Here it is about 0.59 (the math is below). A real network has no single number like this you can read off, which is why people try a few rates and watch the loss.
+
+<ScheduleLab client:visible mode="rate" unstable title="A rate of 0.7 makes every step overshoot further" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+for batch in batches:
+    gradient = mean(example_gradient(i, parameters) for i in batch)
+    parameters -= learning_rate * gradient
+```
+
+</details>
+
+</Step>
+
+<Step title="Warmup ramps Adam's actual update rate">
+
+**Warmup** starts the learning rate near zero and ramps it up over the first updates. It is common with Adam. In the first few updates, Adam's running averages are built from only a handful of slopes and can be badly off; small steps keep those early mistakes small.
+
+The warmup run here ramps from 0.012 to 0.24 over 20 updates; the other run uses 0.24 from the start. On this easy bowl the early averages do no harm, so the fixed run gets down first. Look what happens next, though: Adam's steps stay about 0.24 long however small the slope gets, so the fixed run overshoots and bounces back up to 1.06 above the minimum at update 20. Warmup is insurance for the start of training. This toy cannot show the failures it insures against, and it does nothing about the later bouncing. That needs a decay.
+
+<ScheduleLab client:visible mode="warmup" title="Adam with and without a 20-update warmup" />
+
+<details>
+<summary>Show the math</summary>
+
+This figure uses a linear warmup: $η_t = 0.24\min((t+1)/20, 1)$. Adam's parameter update uses this value after its moment estimates and bias correction are computed. Warmup is a practical heuristic studied for adaptive optimizers; it is not a guarantee that every Adam run needs warmup.
+
+</details>
+
+</Step>
+
+<Step title="Step decay lowers the rate at chosen milestones">
+
+With mini-batches, each update follows a slightly wrong slope. Near the bottom, those errors keep kicking the weights around, and a big learning rate turns small kicks into big jumps. A **step decay** keeps the rate high for a while, then cuts it (here to a quarter) at fixed points.
+
+Compare it with the same rate held constant. Before the first drop, the two runs are identical. After each drop, the step-decay run moves in smaller steps and stops jumping around, while the constant run keeps bouncing.
+
+<ScheduleLab client:visible mode="decay" only={['constant', 'step']} title="Step decay against a constant rate" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+if step < first_milestone:
+    learning_rate = peak_rate
+elif step < second_milestone:
+    learning_rate = peak_rate * 0.25
+else:
+    learning_rate = peak_rate * 0.25**2
+```
+
+</details>
+
+</Step>
+
+<Step title="Cosine and linear decay change the rate smoothly">
+
+Instead of sudden drops, you can lower the rate a little on every update. **Linear decay** goes down in a straight line. **Cosine decay** follows half a cosine wave: it stays near the peak for a while, falls fastest in the middle, then flattens out near the end. Cosine decay is a common default for training large models.
+
+All three decays start at 0.12 and end at 0.01. Over the last 20 updates, the constant run bounces as high as 0.055 above the minimum; all three decays stay below 0.0042.
+
+<ScheduleLab client:visible mode="decay" title="Step, cosine and linear decay against a constant rate" />
+
+<details>
+<summary>Show the math</summary>
+
+For update indices $t=0,\ldots,T-1$, let $p=t/(T-1)$, $η_{max}=0.12$, and $η_{min}=0.01$. Linear decay is $η_t=η_{max}+p(η_{min}-η_{max})$. Cosine decay is
+
+$$η_t=η_{min}+\frac{\eta_{max}-\eta_{min}}{2}(1+\cos(\pi p)).$$
+
+</details>
+
+</Step>
+
+<Step title="Batch size changes both noise and examples seen">
+
+A bigger batch averages more examples, so each slope is less noisy. But "is a bigger batch better?" depends on what you hold fixed.
+
+With **equal updates**, both runs take 80 steps, and batch 8 ends closer to the minimum (0.0015 versus 0.012). That is not a fair fight: batch 8 has looked at four times as many examples. Switch to **equal examples seen**. Now both runs see the same 160 examples, so batch 8 gets only 20 updates, and the two runs finish level at about 0.012 above the minimum.
+
+<ScheduleLab client:visible mode="batch" title="Compare batch size at equal updates or examples" />
+
+<details>
+<summary>Show the math</summary>
+
+For a batch $B_t$, the estimated gradient is $g_t=\frac{1}{|B_t|}\sum_{i\in B_t}\nabla L_i(\theta_t)$. In this figure, the sample order is paired. Equal updates compare different example counts; equal examples seen compares different numbers of parameter updates.
+
+</details>
+
+</Step>
+
+<Step title="A batch-size scaling rule has conditions">
+
+If a bigger batch takes fewer, less noisy steps, maybe each step can be longer. The **linear scaling rule** says: multiply the batch by $k$, multiply the learning rate by $k$ too. Goyal et al. (2017) used it, together with warmup, to train an ImageNet model with batches of 8,192 images.
+
+Here batch 8 uses four times the rate, 0.32. After its first update it is already 0.26 above the minimum, while batch 2 at 0.08 is still 7.9 above. It is a rule of thumb that works in some settings, not a law: push the rate past the stability limit and it fails like the 0.7 run above.
+
+<ScheduleLab client:visible mode="batch" scaled title="Batch 8 with a four times larger learning rate" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- You might think a schedule rescues any learning rate. Actually, a schedule still needs useful start and end values; a badly chosen scale can make updates ineffective or unstable.
+- You might think warmup changes Adam's moment equations. Actually, this figure changes the outer learning rate while Adam's moments continue to update from each gradient.
+- You might think a larger batch is automatically better. Actually, equal updates process more examples with a larger batch, while equal examples seen allow it fewer updates; those are different comparisons.
+- You might think linear batch-size scaling is guaranteed for Adam. Actually, it is an empirical SGD heuristic studied under specific large-batch training conditions.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>Why does the 0.7 rate diverge in the toy ravine?</summary>
+
+Its steep-direction curvature is 3.4, whose full-batch quadratic stability limit is approximately $2/3.4=0.588$. The rate 0.7 crosses that limit.
+
+</details>
+
+<details>
+<summary>What changes during Adam warmup in this figure?</summary>
+
+The outer learning rate rises over the first 20 updates. Adam's moment estimates are updated from the gradients throughout those steps.
+
+</details>
+
+<details>
+<summary>Why do cosine and linear decay produce different paths when they share endpoints?</summary>
+
+They use different rates at intermediate updates, so each can move the parameters by a different amount before reaching the same final rate.
+
+</details>
+
+<details>
+<summary>What is different between equal updates and equal examples seen?</summary>
+
+At equal updates, the larger batch processes more examples. At equal examples seen, the larger batch makes fewer parameter updates.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Loshchilov and Hutter, [SGDR: Stochastic Gradient Descent with Warm Restarts](https://arxiv.org/abs/1608.03983) (2016), introduces cosine annealing with warm restarts.
+- Goyal et al., [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677) (2017), studies linear learning-rate scaling and warmup for large-batch SGD on ImageNet.
+- Liu et al., [On the Variance of the Adaptive Learning Rate and Beyond](https://arxiv.org/abs/1908.03265) (2019), analyzes warmup for adaptive optimization and proposes RAdam.
+- Review [SGD, Momentum, RMSProp and Adam](/learn/neural-networks/optimizers/) to see the update rules this lesson schedules.
+
+</Step>

@@ -1,0 +1,184 @@
+---
+title: "Embeddings: Words as Points in Space"
+summary: "Each token ID indexes a learned vector; similar meanings end up nearby."
+day: 9
+track: transformers
+order: 2
+level: core
+duration: 25
+prereqs: ["transformers/tokenization","math/vectors"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import EmbeddingSpace from '../../../components/widgets/EmbeddingSpace/EmbeddingSpace.svelte';
+
+A model can only do arithmetic on numbers, and a token ID is just a label. How do you turn the label into numbers that capture what a word means?
+
+<Step title="The embedding table is a lookup">
+
+The [tokenizer](/learn/transformers/tokenization/) hands the model integer IDs. The model keeps a table with one row of numbers for every ID, and it replaces each ID with its row. That row is the token's **embedding**, a list of numbers that stands for the token. The table is the **embedding matrix**: $V$ rows for a vocabulary of $V$ tokens, and $d$ columns for the length of each row.
+
+The small language model used in this day's lessons, TinyLM, has a vocabulary of only 34 whole words, so $V = 34$, and each row has $d = 16$ numbers: a table of 544 numbers. Real models feed in BPE tokens instead of whole words, with tables of tens of thousands of rows, but the lookup is the same.
+
+Watch the sentence `[start] these small sheep chase a red fox` go through the table. Take `sheep`: its ID is 20, so the model copies row 20, which begins −0.13, 0.04, 0.55, −0.25. After the last token the sentence is an 8 by 16 matrix, one row per token. Blue cells are positive numbers and orange cells are negative ones.
+
+<EmbeddingSpace client:visible mode="lookup" title="Each token ID copies one row of the table" />
+
+<details>
+<summary>Show the math</summary>
+
+Write the token as a one-hot vector $x$: 34 numbers, all zero except a 1 at position $i$. Multiplying it by the table $E$ picks out row $i$:
+
+$$x^\top E = E_{i,:}$$
+
+So the lookup is an ordinary linear layer that happens to be fast, because nobody needs to multiply by all those zeros.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import torch
+import torch.nn as nn
+
+emb = nn.Embedding(34, 16)               # the table: 34 rows, 16 columns
+ids = torch.tensor([0, 5, 8, 20, 29, 4, 10, 16])
+rows = emb(ids)                          # shape (8, 16): one row per token
+same = torch.nn.functional.one_hot(ids, 34).float() @ emb.weight
+assert torch.allclose(rows, same)        # lookup equals one-hot times the table
+```
+
+</details>
+
+</Step>
+
+<Step title="Learned by training, not designed by hand">
+
+Nobody writes these numbers. The table starts as random numbers, and training changes it like any other weight of the network: each update nudges the rows to make the model's next-word guesses a little better. Words that are used in the same places in sentences get nudged in similar ways, so they drift together.
+
+Here are all 34 words as points. A 16-number row cannot be drawn directly, so each point is placed using the two directions in which the trained table varies most. Those two directions are the same for all eight checkpoints saved during training, so movement on the page is real movement. Colours show word classes.
+
+Follow `cat` and `dog`. At step 0 the rows are random, and `cat` and `dog` even point in fairly opposite directions: the cosine of the angle between them (a closeness measure defined in the next step) is −0.642. By step 857 it is 0.957, and at the end of training, step 6,000, it is 0.989. Most of the change happens early.
+
+<EmbeddingSpace client:visible mode="training" title="From random numbers to word groups" />
+
+</Step>
+
+<Step title="Similarity as cosine or dot product">
+
+To ask how alike two words are, compare their rows as arrows. The **dot product** multiplies matching numbers and adds them up; it is large when the arrows point the same way, and it also grows with their lengths. The **cosine similarity** divides the dot product by both lengths, leaving only the angle: 1 means the same direction, 0 means perpendicular, and −1 means opposite. The [dot product lesson](/learn/math/dot-product/) shows the geometry.
+
+The bars show the cosine between the probe word and each of the other 33 words, sorted. For `cat` the closest words are `fox` (0.996), `bird` (0.996) and `dog` (0.989); `eats` has cosine −0.231, pointing a little away. Switch to the dot product and the scale changes, because it also depends on row length. For `cat` the dot product with `fox` is 0.776, well below the cosine, since both rows are shorter than 1 (0.878 and 0.887). For `eats` the dot product with `sees` is 1.346, above 1, because both rows are longer than 1 (1.213 and 1.193). Dot products matter because [attention](/learn/transformers/self-attention/) will use them directly.
+
+Try the probe menu: pick `red` and see that its closest words are the other adjectives.
+
+<EmbeddingSpace client:visible mode="similarity" title="Cosine similarity of every word to the probe" />
+
+<details>
+<summary>Show the math</summary>
+
+$$\cos(a, b) = \frac{a \cdot b}{\lVert a \rVert \, \lVert b \rVert} = \frac{\sum_k a_k b_k}{\sqrt{\sum_k a_k^2}\,\sqrt{\sum_k b_k^2}}$$
+
+</details>
+
+</Step>
+
+<Step title="A 2D map of the space">
+
+Sixteen numbers per word cannot be drawn, so we flatten them onto a page. **Principal component analysis** (PCA, see [PCA](/learn/classic-ml/pca/)) finds the two directions along which the points are most spread out and draws each point's position along them. The flattening keeps the broad layout but squeezes some distances.
+
+The map keeps 43.5% of the spread. The layout shows groups: animals, foods, verbs, determiners and adjectives each sit together, and the singular and plural nouns of one kind form separate rows. Because 56.5% of the spread is left off the page, nearness on the map is only a hint; the numbers beside the picture come from all 16 dimensions.
+
+Look at `sheep`, which is both singular and plural. It sits between the singular and the plural nouns, and its nearest words in 16 numbers are `fox` (0.528), `dog` (0.519) and `bird` (0.516), far less close than the animals are to each other.
+
+<EmbeddingSpace client:visible mode="projection" select="sheep" title="The 34 words on a flat map" />
+
+</Step>
+
+<Step title="Directions carry meaning">
+
+A difference between two vectors is an arrow. If the arrow from `cat` to `cats` means "make it plural", the same arrow should work on `dog`. Add the offset $\text{cats} - \text{cat}$ to `dog` and look for the word nearest to the result.
+
+That works here: the nearest word is `dogs`, cosine 0.985. The offset from `cat` to `cats` and the offset from `dog` to `dogs` are almost the same direction, with cosine 0.992. But `birds` (0.980) and `foxes` (0.967) are almost as close. In this tiny model every animal noun has nearly the same vector, so the sum lands on the plural animals as a group, and `dogs` wins by a small margin. Use the menu for other pairs, or cycle through all of them.
+
+This idea comes from [Mikolov and colleagues (2013)](https://arxiv.org/abs/1301.3781), where $\text{king} - \text{man} + \text{woman}$ lands near `queen`. In real models such analogies hold less reliably than the famous examples suggest, partly because the input words must be excluded from the answer ([Linzen, 2016](https://arxiv.org/abs/1606.07736)).
+
+<EmbeddingSpace client:visible mode="arithmetic" title="Copy a difference from one word to another" />
+
+</Step>
+
+<Step title="Static versus contextual embeddings">
+
+The embedding table gives a word the same row every time. That is a problem for `sheep`, which is spelled the same in the singular and the plural: only the word before it tells which is meant. A **contextual** embedding is the vector for a word after the transformer's layers have mixed in its neighbours (how they mix is the topic of [self-attention](/learn/transformers/self-attention/)).
+
+Compare `sheep` in `this small sheep` and `these small sheep`. After the table plus the word's position they are identical (cosine 1.000). After block 1 the cosine is 0.881, and after block 2 it is 0.172: the model has pushed them to different sides. The blue and orange dots are singular and plural nouns from 200 generated sentences, at the same stage.
+
+Tick the box to add `the small sheep`. The word `the` allows either number, and the vector lands between the two: its cosine is 0.735 with the `this` sheep and 0.774 with the `these` sheep after block 2.
+
+<EmbeddingSpace client:visible mode="contextual" title="One word, three stages of context" />
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think each of the 16 numbers means one thing, such as "animal-ness".** Actually meaning is spread across directions in the space, and rotating the whole space would work equally well for the model.
+- **You might think a 2D picture shows true distances.** Actually flattening drops most of the spread (here 56.5%). Trust similarities computed from all the numbers.
+- **You might think embeddings are a hand-built dictionary.** Actually they are parameters that start random and are learned by training.
+- **You might think a word has one vector inside a transformer.** Actually only the input row is fixed. After the layers, each vector depends on the sentence.
+- **You might think word analogies always work.** Actually they are partly an artefact of excluding the input words, and often fail for other pairs.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. Why is an embedding lookup the same as multiplying a one-hot vector by a matrix?</summary>
+
+The one-hot vector has a single 1 at position $i$ and zeros elsewhere, so the product keeps only row $i$ of the matrix.
+
+</details>
+
+<details>
+<summary>2. Two vectors are (2, 0) and (4, 0). What are their cosine similarity and dot product?</summary>
+
+The cosine is 1 (same direction) and the dot product is 8.
+
+</details>
+
+<details>
+<summary>3. Why do "cat" and "dog" end up close after training on our grammar?</summary>
+
+They appear in exactly the same places in sentences, so training nudges both rows in the same way.
+
+</details>
+
+<details>
+<summary>4. What does the model have to do so that "sheep" ends up meaning a plural?</summary>
+
+The table gives one row for `sheep`, so the later layers must look at the determiner and move the vector toward the singular or plural side.
+
+</details>
+
+<details>
+<summary>5. How many numbers are in a 50,000 by 1,024 embedding table?</summary>
+
+50,000 × 1,024 = 51.2 million.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Yoshua Bengio, Réjean Ducharme, Pascal Vincent, Christian Jauvin, [A Neural Probabilistic Language Model](https://jmlr.org/papers/v3/bengio03a.html), JMLR, 2003.
+- Tomas Mikolov et al., [Efficient Estimation of Word Representations in Vector Space](https://arxiv.org/abs/1301.3781), 2013, and [Distributed Representations of Words and Phrases and their Compositionality](https://arxiv.org/abs/1310.4546), NeurIPS 2013.
+- Jeffrey Pennington, Richard Socher, Christopher Manning, [GloVe: Global Vectors for Word Representation](https://aclanthology.org/D14-1162/), EMNLP 2014.
+- Matthew Peters et al., [Deep contextualized word representations](https://arxiv.org/abs/1802.05365) (ELMo), NAACL 2018.
+- Kawin Ethayarajh, [How Contextual are Contextualized Word Representations?](https://arxiv.org/abs/1909.00512), EMNLP 2019.
+- Tal Linzen, [Issues in evaluating semantic spaces using word analogies](https://arxiv.org/abs/1606.07736), 2016.
+- Jay Alammar, [The Illustrated Word2vec](https://jalammar.github.io/illustrated-word2vec/), 2019.
+
+Next: [self-attention](/learn/transformers/self-attention/).
+
+</Step>

@@ -1,0 +1,208 @@
+---
+title: "The RNN Cell and Hidden State"
+summary: "One cell, reused at every step, mixes the current input with its previous hidden state."
+day: 8
+track: sequences
+order: 2
+level: core
+duration: 25
+prereqs: ["sequences/why-memory","math/matrices"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+
+<Step title="A cell with a memory">
+
+The [last lesson](/learn/sequences/why-memory/) ended with a wish: read a sequence one item at a time and carry a summary forward. Here is the machine that does it.
+
+At the center is a **cell**. Each time step it receives two things: the next input $\mathbf x_t$ (here, one character turned into four numbers) and its own previous summary $\mathbf h_{t-1}$. It combines them and produces a new summary $\mathbf h_t$, called the **hidden state**. The loop arrow feeds $\mathbf h_t$ back into the same cell for the next step.
+
+Watch the folded cell first. The teal dot travels around the loop: that is the state going back in. Then the cell unrolls into one copy per character of "hello" so you can see each time step. The next lesson is about that unrolled view; this one is about what happens *inside* a step.
+
+<RNNUnroller client:visible sequence="hello" folded showPanel={false} maxLen={8} title="A recurrent cell reading “hello”" />
+
+</Step>
+
+<Step title="The update rule">
+
+Inside a step there is one formula, and everything else in this day is a variation on it:
+
+$$\mathbf h_t = \tanh\!\bigl(W_{xh}\,\mathbf x_t + W_{hh}\,\mathbf h_{t-1} + \mathbf b\bigr).$$
+
+Read it left to right. $W_{xh}\mathbf x_t$ is what the new input contributes. $W_{hh}\mathbf h_{t-1}$ is what the old state contributes. Add them and a bias $\mathbf b$, then squash with $\tanh$ so every entry stays between $-1$ and $1$. The very first step has no previous state, so we start from $\mathbf h_0 = \mathbf 0$.
+
+The figure below is pinned to step 2, where the network reads "e". Click other time steps under the chain to move the panel. It lists the actual vectors: the input, the two contributions, their sum, and the new state. Take the first unit of the hidden state. The input contributes $0.78$, the old state contributes $0.28$, the bias is $0$, so the sum is $1.06$ and $\tanh(1.06) = 0.79$. That number is the first entry of the $\mathbf h_2$ row in the panel, and the first cell of the strip above the cell.
+
+<RNNUnroller client:visible sequence="hello" folded={false} select={2} loopPhase="forward" title="One update, with the real numbers (step 2 pinned)" />
+
+<details>
+<summary>Show the math</summary>
+
+The sizes in this widget are small on purpose: an input of $D = 4$ numbers and a hidden state of $H = 4$ numbers. Then
+
+$$W_{xh} \in \mathbb R^{H\times D},\qquad W_{hh} \in \mathbb R^{H\times H},\qquad \mathbf b \in \mathbb R^{H}.$$
+
+For "e" at step 2 the input is $\mathbf x_2 = (-0.417,\,-0.926,\,0,\,0)$ and the state from step 1 is $\mathbf h_1 = (-0.068,\,0.660,\,-0.279,\,-0.128)$. The first rows of the two matrices are $(-0.588,\,-0.577,\,-0.948,\,-0.200)$ and $(0.723,\,0.226,\,-0.420,\,-0.500)$. So for the first unit
+
+$$
+\begin{aligned}
+(W_{xh}\mathbf x_2)_1 &= (-0.588)(-0.417) + (-0.577)(-0.926) = 0.780,\\
+(W_{hh}\mathbf h_1)_1 &= (0.723)(-0.068) + (0.226)(0.660) + (-0.420)(-0.279) + (-0.500)(-0.128) = 0.281,\\
+h_{2,1} &= \tanh(0.780 + 0.281 + 0) = \tanh(1.061) = 0.786.
+\end{aligned}
+$$
+
+A **character vector** here is four fixed numbers: two arbitrary ones from a seeded table, plus flags for "is a digit" and "is a separator". A real model learns these input vectors (embeddings) along with everything else.
+
+</details>
+
+</Step>
+
+<Step title="The hidden state is a running summary">
+
+Now let the whole word play through. After each character the strip above the cell shows the current hidden state. Notice three things.
+
+**It is a fixed-size vector.** Whether the sequence is one character or eight, the summary is always these four numbers.
+
+**It depends on the whole prefix.** The first "l" and the second "l" are the same input, yet the states after them differ. The figure is pinned to step 3, the first "l": $\mathbf h_3 = (0.63,\,-0.58,\,0.42,\,0.16)$. Click step 4, the second "l", and the panel shows $\mathbf h_4 = (-0.07,\,-0.31,\,0.78,\,0.26)$. The state remembers that different things came before.
+
+**It only looks backward.** Type "hell" into the box: its four states are exactly the first four states of "hello". A state can only depend on what has been read so far, never on what comes next.
+
+<RNNUnroller client:visible sequence="hello" folded={false} select={3} loopPhase="forward" title="The hidden state after each character (step 3 pinned)" />
+
+</Step>
+
+<Step title="The same weights at every step">
+
+The cell at step 1 and the cell at step 8 are not two different cells. They are **one cell used again and again**, so $W_{xh}$, $W_{hh}$ and $\mathbf b$ are the same numbers at every time step. This is called **weight sharing**, or parameter tying.
+
+It answers the problem from the last lesson. The number of parameters does not depend on how long the sequence is: $W_{xh}$ has $16$ numbers, $W_{hh}$ has $16$, $\mathbf b$ has $4$, so $36$ in total for one, eight or a thousand steps. And whatever the cell learns about a character it learns at every position at once, because there is only one set of weights to learn it in.
+
+Try it: delete some characters from the box, or type up to eight. The chain gains or loses copies of the cell, but every copy uses the same 36 numbers, so the model itself does not change.
+
+<RNNUnroller client:visible sequence="abcdefgh" folded={false} maxLen={8} showPanel={false} loopPhase="forward" title="Eight steps, one set of weights" />
+
+</Step>
+
+<Step title="Order changes the state">
+
+Now the payoff. The cell is applied in reading order, and each state feeds the next, so the final state depends on the order the characters arrive in. The sequence below is "abc". Type "cba" in the box: the same three characters reversed.
+
+The final state of "abc" is $(0.83,\,0.48,\,0.48,\,-0.10)$. The final state of "cba" is $(0.62,\,0.81,\,0.25,\,-0.05)$. The distance between them is about $0.46$. With a bag of words the two would be identical. With the recurrent cell, order is part of the answer.
+
+<RNNUnroller client:visible sequence="abc" folded={false} maxLen={8} loopPhase="forward" title="Type “cba” and compare the last state" />
+
+</Step>
+
+<Step title="Reading out an answer">
+
+The hidden state is a summary; to get an answer we read it out with an ordinary layer. In this widget the readout is a single number per step:
+
+$$\hat y_t = \mathbf v^{\top}\mathbf h_t.$$
+
+For "hello" the readouts are $-0.51,\,-0.17,\,0.55,\,0.53,\,-0.32$; they appear above each cell as the state is written. What you do with them depends on the task:
+
+<table>
+<thead>
+<tr><th scope="col">Pattern</th><th scope="col">Use the readout at</th><th scope="col">Example</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">many to one</th><td>the last step only</td><td>sentiment of a review</td></tr>
+<tr><th scope="row">many to many, aligned</th><td>every step</td><td>tagging each word with a part of speech</td></tr>
+<tr><th scope="row">one to many</th><td>every step, feeding outputs back in</td><td>image captioning</td></tr>
+<tr><th scope="row">many to many, unaligned</th><td>an encoder, then a decoder</td><td>translation (the last lesson of the day)</td></tr>
+</tbody>
+</table>
+
+<RNNUnroller client:visible sequence="hello" folded={false} showPanel={false} loopPhase="forward" title="A readout after every hidden state" />
+
+<details>
+<summary>Show the code</summary>
+
+The same cell in NumPy (with its own random weights, so the numbers differ from the figure). The loop is the whole model: one set of weights, applied once per input.
+
+```python
+import numpy as np
+
+D, H = 4, 4
+rng = np.random.default_rng(0)
+W_xh = rng.normal(0, 0.5, (H, D))
+W_hh = np.linalg.qr(rng.normal(size=(H, H)))[0]   # orthogonal: all singular values 1
+b = np.zeros(H)
+v = rng.normal(0, 0.7, H)
+
+def run_rnn(xs):
+    h = np.zeros(H)                 # h_0
+    states, outputs = [], []
+    for x in xs:                    # one time step per input
+        h = np.tanh(W_xh @ x + W_hh @ h + b)
+        states.append(h)
+        outputs.append(v @ h)       # y_hat_t
+    return np.array(states), np.array(outputs)
+```
+
+In PyTorch, `torch.nn.RNN(input_size=4, hidden_size=4)` does the same loop, with `nonlinearity='tanh'` by default.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think there is one hidden unit per time step. Actually** the hidden state has a fixed number of units (four here) and the *same* units are rewritten at every step. The unrolled picture draws a copy of the cell per step, but the weights are shared.
+
+**You might think each time step has its own weights. Actually** $W_{xh}$, $W_{hh}$ and $\mathbf b$ are identical at every step. That is why the parameter count does not grow with sequence length.
+
+**You might think the hidden state stores the input. Actually** it stores a learned, squashed, lossy summary. Old inputs are mixed in through repeated multiplication by $W_{hh}$ and repeated $\tanh$, so their influence fades unless the weights work to keep them.
+
+**You might think the network can look ahead. Actually** $\mathbf h_t$ depends only on $\mathbf x_1,\dots,\mathbf x_t$. To use later context you need a second network that reads backward (a bidirectional RNN) or a different architecture.
+
+**You might think $\mathbf h_0 = \mathbf 0$ is required. Actually** it is a convention. The starting state can be any fixed vector, and some models learn it as a parameter.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. A cell has an input of 10 numbers and a hidden state of 20 numbers. How many parameters does the update $\tanh(W_{xh}\mathbf x_t + W_{hh}\mathbf h_{t-1} + \mathbf b)$ have, and how does that change for a sequence twice as long?</summary>
+
+$W_{xh}$ is $20 \times 10 = 200$, $W_{hh}$ is $20\times 20 = 400$, and $\mathbf b$ is $20$, so $620$. It does **not** change for a longer sequence, because the same weights are reused at every step.
+
+</details>
+
+<details>
+<summary>2. Why are the states after the first and the second "l" in "hello" different, when the input is the same?</summary>
+
+The state is $\mathbf h_t = \tanh(W_{xh}\mathbf x_t + W_{hh}\mathbf h_{t-1} + \mathbf b)$. The input term is the same both times, but $\mathbf h_{t-1}$ differs: before the first "l" the network had read "he", before the second it had read "hel". The second term therefore differs, and so does the result.
+
+</details>
+
+<details>
+<summary>3. In the update, the sum passes through $\tanh$ before it becomes $\mathbf h_t$. What range are the entries of $\mathbf h_t$ in, and why is that useful?</summary>
+
+Between $-1$ and $1$. The state is fed back into the same computation at every step, so a squashing function keeps it from growing without bound over a long sequence.
+
+</details>
+
+<details>
+<summary>4. You type the same characters in a different order and the final hidden state changes. Which part of the formula is responsible?</summary>
+
+The recurrence: $\mathbf h_{t-1}$ enters each step through $W_{hh}$, so each step's result depends on what came before. A sum or a bag ignores this because it never feeds a running state back in.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Jeffrey Elman, "Finding structure in time", *Cognitive Science* 14(2), 179-211 (1990). The architecture in this lesson: a hidden layer whose previous values are fed back as extra input. The "simple recurrent network" is often called an Elman network.
+- Goodfellow, Bengio and Courville, [Deep Learning, section 10.2: Recurrent Neural Networks](https://www.deeplearningbook.org/contents/rnn.html). The same equations, with the readout and the design patterns.
+- Andrej Karpathy, [min-char-rnn.py](https://gist.github.com/karpathy/d4dee566867f8291f086). A whole character-level RNN, forward and backward pass, in about a hundred lines of NumPy.
+- [PyTorch documentation: torch.nn.RNN](https://pytorch.org/docs/stable/generated/torch.nn.RNN.html). The equation used here, including the shape of every tensor.
+
+Next: [Unrolling through time](/learn/sequences/unrolling/).
+
+</Step>

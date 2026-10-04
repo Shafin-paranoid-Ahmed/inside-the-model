@@ -1,0 +1,184 @@
+---
+title: "k-Means Clustering"
+summary: "Group unlabeled points by alternating between assigning to centroids and moving centroids."
+day: 3
+track: classic-ml
+order: 5
+level: core
+duration: 20
+prereqs: ["math/vectors"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import KMeansLab from '../../../components/widgets/KMeansLab/KMeansLab.svelte';
+
+<Step title="Structure without labels">
+
+So far in this track every point came with an answer: a class to predict, a number to fit. Much data does not. Think of customers with no segments, genes with no families, or the 120 grey points below. Each has two measurements and nothing else. **Unsupervised learning** asks whether the data has structure we can find without anyone telling us what to look for.
+
+Look at the grey points. Your eye already sees three loose clumps. **Clustering** is the job of making that judgement precise: split the points into groups so that points in the same group are close together. Watch the timeline. At first nothing is coloured. Then the colours fade in, and they come from **k-means**, which was told one thing: how many groups to find, $k = 3$.
+
+<KMeansLab client:visible mode="structure" title="120 unlabelled points, then the three groups k-means finds" />
+
+The bars on the right count the points in each group as the colours appear. Here each group gets exactly 40 points, the same number that were generated around each centre, but the algorithm never saw that. Click the plane to add a point of your own and watch k-means absorb it.
+
+</Step>
+
+<Step title="The assign step: nearest centroid">
+
+k-means describes each group by one point, its **centroid**: the centre of the group. The algorithm needs a centroid for each of the $k$ groups before it can start. For now, take $k$ random data points as the starting centroids (the heavy circles).
+
+The first half of each round is the **assign step**: every point joins the group of its nearest centroid, using ordinary straight-line distance. Watch the points take their colours, and notice the shaded regions. The plane is split into one territory per centroid, and a point's group is simply the territory it lies in. The straight border between two territories is the set of spots equally far from both centroids.
+
+With these starting centroids, the first assignment puts 65 points in cluster 1, 49 in cluster 2 and only 6 in cluster 3. That is a poor split, and **inertia** says so. Inertia is the sum, over all points, of the squared distance to the centroid of its group. It is 115.8 after this first assignment. Smaller means tighter groups.
+
+<KMeansLab client:visible mode="assign" title="Assign: every point joins its nearest centroid" />
+
+Hover a point to see its squared distance to every centroid; the nearest one is bold. Then drag a starting centroid somewhere else and watch the territories and the colours follow.
+
+<details>
+<summary>Show the math</summary>
+
+With points $x_i$ and centroids $\mu_1, \dots, \mu_k$, the assignment of point $i$ is
+
+$$a_i = \arg\min_{c} \lVert x_i - \mu_c \rVert^2,$$
+
+and the inertia is
+
+$$J = \sum_{i=1}^{n} \lVert x_i - \mu_{a_i} \rVert^2.$$
+
+Squared distance and plain distance have the same nearest centroid. We use the square because it makes the next step a clean average.
+
+</details>
+
+</Step>
+
+<Step title="The update step, and convergence">
+
+The second half of a round is the **update step**: every centroid moves to the **mean** of the points that chose it. In the figure each centroid glides there, and its path stays behind as a trail. Because the centroids moved, some points are now closer to a different one, so the next assign step recolours them. Then the centroids move again. That alternation is the whole algorithm, and it is also called **Lloyd's algorithm**.
+
+Watch the chart on the right. Inertia drops in both halves of every round: the assign step can only lower it, because each point picks its closest centroid, and so can the update step, because the mean is the point that minimises the total squared distance to a group. From a random start the run below takes 7 rounds. The number of points that change group goes 120 (everything is new in round 1), then 15, 9, 20, 18, 1, and finally 0. Inertia goes from 115.8 after the first assignment down to 14.8.
+
+In round 7 no point changes group, so the update has nothing to do and the centroids stay put. The algorithm has **converged**. It always does: inertia can never rise, and there are only finitely many ways to split the points into groups, so the process cannot go on forever.
+
+<KMeansLab client:visible mode="update" title="Assign, update, repeat until no point changes group" />
+
+Scrub the timeline back and forth, or press New random start to see a run with a different number of rounds.
+
+<details>
+<summary>Show the math</summary>
+
+For a group $S_c$ of points, the centroid that minimises $\sum_{i \in S_c} \lVert x_i - \mu \rVert^2$ is the mean. Setting the gradient to zero gives
+
+$$\nabla_\mu \sum_{i \in S_c} \lVert x_i - \mu \rVert^2 = -2 \sum_{i \in S_c} (x_i - \mu) = 0 \quad\Longrightarrow\quad \mu_c = \frac{1}{\lvert S_c \rvert} \sum_{i \in S_c} x_i.$$
+
+So the assign step minimises $J$ over the assignments with the centroids held fixed, and the update step minimises $J$ over the centroids with the assignments held fixed. This is coordinate descent on $J$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def kmeans(X, centroids, max_iter=40):
+    labels = None
+    for _ in range(max_iter):
+        d2 = ((X[:, None, :] - centroids[None, :, :]) ** 2).sum(-1)   # n x k squared distances
+        new = d2.argmin(axis=1)                                      # assign: nearest centroid
+        if labels is not None and (new == labels).all():
+            break                                                    # nothing moved: converged
+        labels = new
+        for c in range(len(centroids)):
+            if (labels == c).any():
+                centroids[c] = X[labels == c].mean(axis=0)           # update: mean of the group
+    return labels, centroids
+```
+
+</details>
+
+</Step>
+
+<Step title="Initialization: where you start matters">
+
+The guarantee above has a catch. k-means always converges, but only to a **local minimum** of inertia: a split that no single assign or update can improve. It need not be the best split. Which minimum you reach depends on the starting centroids.
+
+The figure below uses four groups: two close together on the left, two on the right. Both panels show the same points and the same seed. The left panel starts from random data points. The right panel starts from **k-means++**, which picks the first centroid at random and then picks each next one with probability proportional to its squared distance from the nearest centroid already chosen. Far-away points are likelier to be picked, so the starting centroids tend to spread over different groups.
+
+With the first seed, the random start ends at inertia 39.9 after 10 rounds, because two centroids began in the same group and a third was left to cover two. The k-means++ start ends at 11.6 after 3 rounds, which is the best split here: one centroid per group. Random is 3.4 times worse, and no amount of extra rounds would fix it, since the run has converged.
+
+<KMeansLab client:visible mode="init" title="Same data and seed: a random start against a k-means++ start" />
+
+Press **Reseed both starts** a few times. Random starts are sometimes lucky. Across 200 seeds on this data the random start finished above inertia 15 about 47% of the time, and k-means++ about 19% of the time. k-means++ is better, not perfect, which is why libraries also **restart** several times and keep the lowest inertia.
+
+</Step>
+
+<Step title="Choosing k">
+
+Everything so far took $k$ as given. In practice you do not know it. Inertia cannot choose it for you on its own: adding centroids always lowers inertia, and with $k = n$ every point is its own group and inertia is zero.
+
+The standard check is the **elbow plot**: run k-means for $k = 1, 2, 3, \dots$ and plot the final inertia. The curve falls steeply while each new centroid finds a real group, then flattens once it is only splitting groups that were already tight. For this data the inertias for $k = 1$ to 8 are 156.6, 59.5, 30.4, 11.6, 10.1, 9.1, 7.6 and 7.0. Going from 3 to 4 clusters removes 18.8; going from 4 to 5 removes only 1.5. The bend is at $k = 4$, matching the four groups the data was generated from. Each value here is the best of 5 k-means++ starts, so it does not depend on one unlucky run.
+
+<KMeansLab client:visible mode="elbow" title="Click a k: the clustering and its place on the elbow curve" />
+
+Click any point on the chart, or a number below it, to watch k-means run with that $k$. Try $k = 2$ (two groups merged) and $k = 8$ (real groups carved into pieces). In real data the elbow is often gentle and several values of $k$ look plausible. Treat the plot as evidence, not as an answer, and ask what each grouping is for.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+- **You might think** k-means finds the true groups in the data. **Actually** it finds the $k$ groups that minimise inertia from where it started. If you ask for the wrong $k$, or start badly, it still returns a confident-looking answer.
+- **You might think** a lower inertia always means a better clustering. **Actually** inertia falls every time $k$ rises, so it only compares runs with the same $k$. Across different $k$ you look for the elbow, not the minimum.
+- **You might think** random restarts are a waste because the algorithm always converges. **Actually** it converges to a local minimum, and different starts can land in different ones with very different inertia.
+- **You might think** clusters are always round and similar in size. **Actually** nearest-centroid territories are straight-edged cells, so k-means splits long, curved or very unequal groups badly. In real data the features should also be on comparable scales, or the largest one decides all the distances.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>What does the assign step do, and what does it keep fixed?</summary>
+
+It gives every point to its nearest centroid, with the centroids held fixed.
+
+</details>
+
+<details>
+<summary>What does the update step do?</summary>
+
+It moves each centroid to the mean of the points currently assigned to it, with the assignments held fixed.
+
+</details>
+
+<details>
+<summary>Can inertia go up between rounds? Why does the algorithm stop?</summary>
+
+No. Both steps can only lower or keep the inertia. There are finitely many possible assignments, so eventually an assign step changes no point, and then the update changes no centroid.
+
+</details>
+
+<details>
+<summary>A run converged, but the inertia is 3 times higher than another run on the same data. What happened?</summary>
+
+It settled in a worse local minimum because of its starting centroids. Use k-means++ and keep the best of several restarts.
+
+</details>
+
+<details>
+<summary>Why can you not pick $k$ by choosing the smallest inertia?</summary>
+
+Inertia keeps falling as $k$ grows, down to zero at $k = n$. Look for the elbow where extra clusters stop paying off.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Lloyd (1982), [*Least squares quantization in PCM*](https://doi.org/10.1109/TIT.1982.1056489), IEEE Transactions on Information Theory 28(2): the assign and update iteration (the algorithm was written in 1957 and published later).
+- Arthur and Vassilvitskii (2007), [*k-means++: The advantages of careful seeding*](https://theory.stanford.edu/~sergei/papers/kMeansPP-soda.pdf): the initialization used here, with a guarantee on how far from the best inertia it can land.
+- scikit-learn, [*Clustering: k-means*](https://scikit-learn.org/stable/modules/clustering.html#k-means): inertia, restarts and the limits of the method.
+- Next: [principal component analysis](/learn/classic-ml/pca/), another way to find structure without labels, and [k-nearest neighbors](/learn/classic-ml/k-nearest-neighbors/), which also classifies by distance.
+
+</Step>

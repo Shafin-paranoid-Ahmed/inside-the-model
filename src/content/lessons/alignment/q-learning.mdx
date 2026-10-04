@@ -1,0 +1,130 @@
+---
+title: "Q-Learning: Values from Experience"
+summary: "Learn action values with Bellman backups and sampled transitions, then see why exploration and terminal targets matter."
+day: 11
+track: alignment
+order: 2
+level: advanced
+duration: 30
+prereqs: ["alignment/rl-basics"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+Can an agent learn the best action without knowing how the world works?
+
+<Step title="Q-values: how good is each action here?">
+
+A Q-value scores a pair of state and action: the return you expect if you take that action now and act well afterwards, so the best action is simply the one with the highest Q.
+
+{/*
+IDEA: Q*(s,a); greedy policy = argmax_a Q*(s,a). Same 4x3 world as /learn/alignment/rl-basics/.
+WIDGET: GridWorldLab mode="qvalues" gamma=1 stepReward=-0.04. Each cell split into four triangles coloured by Q (diverging --viz-pos/--viz-neg), number on hover/focus; the argmax triangle outlined with --accent.
+MOTION over t: a highlight walks the cells in reading order; at each cell the four Q numbers count up from 0 to their converged values and the best one is outlined; the policy arrow appears.
+TRY: find the cell where two actions have nearly equal Q and say why.
+NUMBERS: the four Q values at the start cell and the gap between best and second best.
+*/}
+
+</Step>
+
+<Step title="The Bellman equation">
+
+The Bellman optimality equation says a Q-value equals the immediate reward plus the discounted value of the best action in the next state, averaged over where you might land.
+
+{/*
+IDEA: Q*(s,a) = sum_s' P(s'|s,a) [R + gamma max_a' Q*(s',a')]. Value iteration applies it as an update until it stops changing.
+WIDGET: GridWorldLab mode="bellman" focus="3,1" action="up" sweeps=20. Shows one backup at the focus cell: the three successor cells with their max-Q, the probabilities, and the weighted sum assembling into the new Q.
+MOTION over t: first segment: the single backup assembles term by term (arrows carry each weighted term into the sum). Second segment: whole-grid sweeps, all Q triangles tween to each sweep's values; the max change per sweep plotted below on a log axis.
+TRY: watch the max-change curve fall by roughly a constant factor per sweep.
+NUMBERS: the three weighted terms and their sum at the focus cell (sweep k shown); max change after 20 sweeps.
+SHOW THE MATH: Bellman optimality equation for Q and V; contraction in one sentence.
+*/}
+
+</Step>
+
+<Step title="Tabular Q-learning">
+
+Q-learning learns the same Q-values without knowing the transition probabilities, by nudging one entry toward a sampled Bellman target after every move.
+
+{/*
+IDEA: Q(s,a) += alpha [r + gamma max_a' Q(s',a') - Q(s,a)]. TD target, TD error. Epsilon-greedy behaviour, off-policy target (max).
+WIDGET: GridWorldLab mode="qlearn" alpha=0.1 epsilon=0.1 episodes=300 seed=11. Q triangles start at 0.
+MOTION over t: early timeline: the agent moves transition by transition in episode 1, the updated triangle flashes, a small equation card shows target, error and new Q with the real numbers. Later markers jump the playback rate (episode 1, episode 10, episode 300), the Q triangles tween per episode.
+TRY: pause on the first update that reaches the goal and see how the +1 starts spreading back one cell per episode.
+NUMBERS: the first non-zero update (r, target, error, new Q); start-cell max Q after 300 episodes vs the value-iteration Q* from step 2.
+SHOW THE MATH: the update rule. SHOW THE CODE: tabular Q-learning loop in NumPy matching the widget.
+*/}
+
+</Step>
+
+<Step title="Learning from experience, with exploration">
+
+How fast Q-learning learns depends on how much it explores and how big its steps are, and its estimates converge to the true Q-values only if every action keeps being tried.
+
+{/*
+IDEA: learning curve; epsilon trade-off; Q-learning learns the greedy policy's values even while behaving epsilon-greedily (off-policy).
+WIDGET: GridWorldLab mode="qlearn-curve" epsilons="0,0.1,0.3" alpha=0.1 episodes=500 runs=20. Return per episode (moving average) for each epsilon, plus the error to Q* on a log axis.
+MOTION over t: curves draw left to right over episodes; a mini grid shows the greedy policy of the eps 0.1 run, arrows flipping as it learns.
+TRY: compare final error to Q* for epsilon 0 and 0.1.
+NUMBERS: episodes until the greedy policy matches the optimal policy, per epsilon (from the sim; if epsilon 0 never does, say how many runs got stuck).
+Mention DQN (Mnih et al. 2015) in one sentence: a network replaces the table; link /learn/alignment/deep-rl/.
+*/}
+
+</Step>
+
+<Step title="Terminal states end the target">
+
+When an episode ends, the last reward is the whole target because there are no future actions left to value.
+
+{/*
+IDEA: distinguish terminal states from time-limit truncations; mask the bootstrap only for true termination, so terminal target = r.
+WIDGET: GridWorldLab mode="qlearn-terminal" alpha=0.1 gamma=0.9 transitions="goal,pit,ordinary" seed=11. Three transition cards share a target equation; terminal cards show no successor max-Q term.
+MOTION over t: reveal goal, pit and ordinary transitions in separate labelled segments; assemble r, the terminal mask and any discounted successor value before revealing the update.
+TRY: compare the goal transition's target with the ordinary transition's target.
+NUMBERS: r, terminal flag, next-state max Q, target and updated Q for all three transitions; probe before choosing example numbers.
+SHOW THE MATH: target = r + gamma (1 - terminated) max Q(s',a'). SHOW THE CODE: one masked tabular update, with truncation handled separately.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Some common misunderstandings about these methods.
+
+{/*
+NO WIDGET. Misconceptions:
+1. "Q-learning needs the transition probabilities." Actually it only needs sampled transitions.
+2. "Q-learning learns the policy it is following." It learns the greedy policy's values while following epsilon-greedy (off-policy).
+3. "Bigger learning rate means faster learning" in tabular Q-learning. Noisy targets make large alpha oscillate.
+4. "A terminal state's Q-value belongs in the target." There is no continuation after true termination.
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Try these questions about the ideas above.
+
+{/*
+NO WIDGET. Questions (answers in details blocks):
+1. Compute one Q-learning update by hand from given Q, r, alpha, gamma (numbers from the widget's first update).
+2. Why does the +1 reward spread back roughly one cell per episode early in Q-learning?
+3. Why can an epsilon-greedy agent learn a greedy target policy?
+4. What is the Bellman target for a transition into the -1 pit?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources for the methods above.
+
+{/*
+NO WIDGET. References:
+- Christopher Watkins and Peter Dayan, "Q-learning", Machine Learning 8, 1992.
+- Volodymyr Mnih et al., "Human-level control through deep reinforcement learning", Nature 518, 2015 (DQN).
+- Sutton and Barto 2018, chapter 6, http://incompleteideas.net/book/the-book-2nd.html.
+Next: /learn/alignment/policy-gradients/
+*/}
+
+</Step>

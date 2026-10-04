@@ -1,0 +1,209 @@
+---
+title: "Weight Initialization"
+summary: "Choose starting weights that keep signals and gradients in a useful range, while giving hidden units room to learn different features."
+day: 6
+track: neural-networks
+order: 3
+level: advanced
+duration: 20
+prereqs: ["neural-networks/vanishing-exploding-gradients"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import InitializationLab from '../../../components/widgets/InitializationLab/InitializationLab.svelte';
+
+<details>
+<summary>Refresher</summary>
+
+An MLP applies a matrix of weights, then a nonlinear activation, one layer at a time. Backpropagation sends gradients back through the same layers in reverse.
+
+First: [multi-layer perceptrons](/learn/neural-networks/mlp/) and [vanishing and exploding gradients](/learn/neural-networks/vanishing-exploding-gradients/).
+
+</details>
+
+<Step title="Why not start every weight at zero?">
+
+Before training, every weight needs some starting value. Zero looks like the neutral choice. It is not, and the reason is worth seeing.
+
+Suppose three hidden units start with exactly the same weights. They see the same input, so they compute the same activation. Backpropagation then hands each of them the same gradient, so one update leaves them identical again, and so does the next. However long you train, the network has three copies of one unit instead of three different features. Starting weights must differ to **break the symmetry**.
+
+The figure is a tiny network: two inputs $(1, 0.5)$, three tanh hidden units, one output, target $0.8$, one gradient step at learning rate $0.20$. With **Equal nonzero**, the three hidden units show the same activation (0.197) and the same gradient ($-0.231$). Choose **Break symmetry** and one unit's gradient differs, so it can start learning something else. Choose **All zero** and it is worse still: every activation is zero, the prediction is zero, and every gradient is zero, so nothing moves at all.
+
+<InitializationLab client:visible mode="symmetry" title="Symmetry and zero weights in a 2–3–1 network" />
+
+<details>
+<summary>Show the math</summary>
+
+Here $h_j=\tanh(\mathbf w_j^\top\mathbf x)$, $\hat y=\sum_j v_jh_j$, and $L=\tfrac12(\hat y-0.8)^2$. The gradient for a hidden weight is
+
+$$\frac{\partial L}{\partial w_{ji}}=(\hat y-0.8)v_j(1-h_j^2)x_i.$$
+
+If every row $\mathbf w_j$ and every $v_j$ match, this expression is the same for every hidden unit. If both layers are zero, each $h_j=0$ and each $v_j=0$, so both $\partial L/\partial v_j=(\hat y-0.8)h_j$ and $\partial L/\partial w_{ji}$ are zero. (This network has no biases; with biases the all-zero case behaves a little differently, but the symmetry problem remains.)
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import torch
+
+x = torch.tensor([1.0, 0.5])
+W = torch.tensor([[0.3, -0.2], [0.3, -0.2], [0.3, -0.2]], requires_grad=True)
+v = torch.tensor([0.45, 0.45, 0.45], requires_grad=True)
+y = v @ torch.tanh(W @ x)
+loss = 0.5 * (y - 0.8) ** 2
+loss.backward()
+with torch.no_grad():
+    W -= 0.20 * W.grad
+    v -= 0.20 * v.grad
+```
+
+</details>
+
+</Step>
+
+<Step title="The scale of random weights matters">
+
+So we start with random weights. How big should they be? Each layer multiplies its input by a weight matrix. If the weights are a little too small, the signal shrinks a little at every layer. Over twelve layers, "a little" compounds into almost nothing. Too large, and it compounds the other way. The same thing happens to the gradient on the way back.
+
+The figure runs one random 12-layer network, sixteen units wide, and measures how big the signal is at every second layer, relative to the input (top). It also measures how big the gradient is, relative to the output (bottom). The scale is logarithmic: each gridline is another factor of 10, and the dashed line marks "same size as at the start". It starts with **Tiny** weights: by layer 12 the signal is $1.2\times10^{-12}$ of its input size, and the gradient that reaches the input is about as small. A network like this cannot learn. Try **Large** with ReLU to see the opposite failure.
+
+<InitializationLab client:visible mode="signals" title="Signal and gradient size through 12 random layers" />
+
+<details>
+<summary>Show the math</summary>
+
+For a layer $\mathbf z_\ell=W_\ell\mathbf h_{\ell-1}$ whose weights are independent with mean zero and variance $q$, each output adds up $fan_{in}$ terms, so roughly
+
+$$\operatorname{Var}(z_{\ell,j})\approx fan_{in}\,q\,\mathbb E[h_{\ell-1}^2].$$
+
+To keep the signal the same size from layer to layer, $fan_{in}\,q$ should be about 1, after accounting for what the activation does. The backward pass multiplies by $W_\ell^\top$ instead, so the same argument applies with $fan_{out}$. This is an approximation: it treats values as independent, which a real network only roughly satisfies.
+
+</details>
+
+</Step>
+
+<Step title="Xavier: scale by the number of inputs">
+
+The math above gives the fix: if a unit adds up $n$ inputs, divide its random weights by $\sqrt{n}$. That way, adding more inputs does not make the sum bigger. The **fan-in** is the number of inputs to a layer, and the **fan-out** is the number of units it feeds. **Xavier** initialization (also called Glorot) picks a weight variance that compromises between the two: $2/(fan_{in}+fan_{out})$.
+
+Every layer here is 16 wide, so Xavier gives a variance of $1/16$: each weight is a random normal number times $1/\sqrt{16}=0.25$. With tanh, the signal at layer 12 is now 0.14 of its input size instead of $10^{-12}$. That is within a factor of 10, which a network can train from. Now switch to **ReLU** and watch the bars sink again: about 0.71× per layer, ending at 0.01×. ReLU needs its own rule.
+
+<InitializationLab client:visible mode="xavier" title="Xavier scale through a 12-layer network" />
+
+<details>
+<summary>Show the math</summary>
+
+The Glorot and Bengio rule is
+
+$$\operatorname{Var}(W_{ij})=\frac{2}{fan_{in}+fan_{out}}.$$
+
+With $fan_{in}=fan_{out}=16$, this is $1/16$. The derivation treats tanh as roughly linear near zero, which is why Xavier suits tanh-like activations.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import math
+import torch
+
+fan_in, fan_out = 16, 16
+W = torch.randn(fan_out, fan_in) * math.sqrt(2 / (fan_in + fan_out))
+```
+
+PyTorch's `torch.nn.init.xavier_normal_` does the same thing.
+
+</details>
+
+</Step>
+
+<Step title="He: make up for ReLU's missing half">
+
+ReLU sets every negative input to zero. If the inputs to a layer are roughly half positive and half negative, ReLU throws away about half of the signal's energy at every layer. Xavier does not account for this, so the signal halves in energy, or shrinks by $\sqrt{1/2}\approx0.71$ in size, at each layer.
+
+**He** initialization (Kaiming He and colleagues, 2015) doubles the weight variance to make up for it: $2/fan_{in}$, which is $2/16$ here. The figure starts with ReLU and He scale. The signal at layer 12 is now 0.64 of its input size, and the gradient stays the same order of size all the way back. Drag the scale slider: just below He the bars sink, and just above they climb.
+
+<InitializationLab client:visible mode="he" title="He scale for a ReLU network" />
+
+<details>
+<summary>Show the math</summary>
+
+For ReLU with symmetric, zero-mean inputs, about half of the squared signal survives. To keep the expected squared signal the same from layer to layer, set
+
+$$\operatorname{Var}(W_{ij})=\frac{2}{fan_{in}}.$$
+
+At width 16 this is $2/16$, which is the slider's scale $s=\sqrt2$ times $1/\sqrt{fan_{in}}$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import math
+import torch
+
+fan_in = 16
+W = torch.randn(16, fan_in) * math.sqrt(2 / fan_in)
+```
+
+PyTorch's `torch.nn.init.kaiming_normal_` does the same thing.
+
+</details>
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think all-zero weights are just a slow start. Actually** in this network they give every weight a zero gradient, so training never starts. Equal nonzero weights do learn, but the copies stay identical, so the extra units are wasted.
+
+**You might think Xavier and He are two names for "random weights". Actually** they choose different sizes. Xavier uses fan-in and fan-out; He uses fan-in and doubles the variance for ReLU.
+
+**You might think the right initialization guarantees stable training. Actually** it only gets the network started with signals of a sensible size. One random draw can differ from the average, and training changes the weights from there. [Normalization](/learn/neural-networks/normalization/) keeps signals in range during training, too.
+
+</Step>
+
+<Step title="Check yourself">
+
+<details>
+<summary>1. Why do three hidden units with equal incoming and outgoing weights keep learning the same feature?</summary>
+
+They see the same input, produce the same activation, and the chain rule gives them the same gradient. Each update therefore keeps their weights equal.
+
+</details>
+
+<details>
+<summary>2. A layer has fan-in 64 and fan-out 32. What are the Xavier and He variances?</summary>
+
+Xavier: $2/(64+32)=1/48$. He: $2/64=1/32$.
+
+</details>
+
+<details>
+<summary>3. Why does He use twice the variance for ReLU?</summary>
+
+ReLU zeroes about half of its inputs, which removes about half the signal's energy. Doubling the weight variance puts that energy back.
+
+</details>
+
+<details>
+<summary>4. In the figure, what happens to a 12-layer ReLU network with Xavier scale?</summary>
+
+The signal shrinks by about 0.71 per layer and ends near 0.01 of its input size. He scale keeps it near 0.64.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Xavier Glorot and Yoshua Bengio, [“Understanding the difficulty of training deep feedforward neural networks”](https://proceedings.mlr.press/v9/glorot10a.html), AISTATS / PMLR 9, 249–256 (2010).
+- Kaiming He, Xiangyu Zhang, Shaoqing Ren and Jian Sun, [“Delving Deep into Rectifiers: Surpassing Human-Level Performance on ImageNet Classification”](https://arxiv.org/abs/1502.01852), arXiv:1502.01852 (2015).
+- [Dive into Deep Learning: Numerical Stability and Initialization](https://d2l.ai/chapter_multilayer-perceptrons/numerical-stability-and-init.html), for an implementation-oriented explanation.
+
+Next: [normalization](/learn/neural-networks/normalization/) rescales activations during every forward pass, not just at the start.
+
+</Step>

@@ -1,0 +1,162 @@
+---
+title: "Retrieval-Augmented Generation (RAG)"
+summary: "Retrieve relevant passages, put them in the prompt, and answer from them: each stage, and where each one breaks."
+day: 14
+track: applied
+order: 2
+level: core
+duration: 30
+prereqs: ["applied/vector-search","llms/hallucination"]
+status: stub
+---
+import Step from '../../../components/ui/Step.astro';
+
+Give the model an open book instead of asking it to recall from memory.
+
+<Step title="Why a model needs an open book">
+
+A language model can only repeat what was in its training data, so questions about private or recent documents need those documents supplied at question time.
+
+{/*
+IDEA: hook. The handbook is made up, so no model was trained on it; without retrieval the answer cannot be right. Link /learn/llms/hallucination/.
+WIDGET: RAGPipeline mode="closed-book" query="How much is the late fee for the pressure washer?". Pipeline drawn as four stages left to right (embed, search, retrieve, generate); in this mode the retrieval stages are greyed out and the generator gets the question alone.
+GENERATOR (honesty): if the Day 10 tiny language model exists (src/lib/transformer, see plans/day-14.md), run it on the bare question and show its fluent but unsupported continuation, labelled "tiny language model, no documents"; otherwise the reader stage outputs "No passage given, no answer" and the prose makes the point with that. Never show invented text as if a model wrote it.
+MOTION over t: the question token stream enters the generator, the output appears token by token.
+TRY: compare with the next step's figure, same question.
+QUOTE: nothing numeric beyond the output itself.
+*/}
+
+</Step>
+
+<Step title="The pipeline: embed, search, retrieve, generate">
+
+RAG embeds the question, finds the closest passages, pastes them into the prompt and lets the model answer from that text.
+
+{/*
+IDEA: the four stages, end to end, on the same question. Embeddings and search are the real LSA + cosine from the vector-search lesson (src/lib/applied/embed.ts).
+WIDGET: RAGPipeline mode="pipeline" query="How much is the late fee for the pressure washer?" k=3.
+GENERATOR (honesty): an extractive reader, labelled in the figure "Reader: copies the best-supported sentence from the passages (not a language model)". It scores every sentence of the assembled context against the question (cosine + keyword overlap), outputs the best one verbatim with its passage id as a citation, and outputs "Not in the passages" below a threshold. Deterministic.
+MOTION over t: particle flows along the pipeline: question -> 16-number vector -> scan lights up the 3 nearest passages with their cosines -> passages slide into a prompt template -> the reader highlights its chosen sentence and the answer appears with [doc id].
+TRY: edit the question; the whole pipeline replays.
+QUOTE: the three cosines, the chosen sentence's score, the cited passage id.
+SHOW THE CODE: 12-line Python RAG loop (embed, top-k, format prompt, call model) with the model call left as a function stub, matching the widget's stages.
+*/}
+
+</Step>
+
+<Step title="Chunking: how big is a passage?">
+
+Documents are split into chunks before embedding, and the chunk size decides whether the answer and its context stay together.
+
+{/*
+IDEA: small chunks = precise match but the answer may be cut from the sentence that qualifies it; big chunks = context kept but the embedding averages several topics and matches worse. Overlap helps at borders.
+WIDGET: RAGPipeline mode="chunking" query="Can I take the pressure washer for a whole week?" chunk="sweep". Shows one long handbook page split by a moving chunk size (fixed-size word windows with overlap 0 or 20%).
+MOTION over t: chunk size sweeps 20 -> 40 -> 80 -> 160 words; chunk borders slide over the page; the rank of the chunk containing the answer and its cosine update at each size; a small chart plots answer-chunk rank vs chunk size.
+TRY: toggle overlap on and see the border case fixed.
+QUOTE: answer-chunk rank and cosine at each size; the size where the answer and its exception ("except on public holidays") first land in separate chunks.
+*/}
+
+</Step>
+
+<Step title="Putting retrieved text in the prompt">
+
+The retrieved passages are pasted into a prompt template with the question, and that prompt has to fit in a fixed context window.
+
+{/*
+IDEA: prompt assembly: system text + passages (with ids, delimited) + question + instruction to cite and to say "not found". Every piece costs tokens; the context window is a hard budget.
+WIDGET: RAGPipeline mode="prompt" k=5 budget=256. Shows the assembled prompt as text with each passage in a delimited block, and a stacked bar of token counts (instructions, each passage, question) against the budget line. Token counting: the Day 9 BPE tokenizer if present, else a word-piece count labelled "words" (decide in the plan, never call words tokens).
+MOTION over t: passages are appended one by one in rank order, the stacked bar grows, passage 5 crosses the budget line and is cut (shown truncated).
+TRY: raise k from 3 to 8 and see which passages no longer fit.
+QUOTE: tokens per passage, total, and which passage was cut at k = 5.
+SHOW THE CODE: a prompt template string with delimiters, matching the figure.
+*/}
+
+</Step>
+
+<Step title="When retrieval fails, the answer fails">
+
+If the right passage is not retrieved, the generator cannot use it, however good it is.
+
+{/*
+IDEA: failure mode 1, retrieval miss: a question phrased with words the embedding maps poorly (or an exact item code), the answer passage ranks 7th, k = 3 misses it, the reader answers from the wrong passage or says not found. Hybrid search (BM25 + embedding, reciprocal rank fusion) fixes this one.
+WIDGET: RAGPipeline mode="miss" query="What is the deposit for item PW-200?" k=3 hybrid=false, with a hybrid toggle.
+MOTION over t: as in pipeline, but the correct passage (outlined --accent, known from the test set) is visibly below the k cut line; then with hybrid on, the fused ranking animates and it moves up into the top 3.
+TRY: switch hybrid on.
+QUOTE: answer passage rank under embedding, BM25 and fused ranking; reader output before and after.
+*/}
+
+</Step>
+
+<Step title="When the context is the problem">
+
+Retrieving the right passage is not enough if it is cut off by the budget or contradicted by other retrieved text.
+
+{/*
+IDEA: failure mode 2, context limits: with a small budget the right passage is truncated; with stale and current versions of a rule both retrieved, the reader picks the higher-scoring stale one. Real long-context models also use information in the middle of a long context less reliably (Liu et al. 2023, "Lost in the Middle", VERIFY arXiv:2307.03172): cite it, do NOT simulate it, the extractive reader has no position bias.
+WIDGET: RAGPipeline mode="conflict" query="What are the opening hours on Saturday?" k=4 budget=160. Corpus contains an old and a new hours notice (dated).
+MOTION over t: retrieval brings both notices; budget cuts the newer one partially; reader cites the old one; then a "prefer newest date" re-rank (metadata filter) is applied and the answer changes.
+TRY: raise the budget to 320.
+QUOTE: both notices' cosines and token counts, the answer before and after the date filter.
+*/}
+
+</Step>
+
+<Step title="Evaluating a RAG system">
+
+A RAG system is evaluated in two parts: did retrieval find the evidence, and is the answer correct and supported by it.
+
+{/*
+IDEA: measure retrieval (recall@k, MRR against labelled answer passages) separately from generation (exact match / supported by cited passage). Small labelled test set: 24 handbook questions with gold passage ids and gold answers, shipped in the corpus file.
+WIDGET: RAGPipeline mode="eval" sweep="k". Chart of recall@k and answer accuracy for k = 1..8, embedding vs hybrid; below, a row of 24 small cells (one per question) coloured correct / wrong-retrieval / wrong-answer.
+MOTION over t: k sweeps 1 -> 8; cells flip state as k grows; the two curves draw.
+TRY: click a red cell to see that question's pipeline (switches the figure to that question in pipeline view).
+QUOTE: recall@3 and answer accuracy at k = 3 for embedding and hybrid; how many failures are retrieval vs reader.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+A few beliefs about RAG that do not hold up.
+
+{/*
+NO WIDGET. Intended misconceptions:
+1. "RAG stops hallucination." It reduces unsupported answers when retrieval works; the model can still ignore or misread the passages, and a miss gives it nothing.
+2. "Bigger k is always better." More passages cost tokens, can push out the right one and add distractors (measured in the eval step).
+3. "RAG teaches the model new facts." Weights do not change; remove the passage and the knowledge is gone (contrast with /learn/applied/lora-qlora/).
+4. "If retrieval found it, the answer is right." Reader and retriever fail separately; evaluate both.
+5. "Chunk size does not matter much." It decides what the embedding averages (chunking step).
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Short questions to test the ideas above.
+
+{/*
+NO WIDGET. Questions:
+1. Which stage failed if recall@5 is 1.0 but the answer is wrong?
+2. A budget of 1000 tokens, instructions 120, question 30, passages of 200 each: how many passages fit?
+3. Why might an exact product code be found by BM25 but missed by embeddings?
+4. Two passages give different opening hours. Name two fixes.
+5. What would you measure first when users report wrong answers?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+Papers and resources for going further.
+
+{/*
+NO WIDGET. Cite:
+- Lewis et al., "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks", NeurIPS 2020, arXiv:2005.11401.
+- Karpukhin et al., "Dense Passage Retrieval for Open-Domain Question Answering", EMNLP 2020, arXiv:2004.04906.
+- Guu et al., "REALM", 2020, arXiv:2002.08909.
+- Liu et al., "Lost in the Middle: How Language Models Use Long Contexts", 2023, arXiv:2307.03172 (VERIFY).
+- Cormack, Clarke & Buettcher, "Reciprocal Rank Fusion outperforms Condorcet and individual rank learning methods", SIGIR 2009 (VERIFY title).
+- Es et al., "RAGAS: Automated Evaluation of Retrieval Augmented Generation", 2023, arXiv:2309.15217 (VERIFY).
+*/}
+
+</Step>

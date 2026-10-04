@@ -1,0 +1,148 @@
+---
+title: "What's New"
+summary: "A curated, dated list of recent breakthroughs, reviewed on a fixed schedule."
+day: 15
+track: frontier
+order: 8
+level: frontier
+duration: 20
+prereqs: ["frontier/reasoning-models"]
+status: stub
+lastReviewed: 2026-09-29
+---
+
+The field moves fast, so this page is deliberately dated and curated.
+
+import Step from '../../../components/ui/Step.astro';
+
+{/*
+LESSON BRIEF (skeleton, 2026-10-03). Widget: FrontierLog, backed by the data file src/data/frontier-log.json (schema in plans/day-15.md section 2; the lesson writer creates the file).
+The page must make sense with any number of entries; every reader-facing fact on this page comes from an entry, and every entry carries its own sources and check date.
+Motion: the timeline t is calendar time. Playing it reveals entries month by month along a date axis; filters (kind, topic, status) are toggle buttons; the list under the axis shows the entries visible at t. Reduced motion: starts paused at the review date with all entries shown.
+
+(a) TEXTBOOK-STABLE CONTENT: none. This lesson is a curated log; the mechanisms live in the other Day 15 lessons, which each entry links to.
+
+(b) RESEARCH PROTOCOL (applies to every entry):
+- An entry needs at least one primary source: the paper (arXiv/proceedings), the official model card or technical report, or the lab's own announcement. Press coverage is never the only source.
+- Record: publication date of the source, the date you checked it, and the one claim the entry makes, quoted or closely paraphrased with the section it comes from.
+- Claims a lab makes about its own model are labelled as the lab's claims; independent replications or evaluations go in statusSources.
+- Selection rule (for step 1, written out on the page): a new mechanism, a result that changed what other labs did, a widely used open release, or a major evaluation/policy document. Not: leaderboard moves, funding, rumours.
+- Candidate sources to mine (each VERIFY before use): International AI Safety Report 2026, published 2026-02-03, https://internationalaisafetyreport.org/publication/international-ai-safety-report-2026 (confirmed 2026-10-03); Stanford HAI AI Index 2026, published 2026-04-13, https://hai.stanford.edu/ai-index/2026-ai-index-report (found 2026-10-03, URL VERIFY); arXiv listings cs.CL / cs.LG; official lab news pages and model cards; Epoch AI data hub (VERIFY URL).
+- Search queries: "technical report 2026 arXiv language model", "model card 2026 release", "mixture of experts open weights 2026", "state space hybrid model 2026", "reasoning model technical report 2026", "interpretability research 2026 transformer-circuits", "AI safety evaluation report 2026", and one per Day 15 lesson topic.
+- Target: 15 to 30 entries covering roughly the 18 months before the review date, at least one per Day 15 lesson.
+*/}
+
+<Step title="How entries are chosen and dated">
+
+Every entry on this page has a date, a primary source, and the date it was last checked, and it is listed only if it meets the selection rules written here.
+
+{/*
+IDEA: the editorial method first, so readers know how to trust the list. Write the selection rule and source rule from the brief as a short list.
+WIDGET: FrontierLog mode="all". Every entry on the date axis, dots shaped by kind; the list shows each entry's source count and checked date in mono.
+T: t plays calendar time from the earliest entry to the review date; dots drop onto the axis in date order.
+TRY: open any entry and follow its source link.
+QUOTE: total entries, date range, number of primary sources (computed from the data file).
+RESEARCH: protocol above.
+*/}
+
+</Step>
+
+<Step title="Recent releases and results">
+
+These are the releases and papers from the period covered by this review that changed how models are built or used.
+
+{/*
+IDEA: the main log of releases and results, each linked to the Day 15 lesson that explains its mechanism.
+WIDGET: FrontierLog mode="recent" kinds=["model","paper"] months=12 (as an array prop). Only the last 12 months before the review date; topic chips link to /learn/frontier/... lessons.
+T: t plays the 12 months; entries appear in order; the active month is highlighted on the axis.
+TRY: filter by one topic, such as mixture of experts, and read its entries in order.
+QUOTE: entries in the window per kind (from data).
+RESEARCH: entries per the protocol; no entry written without its source checked.
+*/}
+
+</Step>
+
+<Step title="Ideas that spread">
+
+Some methods matter less as single releases than as ideas many groups adopted, and grouping entries by topic shows which ones spread.
+
+{/*
+IDEA: group by Day 15 topic to show adoption over time (e.g. how many entries per topic per quarter).
+WIDGET: FrontierLog mode="by-topic". Rows = Day 15 topics (reasoning, moe, ssm, long context, efficient inference, interpretability, safety, other); dots along each row by date.
+T: t plays calendar time; rows fill; a per-row count ticks.
+TRY: compare which rows fill fastest.
+QUOTE: entries per topic (from data).
+RESEARCH: topic tags must match what the sources say, not the writer's guess.
+*/}
+
+</Step>
+
+<Step title="What has held up and what has not">
+
+Some results are later confirmed by other groups, some are disputed, and some are overtaken, so each entry records its current standing with a source.
+
+{/*
+IDEA: status field: holding, contested, superseded, retracted; each change needs its own source (statusSources).
+WIDGET: FrontierLog mode="status". Dots coloured by status: holding --viz-pos, contested --viz-neg, superseded muted text colour, retracted outlined; a filter for non-holding entries.
+T: t plays calendar time; when an entry's status changed (statusDate), its dot changes colour at that moment.
+TRY: filter to contested entries and read what disputed them.
+QUOTE: counts per status (from data).
+RESEARCH: for each candidate entry, search for replications or critiques: "[method name] replication", "[model name] independent evaluation".
+*/}
+
+</Step>
+
+<Step title="Review schedule">
+
+This page is reviewed on a fixed schedule, and entries not checked since the last review are marked so you can see what may be out of date.
+
+{/*
+IDEA: frontier lessons are re-reviewed at least every 6 months (IDEA.md section 7); show staleness honestly.
+WIDGET: FrontierLog mode="review". Same axis with a second marker row: each entry's checked date; entries whose checked date is older than 6 months before "today" (computed at build time from the page's lastReviewed, not the visitor's clock, so the static page stays deterministic) are outlined as stale.
+T: t moves a "review date" cursor forward; entries turn stale as the cursor passes their checked date plus 6 months.
+TRY: drag the cursor six months past the last review and count the stale entries.
+QUOTE: the next scheduled review date (lastReviewed + 6 months) and current stale count.
+RESEARCH: none; set lastReviewed in frontmatter when the lesson is written.
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Lists like this one are easy to misread.
+
+{/*
+NO WIDGET. Misconceptions:
+1. Newest means best. Many entries are superseded within months (step 4).
+2. A lab's announced numbers are independent results. They are the lab's claims until evaluated by others.
+3. A benchmark jump means a general capability jump (link /learn/alignment/evaluations/).
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+These questions practise reading a dated claim critically.
+
+{/*
+NO WIDGET. Questions:
+1. What makes a source primary?
+2. An entry is 9 months unchecked. What should you do before relying on it?
+3. Which Day 15 lesson explains the mechanism behind a given entry? (Pick two from the data.)
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+These sources track the field on a regular schedule.
+
+{/*
+NO WIDGET. Sources:
+- International AI Safety Report 2026, https://internationalaisafetyreport.org/publication/international-ai-safety-report-2026 (confirmed 2026-10-03)
+- Stanford HAI AI Index 2026, https://hai.stanford.edu/ai-index/2026-ai-index-report (VERIFY URL)
+- arXiv cs.CL and cs.LG listings, https://arxiv.org/list/cs.CL/recent (VERIFY)
+- Epoch AI data on models (VERIFY URL)
+*/}
+
+</Step>

@@ -1,0 +1,300 @@
+---
+title: "Automatic Differentiation"
+summary: "How PyTorch records operations and replays them backwards to get gradients."
+day: 5
+track: neural-networks
+order: 5
+level: advanced
+duration: 30
+prereqs: ["neural-networks/backprop-mlp"]
+status: draft
+---
+import Step from '../../../components/ui/Step.astro';
+import AutodiffTape from '../../../components/widgets/AutodiffTape/AutodiffTape.svelte';
+
+<Step title="You never write the backward pass">
+
+In the last lessons you ran the backward pass by hand: local derivative times upstream gradient, node after node. Nobody trains a real model that way. In PyTorch you write only the forward computation, call `loss.backward()`, and every parameter has a gradient.
+
+The trick is that the framework watches the forward pass. Each time your code performs an operation, the framework appends a line to a list: which operation, which inputs, what value came out. This list is called the **tape** (or the Wengert list, after Robert Wengert, who described it in 1964). When the forward pass is over, the framework replays the tape in reverse and applies each operation's local derivative. This is **automatic differentiation**, and it is neither of the two things people usually mean by "computing a derivative by machine".
+
+The figure shows the tape for a single tanh neuron with a squared-error loss, $L = (\tanh(w_1x_1 + w_2x_2 + b) - t)^2$. Rows appear during the forward pass, with the value each operation produced. Then the sweep walks up the tape and fills the adjoint column, the gradient $\partial L/\partial \text{row}$. It uses the same engine as the rest of the site, so these are the real numbers.
+
+<AutodiffTape client:visible showCost={false} title="Recording a tape, then replaying it backward" />
+
+</Step>
+
+<Step title="Three ways to get a derivative">
+
+There are three ways to ask a computer for $\partial L/\partial w$, and automatic differentiation is a third one, distinct from the other two.
+
+<table>
+<thead>
+<tr><th scope="col">Method</th><th scope="col">How</th><th scope="col">Weakness</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">Symbolic</th><td>Manipulate the formula to get a formula for the derivative, as in a computer algebra system.</td><td>The formula for the derivative can be far longer than the original ("expression swell"), and it cannot follow loops and branches in real code.</td></tr>
+<tr><th scope="row">Numerical</th><td>Nudge the input, rerun, divide: (L(w + ε) − L(w)) / ε.</td><td>One extra run per parameter, and the result is only approximate: a small ε suffers rounding, a large ε suffers truncation error.</td></tr>
+<tr><th scope="row">Automatic</th><td>Apply the chain rule to the numbers of a specific run, one operation at a time.</td><td>Needs the run's intermediate values stored, so it costs memory.</td></tr>
+</tbody>
+</table>
+
+Automatic differentiation gives derivatives that are exact up to floating-point rounding, at a cost comparable to running the function once more. It differentiates **programs**, not formulas: loops, branches and helper functions are all fine, because it only ever sees the straight-line sequence of operations that actually ran.
+
+</Step>
+
+<Step title="Recording: one row per operation">
+
+Here is what the tape holds for our neuron. Every row is one primitive operation with its inputs (referring to earlier rows) and its value. The order of rows is the order of execution, so every row only refers to rows above it.
+
+The leaf rows are the inputs and parameters: $w_1 = 0.5$, $x_1 = 1$, $w_2 = -0.6$, $x_2 = 0.5$, $b = 0.1$ and the target $t = -0.5$. Then the operations follow: $m_1 = w_1 x_1 = 0.5$, $m_2 = w_2 x_2 = -0.3$, $s_1 = m_1 + m_2 = 0.2$, $s_2 = s_1 + b = 0.3$, $y = \tanh(s_2) = 0.2913$, $d = y - t = 0.7913$ and $L = d^2 = 0.6262$.
+
+Scrub the timeline through the recording phase. Each new row is appended as its operation runs; nothing is computed ahead of time, and nothing is looked up afterwards except the numbers already on the tape.
+
+<AutodiffTape client:visible showCost={false} title="The forward pass writes the tape" />
+
+</Step>
+
+<Step title="Each operation knows how to send gradients back">
+
+The tape stores values; something must also say how to differentiate each row. In a micrograd-style engine every operation, when it is created, remembers a small function for its own local rule. The rules are the ones from the table in [the computational graphs lesson](/learn/neural-networks/computational-graphs/):
+
+- add: send the upstream gradient unchanged to both inputs
+- multiply: send `other.data * upstream` to each input
+- tanh: send `(1 - y*y) * upstream`
+- power: send `k * x**(k-1) * upstream`
+
+That is the entire "intelligence" of the system. A framework has a library of a few hundred such primitives, each with a forward function and a backward function. Anything you can build from them can be differentiated, however long or unusual the program. Because every rule is local, the framework never needs to know what the network is for.
+
+<details>
+<summary>Show the code</summary>
+
+A complete scalar engine, about sixty lines of Python, in the style of Karpathy's micrograd. It computes exactly the numbers in the figure.
+
+```python
+import math
+
+class Value:
+    def __init__(self, data, children=(), op=''):
+        self.data, self.grad = data, 0.0
+        self.children, self.op = children, op
+        self._backward = lambda: None          # how this node pushes its grad into its children
+
+    def __add__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        out = Value(self.data + other.data, (self, other), '+')
+        def _backward():
+            self.grad += out.grad
+            other.grad += out.grad
+        out._backward = _backward
+        return out
+
+    def __mul__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        out = Value(self.data * other.data, (self, other), '*')
+        def _backward():
+            self.grad += other.data * out.grad
+            other.grad += self.data * out.grad
+        out._backward = _backward
+        return out
+
+    def __pow__(self, k):
+        out = Value(self.data ** k, (self,), f'**{k}')
+        def _backward():
+            self.grad += k * self.data ** (k - 1) * out.grad
+        out._backward = _backward
+        return out
+
+    def tanh(self):
+        t = math.tanh(self.data)
+        out = Value(t, (self,), 'tanh')
+        def _backward():
+            self.grad += (1 - t * t) * out.grad
+        out._backward = _backward
+        return out
+
+    def __sub__(self, other): return self + (other * -1)
+
+    def backward(self):
+        order, seen = [], set()
+        def visit(v):                          # depth-first: children before parents
+            if v not in seen:
+                seen.add(v)
+                for c in v.children: visit(c)
+                order.append(v)
+        visit(self)
+        self.grad = 1.0                        # seed dL/dL = 1
+        for v in reversed(order):              # walk the tape backward
+            v._backward()
+
+w1, w2, b = Value(0.5), Value(-0.6), Value(0.1)
+x1, x2, t = Value(1.0), Value(0.5), Value(-0.5)
+L = ((w1 * x1 + w2 * x2 + b).tanh() - t) ** 2
+L.backward()
+print(round(L.data, 4), round(w1.grad, 4), round(w2.grad, 4), round(b.grad, 4))
+# 0.6262 1.4483 0.7242 1.4483
+```
+
+Building `L` computed the value and recorded the graph in one go, through the `children` links. `backward()` sorts the nodes so each one comes after all its consumers, seeds the loss with 1 and calls each node's saved rule. Note `+=`: an input used twice collects both contributions.
+
+</details>
+
+</Step>
+
+<Step title="Replaying: walk the tape backward">
+
+The backward sweep starts at the last row and walks up. At row $L$ the adjoint is the seed, $1$. Each row hands its adjoint to its inputs, times the local derivative:
+
+- $L = d^2$: $\bar d = 2d \cdot 1 = 1.583$
+- $d = y - t$: $\bar y = +1.583$ and $\bar t = -1.583$
+- $y = \tanh(s_2)$: $\bar s_2 = (1 - y^2)\,\bar y = 0.915 \times 1.583 = 1.448$
+- the two adds pass $1.448$ through to $b$, $m_1$ and $m_2$
+- $m_1 = w_1 x_1$: $\bar w_1 = x_1 \cdot 1.448 = 1.448$ and $\bar x_1 = w_1 \cdot 1.448 = 0.724$
+- $m_2 = w_2 x_2$: $\bar w_2 = x_2 \cdot 1.448 = 0.724$ and $\bar x_2 = w_2 \cdot 1.448 = -0.869$
+
+Watch the sweep and the dashed frame that marks the row being processed. The adjoint column starts at zero everywhere except the seed and fills upward. A row's adjoint is final once every row that used it has been processed, which is why the walk must go strictly from the bottom of the tape to the top. The three parameter rows now hold the gradient: $(\partial L/\partial w_1, \partial L/\partial w_2, \partial L/\partial b) = (1.448,\ 0.724,\ 1.448)$.
+
+<AutodiffTape client:visible phase="backward" showCost={false} title="Replaying the tape in reverse" />
+
+</Step>
+
+<Step title="Forward mode: the other direction">
+
+The chain rule is just a product, and a product can be grouped from either end. **Forward mode** carries a derivative along with each value. Choose one input, say $w_1$, and give it tangent $1$ (all other inputs get tangent $0$). Then each row computes its value *and* its tangent from its inputs' tangents:
+
+- $m_1 = w_1 x_1$: tangent $\dot m_1 = \dot w_1 x_1 + w_1 \dot x_1 = 1 \cdot 1 + 0 = 1$
+- $s_1 = m_1 + m_2$: tangent $1 + 0 = 1$; then the same through $s_2$
+- $y = \tanh(s_2)$: tangent $(1 - y^2) \cdot 1 = 0.915$
+- $d$: $0.915$, then $L = d^2$: $\dot L = 2d \cdot 0.915 = 1.448$
+
+Choose $\partial/\partial w_1$ in the figure and watch the tangent column fill on the way through, alongside the values. The last row is $1.448$, the same number the reverse sweep produced. But it is only the derivative with respect to $w_1$. To get $\partial L/\partial w_2$ you must seed a different tangent and sweep again. Try the other inputs: each is a whole new sweep.
+
+<AutodiffTape client:visible mode="forward" showCost={false} title="Forward mode: one tangent, one input" />
+
+Forward mode is neat because it needs no tape and no memory of the past: tangents ride along with the values, and each is discarded after use. It is implemented with "dual numbers", pairs $(x, \dot x)$ that carry a value and a derivative. It is the right tool when there are few inputs and many outputs.
+
+</Step>
+
+<Step title="Why reverse mode wins for training">
+
+Count the sweeps. To get the gradient of one scalar loss with respect to $n$ parameters:
+
+- **Forward mode** needs one tangent sweep **per input**: $n$ sweeps.
+- **Reverse mode** needs one forward sweep to build the tape and one backward sweep: 2 sweeps, whatever $n$ is.
+
+For $n = 3$ the difference is small. Drag the slider below the figure to a million inputs. The forward-mode bar runs off toward a million sweeps, while the reverse-mode bar has not moved. Real models have billions of parameters and a single loss, so reverse mode is the only feasible choice, and this is the reason backpropagation is used.
+
+The comparison is not a coincidence of this network. Griewank and Walther's "cheap gradient principle" states that the reverse sweep costs at most a small constant multiple of evaluating the function (commonly a factor of about 3 to 5, depending on how operations are counted), **regardless of the number of inputs**. The figure's cost panel counts row visits and ignores that constant.
+
+<AutodiffTape client:visible inputs={1000000} title="Cost of getting every derivative: forward versus reverse mode" />
+
+The price of reverse mode is memory: the tape has to hold the forward values until the sweep uses them. That trade shows up again in practice as *activation checkpointing*, where some values are recomputed instead of stored.
+
+<details>
+<summary>Show the math</summary>
+
+For a function $F:\mathbb R^n \to \mathbb R^m$ with Jacobian $J \in \mathbb R^{m \times n}$, one forward-mode sweep computes a **Jacobian-vector product** $J\,\dot{\mathbf x}$: one column of $J$ for $\dot{\mathbf x} = \mathbf e_i$. One reverse-mode sweep computes a **vector-Jacobian product** $\bar{\mathbf y}^{\top} J$: one row of $J$ for $\bar{\mathbf y} = \mathbf e_j$. For a scalar loss ($m = 1$) the single row is the full gradient, so one reverse sweep suffices. Forward mode would need $n$ sweeps for the $n$ columns.
+
+Both products are computed without ever forming $J$: each primitive only needs its own small Jacobian-vector or vector-Jacobian product. For a matrix multiply $Y = XW$ with upstream $\bar Y$, the reverse rule is $\bar X = \bar Y W^{\top}$ and $\bar W = X^{\top}\bar Y$, the same outer-product and transposed-product formulas from the backprop lesson.
+
+</details>
+
+</Step>
+
+<Step title="What PyTorch does">
+
+PyTorch's autograd is reverse-mode automatic differentiation over **tensors**. Each primitive is an array operation (a matrix multiply, a convolution, a softmax), so the tape has thousands of rows, not billions. The same idea in PyTorch:
+
+```python
+import torch
+
+w1 = torch.tensor(0.5, requires_grad=True)
+w2 = torch.tensor(-0.6, requires_grad=True)
+b  = torch.tensor(0.1, requires_grad=True)
+x1, x2, t = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(-0.5)
+
+L = ((w1 * x1 + w2 * x2 + b).tanh() - t) ** 2
+print(L.grad_fn)        # <PowBackward0 ...>: the last row of the tape
+L.backward()            # replay the tape in reverse
+print(w1.grad, w2.grad, b.grad)   # tensor(1.4483) tensor(0.7242) tensor(1.4483)
+```
+
+- `requires_grad=True` marks a leaf whose gradient you want.
+- Every result carries a `grad_fn`, its saved rule, pointing at the `grad_fn` of its inputs: that is the tape, stored as a linked structure.
+- The graph is built during the forward pass, so ordinary Python `if` and `for` work: this is called *define-by-run*. A different input can produce a different graph.
+- `backward()` frees the graph by default, because the saved values are what use the memory. `torch.no_grad()` skips recording when you only want to run the model.
+- Gradients accumulate into `.grad`, which is why training loops call `optimizer.zero_grad()`.
+
+</Step>
+
+<Step title="Where automatic differentiation is blind">
+
+Automatic differentiation differentiates the operations that ran, so it is only as smooth as they are.
+
+- At a kink like ReLU at 0 the derivative does not exist; the framework picks a convention (usually 0).
+- Operations such as `argmax`, rounding or sampling have zero derivative almost everywhere, so no signal passes through them. Methods such as the straight-through estimator or the reparameterization trick exist to get around this.
+- Values converted to plain numbers (`.item()`, NumPy) leave the tape. Gradients cannot flow back through code the framework did not record.
+
+None of these are bugs in the method. They are reminders that the gradient describes the recorded computation, at this point, nothing more.
+
+</Step>
+
+<Step title="Common misconceptions">
+
+**You might think autodiff is symbolic differentiation. Actually** it never builds a formula for the derivative. It applies numeric local rules to the numbers of one particular run, which is why it handles loops and branches that symbolic tools cannot.
+
+**You might think it is a numerical approximation. Actually** it is exact up to floating-point rounding. There is no step size to tune.
+
+**You might think `backward()` is where the graph is built. Actually** the graph is built during the forward pass. `backward()` only replays what was recorded.
+
+**You might think forward mode is obsolete. Actually** it is the better choice when there are few inputs and many outputs, and it needs no tape. Reverse mode wins for training because a loss is one output with a great many inputs.
+
+**You might think the framework "knows" the network. Actually** it only knows a library of primitives and their local derivatives. Everything else is composition.
+
+</Step>
+
+<Step title="Check yourself">
+
+Try each question first, then open the answer.
+
+<details>
+<summary>1. A function has 1,000 inputs and 1 output. How many sweeps does forward mode need to get the whole gradient, and how many does reverse mode need?</summary>
+
+Forward mode needs **1,000** tangent sweeps, one per input. Reverse mode needs **one forward and one backward sweep**, independent of the number of inputs.
+
+</details>
+
+<details>
+<summary>2. A function has 1 input and 1,000 outputs. Which mode would you choose?</summary>
+
+**Forward mode.** One tangent sweep gives the derivative of every output with respect to that one input. Reverse mode would need one backward sweep per output, 1,000 of them.
+
+</details>
+
+<details>
+<summary>3. Why does reverse mode need the forward values kept in memory, and forward mode does not?</summary>
+
+The reverse sweep evaluates the local derivatives after the forward pass is over, and those derivatives depend on forward values (for instance $y$ in $1 - y^2$). Forward mode computes each tangent at the same moment as its value, so nothing has to be stored.
+
+</details>
+
+<details>
+<summary>4. In the tape of this lesson, why does the row for b have the same adjoint as s₂?</summary>
+
+$s_2 = s_1 + b$ is an addition, and the local derivative of a sum with respect to each input is 1. So $\bar b = \bar s_2 \cdot 1 = 1.448$, the same as $\bar s_2$ and $\bar s_1$.
+
+</details>
+
+</Step>
+
+<Step title="Going deeper">
+
+- Baydin, Pearlmutter, Radul and Siskind, "Automatic differentiation in machine learning: a survey", *Journal of Machine Learning Research* 18 (2018). The standard overview of forward mode, reverse mode, tapes and their use in machine learning.
+- Andreas Griewank and Andrea Walther, *Evaluating Derivatives: Principles and Techniques of Algorithmic Differentiation* (SIAM, 2nd ed., 2008). The reference text; it proves the cheap gradient principle.
+- R. E. Wengert, "A simple automatic derivative evaluation program", *Communications of the ACM* 7(8), 463-464 (1964). The origin of the tape ("Wengert list").
+- Christopher Olah, [Calculus on Computational Graphs: Backpropagation](https://colah.github.io/posts/2015-08-Backprop/). Why going backward is cheap when there is one output.
+- PyTorch documentation, [Autograd mechanics](https://pytorch.org/docs/stable/notes/autograd.html), for how `grad_fn`, the saved tensors and `backward()` fit together.
+
+Next: [vanishing and exploding gradients](/learn/neural-networks/vanishing-exploding-gradients/), what happens to this product when the tape is thirty layers deep.
+
+</Step>

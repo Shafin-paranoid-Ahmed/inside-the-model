@@ -1,0 +1,197 @@
+---
+title: "Mixture of Experts (MoE)"
+summary: "Route each token to a few expert MLPs so capacity grows without proportional compute."
+day: 15
+track: frontier
+order: 2
+level: frontier
+duration: 30
+prereqs: ["transformers/transformer-block"]
+status: stub
+lastReviewed: 2026-09-29
+---
+
+Only a fraction of the model runs for each token.
+
+import Step from '../../../components/ui/Step.astro';
+
+{/*
+LESSON BRIEF (skeleton, 2026-10-03). Widget: MoERouter (IDEA.md 8.6; plan: plans/day-15.md).
+Toy: 240 "tokens" are points in a 2D embedding plane drawn from 6 seeded clusters; the target is a different simple function on each cluster.
+Layer: router = linear 2 to E, softmax, top-k; experts = E tiny MLPs (2-8-1, tanh); output = gate-weighted sum of the chosen experts.
+Trained in a worker with the shared engine (src/lib/nn MLP + adam), three seeded runs: aux=0, aux=0.01 (Switch-style), and bias-balancing (aux-loss-free).
+Expert identity is shown by position and number label, not colour (no categorical tokens yet: owner question in BUILDING.md 7). Load uses --viz-seq-1..5.
+
+(a) TEXTBOOK-STABLE MECHANISMS:
+- Sparsely gated MoE replaces the dense FFN with E experts; a router picks the top-k per token (Shazeer et al. 2017).
+- Top-1 routing (Switch) and top-2 routing; gate weights renormalised over the chosen experts.
+- Router collapse without balancing; Switch auxiliary loss alpha * E * sum_i f_i * P_i (f = fraction of tokens sent to i, P = mean router probability for i).
+- Capacity factor: per-expert buffer = capacity * tokens / E; overflow tokens are dropped (pass through the residual).
+- Bias-based, auxiliary-loss-free balancing (DeepSeek-V3): a per-expert bias added for selection only, nudged up when underloaded.
+- Active params per token = shared params + k * expert size; total = shared + E * expert size.
+
+(b) RESEARCH LIST:
+R1 Exact Switch load-balancing loss and capacity definition: Fedus et al. arXiv 2101.03961 (confirmed 2026-10-03), section 2.
+R2 Original sparsely gated MoE and noisy top-k: Shazeer et al. arXiv 1701.06538 (confirmed 2026-10-03).
+R3 Aux-loss-free balancing details and update rule: DeepSeek-V3 arXiv 2412.19437 (confirmed 2026-10-03), section on load balancing.
+R4 Fine-grained and shared experts: DeepSeekMoE arXiv 2401.06066 (VERIFY).
+R5 Which current open-weight models are MoE, with total and active parameter counts, from official model cards only. Query: "model card mixture of experts total parameters active parameters 2026". Mixtral arXiv 2401.04088 (VERIFY) as a historical example.
+R6 Serving trade-offs (all experts must sit in memory; expert parallelism, all-to-all communication). Query: "expert parallelism all-to-all MoE inference paper".
+*/}
+
+<Step title="Experts replace the dense MLP">
+
+In a mixture-of-experts layer the single feed-forward network of a transformer block is replaced by several smaller networks, called experts, and each token uses only a few of them.
+
+{/*
+IDEA: the MoE layer is a drop-in replacement for the block's MLP (link /learn/transformers/transformer-block/). Show dense first, then the same plane with E experts.
+WIDGET: MoERouter mode="dense". One wide MLP box; every token particle flows through it; readout "multiply-adds per token". A ghosted row of 8 expert boxes appears at the end of the cycle.
+T: t loops tokens flowing from the plane through the dense MLP to the output; phase markers "Dense layer", "Same size, split into 8".
+TRY: watch every token light up the whole dense box.
+QUOTE: multiply-adds per token for the dense MLP and for one expert (from sim.ts constants).
+MATH: y = FFN(x) vs y = sum over chosen i of g_i(x) E_i(x).
+RESEARCH: R2 (one sentence of history, cited).
+*/}
+
+</Step>
+
+<Step title="The router picks the top experts for each token">
+
+A small router scores every expert for the current token, and only the highest-scoring few are run; their outputs are mixed using the router's weights.
+
+{/*
+IDEA: top-k routing. Router logits, softmax, keep top-k, renormalise, weighted sum.
+WIDGET: MoERouter mode="route" k=2 (trained aux=0.01 run, final weights). Selected token's 8 router probabilities as bars; particles split to its 2 chosen experts with widths = gate weights; outputs merge.
+T: t cycles through 12 sample tokens, one per beat; bars ease to the new token's scores.
+TRY: pause on a token near a cluster boundary and see the two gate weights come out nearly equal.
+QUOTE: for the first sample token: its top-2 experts, their softmax scores and renormalised gates (sum to 1).
+MATH: g = softmax(W_r x); keep top-k; g_i / sum of kept g. CODE: 6-line PyTorch top-k router.
+RESEARCH: R1, R2.
+*/}
+
+</Step>
+
+<Step title="Router and experts learn together">
+
+The router and the experts are trained at the same time, so each expert gradually specialises in the kind of token the router sends it.
+
+{/*
+IDEA: specialisation emerges from joint training; the plane is partitioned by "which expert wins".
+WIDGET: MoERouter mode="train" k=2 aux=0.01. Plane background coloured by top-1 expert (--viz-seq ramp per expert index plus number labels at region centroids), loss curve below.
+T: t = training step (snapshots every 20 steps); region boundaries move and settle; loss falls.
+TRY: watch the regions line up with the six clusters.
+QUOTE: loss at step 0 and final; number of experts that end up owning at least one cluster.
+MATH: loss = task MSE + aux term (introduced in the next step; here aux shown only as a label).
+RESEARCH: none beyond R1.
+*/}
+
+</Step>
+
+<Step title="Without balancing, a few experts take everything">
+
+Left alone, the router tends to send most tokens to a few experts, which then get more training and become even more attractive, while the rest sit idle.
+
+{/*
+IDEA: rich-get-richer collapse.
+WIDGET: MoERouter mode="collapse" k=2 aux=0. Load histogram (tokens per expert, with the "perfectly even" line), plus the plane coloured by top-1 expert.
+T: t = training step; histogram bars grow unevenly; dead experts fade.
+TRY: count the experts that receive no tokens at the end.
+QUOTE: share of tokens taken by the busiest expert; number of idle experts at the end (aux=0 run).
+MATH: none.
+RESEARCH: R1 (Switch reports this motivation; quote only what it says).
+*/}
+
+</Step>
+
+<Step title="A balancing loss spreads the load">
+
+Adding a small penalty that grows when the load is uneven pushes the router to share tokens across experts, and newer models nudge a per-expert bias instead of adding a loss.
+
+{/*
+IDEA: Switch auxiliary loss; then aux-loss-free bias balancing.
+WIDGET: MoERouter mode="balance" k=2 balance="aux" (a toggle in the figure switches balance="bias"; default aux). Same histogram as step 4, now with f_i and P_i drawn as paired bars.
+T: t = training step; the histogram flattens towards the even line; the aux loss value counts down.
+TRY: flip to the bias method and compare how even the load ends up and the final task loss.
+QUOTE: max-expert share and final task loss for aux=0, aux=0.01, bias.
+MATH: Switch loss alpha * E * sum f_i P_i, minimised at f_i = P_i = 1/E; bias update rule from R3.
+RESEARCH: R1, R3.
+*/}
+
+</Step>
+
+<Step title="When an expert is full">
+
+Real systems give each expert a fixed number of slots per batch, and tokens that arrive after the slots are full skip the expert entirely.
+
+{/*
+IDEA: capacity factor and dropped tokens.
+WIDGET: MoERouter mode="capacity" capacity=1.0 (slider 0.5 to 2.0). Each expert as a row of slots filling with token particles; overflow tokens bounce to the residual path, drawn in --viz-neg.
+T: t streams one batch of 240 tokens into the slots in arrival order.
+TRY: drag capacity from 1.0 to 1.25 and watch the dropped count fall.
+QUOTE: dropped tokens at capacity 1.0 and 1.25 for the aux=0.01 run, and for the aux=0 run at 1.0.
+MATH: slots = capacity * tokens / E.
+RESEARCH: R1 (definition), R6.
+*/}
+
+</Step>
+
+<Step title="Active versus total parameters">
+
+Because each token only runs a few experts, the model can hold many more parameters than it uses for any one token.
+
+{/*
+IDEA: capacity grows with E, compute per token grows with k.
+WIDGET: MoERouter mode="params" k=2 (sliders E 1 to 64, k 1 to 4). Two bars: total parameters and active parameters per token, plus memory needed vs multiply-adds per token.
+T: t sweeps E from 1 to 64 at fixed k; the total bar grows, the active bar stays flat.
+TRY: set k to 1 and E to 64 and read the ratio of total to active.
+QUOTE: computed totals for E = 8, k = 2 and E = 64, k = 1 for the toy layer sizes.
+MATH: total = shared + E * P_expert; active = shared + k * P_expert.
+RESEARCH: R5 (one or two real model-card examples, dated and cited; none written from memory), R6 (memory still holds all experts).
+*/}
+
+</Step>
+
+<Step title="Common misconceptions">
+
+Some common beliefs about mixtures of experts are wrong.
+
+{/*
+NO WIDGET. Misconceptions:
+1. Each expert is a human-readable specialist (e.g. "the maths expert"). Actually specialisation is often by token type; cite what R4/R5 sources report.
+2. MoE models are cheap to serve. Compute per token is low, but all experts must be in memory (step 7, R6).
+3. Routing happens once per sequence. It happens per token, per MoE layer.
+4. More experts always helps. Balancing, capacity and communication costs grow (steps 4 to 6).
+*/}
+
+</Step>
+
+<Step title="Check yourself">
+
+Try these questions on routing and parameter counts.
+
+{/*
+NO WIDGET. Questions:
+1. With E = 16 experts of 1M parameters each, k = 2 and 3M shared parameters, what are total and active parameters? (19M, 5M.)
+2. Why would an unbalanced router get worse over time without a penalty?
+3. What happens to a token that arrives at a full expert?
+4. Where is the Switch auxiliary loss smallest, and why?
+*/}
+
+</Step>
+
+<Step title="Going deeper">
+
+The original papers and technical reports are listed here.
+
+{/*
+NO WIDGET. Sources (confirmed 2026-10-03 unless marked):
+- Shazeer et al. 2017, https://arxiv.org/abs/1701.06538
+- Lepikhin et al. 2020, GShard, https://arxiv.org/abs/2006.16668 (VERIFY)
+- Fedus, Zoph, Shazeer 2021, Switch Transformers, https://arxiv.org/abs/2101.03961
+- Jiang et al. 2024, Mixtral of Experts, https://arxiv.org/abs/2401.04088 (VERIFY)
+- Dai et al. 2024, DeepSeekMoE, https://arxiv.org/abs/2401.06066 (VERIFY)
+- DeepSeek-AI 2024, DeepSeek-V3 technical report, https://arxiv.org/abs/2412.19437
+- Plus current model cards found under R5.
+*/}
+
+</Step>
