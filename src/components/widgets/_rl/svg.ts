@@ -74,7 +74,7 @@ export const MIN_TEXT = 11;
 export interface TextOpts extends Style { size?: number; anchor?: 'start' | 'middle' | 'end'; weight?: number; mono?: boolean; halo?: boolean; base?: 'auto' | 'middle' | 'hanging' }
 /** Text in the UI font (mono only for numbers in tables), never below 11 px. `fill` defaults to --text. */
 export const text = (E: Env, s: string, x: number, y: number, o: TextOpts = {}) => {
-  E.out.push({ k: 'text', x: r1(x), y: r1(y), s, size: Math.max(MIN_TEXT, o.size ?? 12), anchor: o.anchor ?? 'start', fill: TEXT, ...o });
+  E.out.push({ k: 'text', x: r1(x), y: r1(y), s, size: Math.max(MIN_TEXT, o.size ?? 12), anchor: o.anchor ?? 'start', ...o, fill: o.fill ?? TEXT });
 };
 
 /** A straight arrow from (x1,y1) to (x2,y2); the head is drawn inside the length. */
