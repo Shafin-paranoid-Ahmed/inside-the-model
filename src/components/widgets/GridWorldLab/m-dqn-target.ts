@@ -6,7 +6,6 @@
  * update 49, 0 at update 50, 0.024 at update 51. Q* is 0.397.
  * Props: seed (19), updates (300), copyEvery (50), lr (0.01), capacity (256), batch (16).
  */
-import { ACTIONS, cellName } from '../../../lib/rl/gridworld';
 import { optimal } from '../../../lib/rl/tabular';
 import { type DQNResult } from '../../../lib/rl/dqn';
 import { int, num, type Frame, type Kit, type ModeImpl, type Opts } from '../_rl/kit';
@@ -48,14 +47,14 @@ const mode: ModeImpl<Scene, F> = {
     }
     const ax0 = 8 + bw + 6, ax1 = E.W - 8 - bw - 6, cy = 8 + (band - 16) / 2 - 6, copied = f.k % s.copy === 0;
     arrow(E, ax0, cy, ax1, cy, { stroke: copied ? 'var(--accent)' : RULE, width: copied ? 3 : 1.5 });
-    text(E, copied ? 'copied now' : `copy every ${s.copy}`, (ax0 + ax1) / 2, cy - 8, { anchor: 'middle', size: 11, fill: copied ? 'var(--accent)' : MUTED, weight: copied ? 700 : 400 });
+    text(E, nar ? (copied ? 'copied' : 'copy') : copied ? 'copied now' : `copy every ${s.copy}`, (ax0 + ax1) / 2, cy - 8, { anchor: 'middle', size: 11, fill: copied ? 'var(--accent)' : MUTED, weight: copied ? 700 : 400 });
     const dw = (ax1 - ax0) * (r.weightDist[i] / (s.dmax || 1));
     rect(E, ax0, cy + 12, ax1 - ax0, 6, { fill: 'none', stroke: RULE, sw: 1 });
     rect(E, ax0, cy + 12, dw, 6, { fill: 'var(--viz-gradient)' });
-    text(E, 'weights apart', (ax0 + ax1) / 2, cy + 34, { anchor: 'middle', size: 11, fill: MUTED });
+    text(E, nar ? 'apart' : 'weights apart', (ax0 + ax1) / 2, cy + 34, { anchor: 'middle', size: 11, fill: MUTED });
     const vals = [...Array.from(r.diagQ), ...Array.from(r.diagY), s.qstar], lo = Math.floor((Math.min(...vals) - 0.05) * 5) / 5, hi = Math.ceil((Math.max(...vals) + 0.05) * 5) / 5;
     const cb = { x: 46, y: band + 22, w: E.W - 62, h: E.H - band - 22 - (nar ? 48 : 52) };
-    const { sx, sy } = axes(E, cb, { lo: 0, hi: s.n, ticks: [0, 50, 100, 150, 200, 250, 300].filter((v) => v <= s.n), label: 'Update' }, { lo, hi, label: 'Q or target for (3,1) up' });
+    const { sx, sy } = axes(E, cb, { lo: 0, hi: s.n, ticks: (nar ? [0, 100, 200, 300] : [0, 50, 100, 150, 200, 250, 300]).filter((v) => v <= s.n), label: 'Update' }, { lo, hi, label: 'Q or target for (3,1) up' });
     for (let c = s.copy; c <= s.n; c += s.copy) line(E, sx(c), cb.y, sx(c), cb.y + cb.h, { stroke: RULE, sw: 1, dash: '2 3' });
     line(E, cb.x, sy(s.qstar), cb.x + cb.w, sy(s.qstar), { stroke: MUTED, sw: 1.25, dash: '5 4' });
     text(E, `Q* ${fmt(s.qstar)}`, cb.x + cb.w - 4, sy(s.qstar) - 5, { anchor: 'end', size: 11, fill: MUTED });

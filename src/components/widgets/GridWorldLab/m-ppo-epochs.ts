@@ -49,7 +49,7 @@ const mode: ModeImpl<Scene, F> = {
     const kh = ended ? s.ups : t < LEAD ? 0 : k, w = live ? ease((fr - 0.4) / 0.3) : 0;
     const st = s.st[n], pct = (x: number) => `${Math.round(x * 100)}%`, ep = Math.floor(k / s.per) + 1, inEp = (k % s.per) + 1;
     let status: string;
-    if (t < LEAD) status = `This batch of ${s.n} steps is frozen: its saved probabilities, advantages and critic targets stay fixed. ${s.pos} advantages are positive (green) and ${s.n - s.pos} negative (red). All ratios start at 1.`;
+    if (t < LEAD) status = `This batch of ${s.n} steps is frozen: its saved probabilities, advantages and critic targets stay fixed. ${s.pos} advantages are positive (blue) and ${s.n - s.pos} negative (orange). All ratios start at 1.`;
     else if (mb) status = `Epoch ${ep}, step ${inEp} of ${s.per}: PPO takes the ${s.idx[k].length} outlined samples and moves the policy one step up their clipped objective.`;
     else status = `${n === s.ups ? 'After all' : 'After'} ${n} update${n === 1 ? '' : 's'}: ${pct(st.oob)} of the ratios are outside the band, ${pct(st.flatFrac)} of the samples are flat, and ${st.oobActive} outside the band ${st.oobActive === 1 ? 'is' : 'are'} still pushing.`;
     const vl = n ? s.vl[n - 1] : NaN;
@@ -71,15 +71,18 @@ const mode: ModeImpl<Scene, F> = {
       else if (r < 1 - eps || r > 1 + eps) circle(E, x + cs / 2, y + cs / 2, Math.max(3.5, cs * 0.2), { fill: 'none', stroke: TEXT, sw: 2 });
     }
     // histogram of ratios: still pushing (forward colour) and flat (grey), stacked
-    const hb = nw ? { x: 40, y: gb.y + cs * Math.ceil(s.n / side) + 40, w: W - 56, h: H * 0.27 } : { x: gb.x + gb.w + 56, y: 40, w: W - gb.x - gb.w - 74, h: H * 0.44 };
-    const mx = Math.max(8, ...s.st.map((x) => Math.max(...Array.from(x.act, (v, i) => v + x.flat[i]))));
+    const hb = nw ? { x: 40, y: gb.y + cs * Math.ceil(s.n / side) + 52, w: W - 56, h: H * 0.27 } : { x: gb.x + gb.w + 56, y: 40, w: W - gb.x - gb.w - 74, h: H * 0.44 };
+    // fixed domain fitted to updates 4 onward; the taller early bars are clipped at the top and labelled with their count
+    const mx = Math.ceil(Math.max(8, ...s.st.slice(4).map((x) => Math.max(...Array.from(x.act, (v, i) => v + x.flat[i])))) / 4) * 4;
     const { sx, sy } = axes(E, hb, { lo: LO, hi: HI, ticks: [0.6, 0.8, 1, 1.2, 1.4], label: 'Probability ratio ρ' }, { lo: 0, hi: mx, label: 'Number of samples' });
     rect(E, sx(1 - eps), hb.y, sx(1 + eps) - sx(1 - eps), hb.h, { fill: mix(ACCENT, BG, 16) });
     const from = s.st[f.kh], to = s.st[Math.min(s.ups, f.kh + 1)], bw = hb.w / BINS;
     for (let i = 0; i < BINS; i++) {
       const a2 = lerp(from.act[i], to.act[i], f.w), f2 = lerp(from.flat[i], to.flat[i], f.w);
-      if (a2 > 0.01) rect(E, hb.x + i * bw + 1, sy(a2), bw - 2, sy(0) - sy(a2), { fill: 'var(--viz-forward)' });
-      if (f2 > 0.01) rect(E, hb.x + i * bw + 1, sy(a2 + f2), bw - 2, sy(a2) - sy(a2 + f2), { fill: MUTED });
+      const a3 = Math.min(a2, mx), f3 = Math.min(f2, mx - a3);
+      if (a3 > 0.01) rect(E, hb.x + i * bw + 1, sy(a3), bw - 2, sy(0) - sy(a3), { fill: 'var(--viz-forward)' });
+      if (f3 > 0.01) rect(E, hb.x + i * bw + 1, sy(a3 + f3), bw - 2, sy(a3) - sy(a3 + f3), { fill: MUTED });
+      if (a2 + f2 > mx + 0.5) text(E, String(Math.round(a2 + f2)), hb.x + (i + 0.5) * bw, hb.y + 12, { size: 11, anchor: 'middle', fill: BG, weight: 650 });
     }
     // critic loss per update
     const lb = nw ? { x: 40, y: hb.y + hb.h + 62, w: W - 56, h: Math.max(56, H - (hb.y + hb.h + 62) - 44) } : { x: hb.x, y: hb.y + hb.h + 62, w: hb.w, h: Math.max(56, H - (hb.y + hb.h + 62) - 44) };

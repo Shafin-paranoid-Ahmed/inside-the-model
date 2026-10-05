@@ -71,7 +71,7 @@ const mode: ModeImpl<Scene, F> = {
     const rows = Math.ceil(s.idx.length / per), ry = cy0 + rows * (cs + 3) + (nw ? 34 : 38);
     const rb = nw ? { x: 44, y: ry, w: W - 60, h: Math.max(60, H - ry - 44) } : { x: cx0 + 30, y: ry, w: cw - 36, h: Math.max(60, H - ry - 46) };
     const rat = s.probs.map((p) => p[a] / s.probs[0][a]);
-    const lo = Math.min(0.7, ...rat) - 0.02, hi = Math.max(1.12, ...rat) + 0.02;
+    const lo = Math.min(0.7, ...rat) - 0.02, hi = Math.max(1.24, ...rat) + 0.02;
     const { sx, sy: ys } = axes(E, rb, { lo: 0, hi: s.ups, ticks: [0, s.ups / 4, s.ups / 2, (3 * s.ups) / 4, s.ups], label: 'Updates' }, { lo, hi, ticks: [0.8, 1, 1.2].filter((v) => v > lo && v < hi), label: 'Ratio of the selected sample' });
     rect(E, rb.x, ys(1 + s.eps), rb.w, ys(1 - s.eps) - ys(1 + s.eps), { fill: mix(ACCENT, BG, 14) });
     line(E, rb.x, ys(1), rb.x + rb.w, ys(1), { stroke: MUTED, sw: 1, dash: '3 3' });

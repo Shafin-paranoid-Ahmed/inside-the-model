@@ -11,8 +11,8 @@ export default {
     { label: 'Push on the logit', color: '--viz-gradient' },
     { label: 'Chance of the action', color: '--viz-forward' },
   ],
-  aspect: '720 / 520',
-  narrowAspect: '360 / 760',
+  aspect: '720 / 440',
+  narrowAspect: '360 / 700',
   lanes: 2,
   controls: [{ key: 'focus', label: 'Policy shown for cell', kind: 'select', options: cells.map(([x, y]) => ({ value: `${x},${y}`, label: `(${x},${y})` })) }],
 } satisfies ModeMeta;

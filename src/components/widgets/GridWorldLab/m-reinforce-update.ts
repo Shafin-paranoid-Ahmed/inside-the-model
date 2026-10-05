@@ -21,6 +21,13 @@ interface Scene {
 interface F extends Frame { t: number; phase: number; k: number; u: number; fx: number; fy: number }
 
 const num4 = (x: number) => fmt(x, 2);
+/** Step columns to show in `maxCols` slots: always the focus cell's visits, then the earliest steps; -1 marks an ellipsis column for skipped steps. */
+function pickCols(T: number, maxCols: number, visits: number[]): number[] {
+  const build = (keep: Set<number>) => { const out: number[] = []; let prev = -1; for (let j = 0; j < T; j++) if (keep.has(j)) { if (j > prev + 1 && out.length) out.push(-1); out.push(j); prev = j; } return out; };
+  const keep = new Set(visits.slice(0, Math.max(1, maxCols - 2)));
+  for (let j = 0; j < T; j++) { if (keep.has(j)) continue; const next = new Set(keep).add(j); if (build(next).length <= maxCols) keep.add(j); else break; }
+  return build(keep);
+}
 
 const mode: ModeImpl<Scene, F> = {
   setup(o: Opts) {
@@ -40,7 +47,7 @@ const mode: ModeImpl<Scene, F> = {
   },
   timeline: (s) => ({
     duration: s.t.end + HOLD,
-    markers: [{ at: 0, label: 'Play the episode' }, { at: s.t.c1, label: 'Add up the returns' }, { at: s.t.c2, label: 'Subtract the baseline' }, { at: s.t.c3, label: 'Add up the pushes' }, { at: s.t.c4, label: 'Update the policy' }],
+    markers: [{ at: 0, label: 'Collect' }, { at: s.t.c1, label: 'Returns' }, { at: s.t.c2, label: 'Baseline' }, { at: s.t.c3, label: 'Pushes' }, { at: s.t.c4, label: 'Update' }],
   }),
   frameAt(t, s) {
     const { d, T, t: tt } = s, phase = t < tt.c1 ? 0 : t < tt.c2 ? 1 : t < tt.c3 ? 2 : t < tt.c4 ? 3 : 4;
@@ -115,12 +122,14 @@ const mode: ModeImpl<Scene, F> = {
       }
     }
     // the episode as a table, one column per step
-    const sy = E.H - stripH + 2, lx = 8, tx = lx + (nar ? 62 : 84), maxCols = Math.floor((W - tx - 6) / (nar ? 32 : 38)), nC = Math.min(T, maxCols), cwid = Math.min(54, (W - tx - 6) / nC);
-    const labels = ['Step', 'Cell', 'Action', 'Reward', 'Return G', 'Baseline b', 'Advantage'];
-    labels.forEach((l, r) => text(E, nar && l.length > 9 ? l.replace('Baseline b', 'Base b') : l, lx, sy + r * rh + 13, { size: 11, fill: MUTED }));
+    const sy = E.H - stripH + 2, lx = 8, tx = lx + (nar ? 40 : 84), maxCols = Math.floor((W - tx - 6) / (nar ? 37 : 38)), cols = pickCols(T, maxCols, s.visits), nC = cols.length, cwid = Math.min(54, (W - tx - 6) / nC);
+    const labels = nar ? ['Step', 'Cell', 'Move', 'Rew.', 'G', 'b', 'Adv.'] : ['Step', 'Cell', 'Action', 'Reward', 'Return G', 'Baseline b', 'Advantage'];
+    labels.forEach((l, r) => text(E, l, lx, sy + r * rh + 13, { size: 11, fill: MUTED }));
     const vmax = Math.max(0.5, ...d.steps.map((x) => Math.abs(x.adv))), shownMoves = f.phase > 0 ? T : f.k + (f.u >= 0.7 ? 1 : 0);
-    for (let j = 0; j < nC; j++) {
-      const st = d.steps[j], x = tx + j * cwid + cwid / 2;
+    for (let c = 0; c < nC; c++) {
+      const j = cols[c], x = tx + c * cwid + cwid / 2;
+      if (j < 0) { if (shownMoves > 0) text(E, '…', x, sy + 13, { size: 11, anchor: 'middle', fill: MUTED }); continue; }
+      const st = d.steps[j];
       if (st.s === s.focus && j < shownMoves) rect(E, x - cwid / 2 + 1, sy - 2, cwid - 2, stripH - 4, { fill: 'none', stroke: ACCENT, sw: 1.5, rx: 3 });
       if (j >= shownMoves) continue;
       const cell = (r: number, str: string, o: { fill?: string; bg?: string } = {}) => {
@@ -132,7 +141,6 @@ const mode: ModeImpl<Scene, F> = {
       if (f.t >= tt.c2) cell(5, fmt(st.b));
       if (f.t >= tt.c2 + BASE / 2) cell(6, signFmt(st.adv), { bg: signedFill(st.adv, vmax), fill: inkOn(Math.abs(st.adv) / vmax) });
     }
-    if (nC < T) text(E, `… ${T - nC} more steps`, W - 8, sy + 13, { size: 11, fill: MUTED, anchor: 'end' });
   },
   label: (s) => `One REINFORCE episode of ${s.T} steps turned into one policy update: returns, baselines, advantages, the pushes on the logits of cell ${cellName(s.focus)}, and its action probabilities before and after.`,
 };

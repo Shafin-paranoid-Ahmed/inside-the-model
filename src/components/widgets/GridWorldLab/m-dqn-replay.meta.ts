@@ -8,6 +8,6 @@ export default {
     { label: 'Newest 16 in a row', color: '--viz-forward' },
   ],
   aspect: '720 / 400',
-  narrowAspect: '360 / 640',
+  narrowAspect: '360 / 420',
   lanes: 2,
 } satisfies ModeMeta;

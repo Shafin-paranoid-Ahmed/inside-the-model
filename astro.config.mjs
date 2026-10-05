@@ -14,7 +14,7 @@ import sitemap from '@astrojs/sitemap';
 // https://astro.build/config
 export default defineConfig({
   // TODO: replace with the real domain before launch
-  site: 'https://ailearner.dev',
+  site: 'https://inside-model.vercel.app',
   fonts: [
     { provider: fontProviders.local(), name: 'Source Serif 4', cssVariable: '--font-serif', fallbacks: ['Georgia', 'serif'], options: { variants: [
       { weight: '200 900', style: 'normal', src: ['./node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2'] },

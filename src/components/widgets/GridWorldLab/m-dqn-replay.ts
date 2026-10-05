@@ -75,7 +75,7 @@ const mode: ModeImpl<Scene, F> = {
   },
   draw(E: Env, f, s) {
     const nar = E.narrow, cap = s.cap, side = Math.round(Math.sqrt(cap));
-    const rs = nar ? Math.min(E.W - 24, E.H * 0.3) : Math.min(E.H - 56, E.W * 0.36), cs = Math.floor(rs / side), rx = nar ? (E.W - cs * side) / 2 : 14, ry = nar ? 26 : 34;
+    const rs = nar ? Math.min(E.W - 24, 190) : Math.min(E.H - 56, E.W * 0.36), cs = Math.floor(rs / side), rx = nar ? (E.W - cs * side) / 2 : 14, ry = nar ? 26 : 34;
     text(E, `Replay buffer: ${cap} slots, oldest overwritten first`, nar ? 8 : 14, 16, { fill: MUTED });
     for (let j = 0; j < cap; j++) {
       const age = f.ages[j], x = rx + (j % side) * cs, y = ry + Math.floor(j / side) * cs;
@@ -88,8 +88,8 @@ const mode: ModeImpl<Scene, F> = {
       for (const j of b.slots) rect(E, rx + (j % side) * cs + 0.5, ry + Math.floor(j / side) * cs + 0.5, cs - 1, cs - 1, { fill: 'none', stroke: ACCENT, sw: 2.2 });
     }
     // two small grids: how often each cell appears in the newest-in-a-row batch and in the sampled batch
-    const area = nar ? { x: 8, y: ry + cs * side + 40, w: E.W - 16, h: E.H - (ry + cs * side + 40) - 8 } : { x: rx + cs * side + 30, y: 34, w: E.W - (rx + cs * side + 30) - 12, h: E.H - 48 };
-    const half = (area.w - 14) / 2, boxes = [{ x: area.x, y: area.y + 26, w: half, h: area.h - 52 }, { x: area.x + half + 14, y: area.y + 26, w: half, h: area.h - 52 }];
+    const area = nar ? { x: 8, y: ry + cs * side + 24, w: E.W - 16, h: E.H - (ry + cs * side + 24) - 8 } : { x: rx + cs * side + 30, y: 34, w: E.W - (rx + cs * side + 30) - 12, h: E.H - 48 };
+    const half = (area.w - 14) / 2, boxes = [{ x: area.x, y: area.y + 26, w: half, h: nar ? half * 0.75 : area.h - 52 }, { x: area.x + half + 14, y: area.y + 26, w: half, h: nar ? half * 0.75 : area.h - 52 }];
     const names = [`Newest ${s.batch} in a row`, `${s.batch} sampled at random`], cnt = b ? [counts(b.recent), counts(b.replay)] : null;
     boxes.forEach((bx, i) => {
       const G = gridIn(bx);
@@ -100,7 +100,7 @@ const mode: ModeImpl<Scene, F> = {
       const used = cnt[i].filter((x) => x > 0).length;
       text(E, `${used} different cell${used === 1 ? '' : 's'}`, bx.x, G.y0 + G.h + 18, { fill: MUTED, size: 12 });
     });
-    if (!b) text(E, 'A batch appears once the buffer is full.', area.x, area.y + area.h / 2, { fill: MUTED });
+    if (!b) text(E, 'A batch appears once the buffer is full.', area.x, area.y + 36, { fill: MUTED });
   },
   label: (s) => `A ${s.cap}-slot replay buffer drawn as a square coloured by age, with the ${s.batch} newest transitions and ${s.batch} randomly sampled ones marked, and two small grids counting which cells each batch visits.`,
 };

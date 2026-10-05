@@ -7,7 +7,7 @@ export default {
     { label: 'Positive value', color: '--viz-pos' },
     { label: 'Negative value', color: '--viz-neg' },
   ],
-  aspect: '720 / 340',
+  aspect: '720 / 290',
   lanes: 1,
   narrowAspect: '360 / 640',
 } satisfies ModeMeta;

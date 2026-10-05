@@ -29,7 +29,7 @@ const mode: ModeImpl<Scene, F> = {
   timeline(s) {
     const m = [{ at: 0, label: 'All zero' }];
     if (s.n1 >= 1) m.push({ at: s.starts[1], label: s.n1 === 1 ? 'Sweep 1' : `Sweeps 1 to ${s.n1}` });
-    const settled = s.V.findIndex((v, k) => k > 0 && s.V.slice(k).every((w) => Math.abs(w[s.focus] - s.final) < 0.005));
+    const settled = s.V.findIndex((_v, k) => k > 0 && s.V.slice(k).every((w) => Math.abs(w[s.focus] - s.final) < 0.005));
     if (s.n1 >= 1 && s.n1 + 1 < settled) m.push({ at: s.starts[s.n1 + 1], label: `Sweeps ${s.n1 + 1} to ${settled - 1}` });
     if (settled > 0 && settled <= s.K) m.push({ at: s.starts[settled], label: `Sweeps ${settled} on` });
     return { duration: s.starts[s.K] + len(s.K) + HOLD, markers: m };
@@ -41,7 +41,7 @@ const mode: ModeImpl<Scene, F> = {
     const status = k === 0
       ? 'Every cell starts with value 0, as if nothing were known. Each sweep replaces every value using the values from the sweep before.'
       : `Sweep ${k}: the value of ${cellName(s.focus)} goes from ${fmt(s.V[k - 1][s.focus], 3)} to ${fmt(v, 3)}, ` +
-        (k <= s.n1 ? 'because the goal is still too far away to matter: each sweep only adds the cost of one more move.' : v > s.V[k - 1][s.focus] ? 'as news of the goal travels back along the route.' : 'as the values settle.');
+        (k <= s.n1 ? 'because the goal is still too far away to matter: each sweep only adds the cost of one more move.' : Math.abs(v - s.V[k - 1][s.focus]) < 5e-4 ? 'so it has stopped changing.' : v > s.V[k - 1][s.focus] ? 'as news of the goal travels back along the route.' : 'as the values settle.');
     return { k, m, status, readouts: [['Sweep', `${k} of ${s.K}`], [`Value of ${cellName(s.focus)}`, fmt(v, 3)], ['Largest change in this sweep', k ? fmt(s.delta[k - 1], 3) : '–']] };
   },
   draw(E: Env, f, s) {

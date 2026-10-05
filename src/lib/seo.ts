@@ -1,4 +1,4 @@
-export const SITE_NAME = 'AI Learner';
+export const SITE_NAME = 'Inside the Model';
 const site = import.meta.env.SITE;
 
 /** Absolute URL, trailing-slash consistent with build output (directory format). */
@@ -10,7 +10,7 @@ export function absUrl(pathname: string): string {
 
 const publisher = { '@type': 'Organization', name: SITE_NAME, url: absUrl('/') };
 const ctx = { '@context': 'https://schema.org' };
-const courseRef = { '@type': 'Course', name: 'AI Learner: how AI actually works in two weeks', url: absUrl('/path'), provider: publisher };
+const courseRef = { '@type': 'Course', name: 'Inside the Model: how AI actually works in two weeks', url: absUrl('/path'), provider: publisher };
 const LEVELS = { intro: 'Beginner', core: 'Intermediate', advanced: 'Advanced', frontier: 'Advanced' } as const;
 
 export const websiteLd = () => ({

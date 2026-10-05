@@ -8,6 +8,6 @@ export default {
     { label: 'Where the move can land', color: '--viz-forward', shape: 'line' },
   ],
   aspect: '720 / 380',
-  lanes: 1,
-  narrowAspect: '360 / 560',
+  lanes: 2,
+  narrowAspect: '360 / 520',
 } satisfies ModeMeta;

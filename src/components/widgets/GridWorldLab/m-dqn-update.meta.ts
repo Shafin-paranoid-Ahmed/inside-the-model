@@ -9,7 +9,7 @@ export default {
     { label: 'Error', color: '--viz-gradient', shape: 'line' },
   ],
   aspect: '720 / 420',
-  narrowAspect: '360 / 640',
+  narrowAspect: '360 / 590',
   lanes: 2,
   controls: [{ key: 'lr', label: 'Learning rate', kind: 'range', min: 0.01, max: 0.2, step: 0.01, digits: 2 }],
 } satisfies ModeMeta;

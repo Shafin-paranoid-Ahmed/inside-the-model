@@ -31,7 +31,7 @@ const mode: ModeImpl<Scene, F> = {
     const hi = (r: DQNResult, f: keyof DQNResult) => Math.max(...Array.from(r[f] as Float64Array));
     return { xs: Array.from({ length: n }, (_, i) => i + 1), moving, fixed, n, qmax, lr, ymax: up10(Math.max(hi(moving, 'maxAbsQ'), hi(fixed, 'maxAbsQ'))), bmax: up10(Math.max(hi(moving, 'bellman'), hi(fixed, 'bellman'))) };
   },
-  timeline: (s) => ({ duration: KNOTS[KNOTS.length - 1][0] + HOLD, markers: [{ at: 0, label: 'Updates 1–50' }, { at: 3, label: 'Updates 51–300' }, { at: 7, label: 'Updates 301–1000' }] }),
+  timeline: () => ({ duration: KNOTS[KNOTS.length - 1][0] + HOLD, markers: [{ at: 0, label: 'Updates 1–50' }, { at: 3, label: 'Updates 51–300' }, { at: 7, label: 'Updates 301–1000' }] }),
   frameAt(t, s) {
     const k = kAt(Math.min(t, KNOTS[KNOTS.length - 1][0]), s.n), i = k - 1, m = s.moving, x = s.fixed;
     const blow = s.lr >= 0.1;
@@ -50,7 +50,7 @@ const mode: ModeImpl<Scene, F> = {
       { ys: a[fld], xs: s.xs, color: 'var(--viz-cat-2)', width: 2.2 },
       { ys: b[fld], xs: s.xs, color: 'var(--viz-cat-1)', width: 2.2 },
     ];
-    const ya1 = { lo: 0.1, hi: s.ymax, log: true, label: 'Largest |Q| over all cells and actions' }, ya2 = { lo: 0.1, hi: s.bmax, log: true, label: 'Bellman error' };
+    const ya1 = { lo: 0.1, hi: s.ymax, log: true, fmt: (v: number) => String(v), label: 'Largest |Q| over all cells and actions' }, ya2 = { lo: 0.1, hi: s.bmax, log: true, fmt: (v: number) => String(v), label: 'Bellman error' };
     const c1 = lineChart(E, boxes[0], xa, ya1, ser(s.moving, s.fixed, 'maxAbsQ'), f.k);
     const c2 = lineChart(E, boxes[1], xa, ya2, ser(s.moving, s.fixed, 'bellman'), f.k);
     const qy = c1.sy(s.qmax);

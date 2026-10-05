@@ -22,9 +22,10 @@ const mode: ModeImpl<Scene, F> = {
   },
   timeline(s) {
     const end = LEAD + s.T * MOVE, slip = s.ep.slipped.indexOf(true);
-    const markers = [{ at: 0, label: slip === 0 ? 'Slip on move 1' : 'Moving' }];
-    if (slip > 0) markers.push({ at: LEAD + slip * MOVE, label: `Slip on move ${slip + 1}` });
-    if (slip >= 0 && slip + 4 < s.T) markers.push({ at: LEAD + (slip + 1) * MOVE, label: 'Moving on' });
+    const markers = [{ at: 0, label: 'Start' }];
+    if (slip !== 0) markers.push({ at: LEAD, label: 'Moving' });
+    if (slip >= 0) markers.push({ at: LEAD + slip * MOVE, label: `Slip on move ${slip + 1}` });
+    if (slip >= 0 && slip + 1 < s.T) markers.push({ at: LEAD + (slip + 1) * MOVE, label: 'Moving on' });
     markers.push({ at: end, label: 'Episode over' });
     return { duration: end + HOLD, markers };
   },

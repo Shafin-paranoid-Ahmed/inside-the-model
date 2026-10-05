@@ -11,7 +11,7 @@ const { type = 'website', noindex = false } = Astro.props;
 const canonical = absUrl(Astro.url.pathname);
 const ld = Astro.props.jsonLd ?? (canonical === absUrl('/') ? websiteLd() : undefined);
 const ogImage = absUrl('/og.png');
-const fullTitle = title ? `${title} · AI Learner` : 'AI Learner';
+const fullTitle = title ? `${title} · ${SITE_NAME}` : SITE_NAME;
 const nav = [
   { href: '/path', label: 'Path' },
   { href: '/refresher', label: 'Refresher' },
@@ -40,7 +40,7 @@ const here = Astro.url.pathname.replace(/\/$/, '');
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="AI Learner: learn how AI actually works in two weeks, beside a small line drawing of a neural network." />
+    <meta property="og:image:alt" content="Inside the Model: learn how AI actually works in two weeks, beside a small line drawing of a neural network." />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={fullTitle} />
     <meta name="twitter:description" content={description} />
@@ -61,7 +61,7 @@ const here = Astro.url.pathname.replace(/\/$/, '');
   <body>
     <header class="site-header">
       <div class="wrap bar">
-        <a class="brand" href="/">AI Learner</a>
+        <a class="brand" href="/">Inside the Model</a>
         <nav aria-label="Main">
           {nav.map((n) => <a href={n.href} aria-current={here.startsWith(n.href) ? 'page' : undefined}>{n.label}</a>)}
           <ThemeToggle />
@@ -71,7 +71,7 @@ const here = Astro.url.pathname.replace(/\/$/, '');
     <main id="main"><slot /></main>
     <footer class="site-footer">
       <div class="wrap">
-        <span>AI Learner. Free, no login, nothing leaves your browser.</span>
+        <span>Inside the Model. Free, no login, nothing leaves your browser.</span>
       </div>
     </footer>
   </body>

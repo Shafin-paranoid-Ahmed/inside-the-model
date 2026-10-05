@@ -9,7 +9,7 @@ export default {
   ],
   aspect: '720 / 380',
   lanes: 1,
-  narrowAspect: '360 / 560',
+  narrowAspect: '360 / 490',
   controls: [
     { key: 'gamma', label: 'Discount γ', kind: 'select', options: [{ value: 0.9, label: '0.9' }, { value: 1, label: '1 (none)' }, { value: 0.5, label: '0.5' }], then: 'end' },
   ],

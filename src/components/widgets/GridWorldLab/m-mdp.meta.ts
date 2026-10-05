@@ -9,7 +9,7 @@ export default {
   ],
   aspect: '720 / 380',
   lanes: 1,
-  narrowAspect: '360 / 560',
+  narrowAspect: '360 / 490',
   controls: [
     { key: 'focus', label: 'Cell', kind: 'select', options: [{ value: '3,1', label: '(3,1)' }, { value: '2,1', label: '(2,1)' }, { value: '3,2', label: '(3,2)' }, { value: '4,1', label: '(4,1)' }] },
   ],

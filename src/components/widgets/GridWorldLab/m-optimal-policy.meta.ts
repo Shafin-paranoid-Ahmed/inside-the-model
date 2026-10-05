@@ -8,6 +8,6 @@ export default {
   ],
   aspect: '720 / 400',
   lanes: 2,
-  narrowAspect: '360 / 600',
+  narrowAspect: '360 / 530',
   loading: 'Solving the grid for every cost of a move…',
 } satisfies ModeMeta;

@@ -6,7 +6,7 @@
 import { ACTIONS, GOAL, cellName, xy } from '../../../lib/rl/gridworld';
 import { greedy, maxRow, policyAgreement } from '../../../lib/rl/tabular';
 import { num, type Frame, type ModeImpl, type Opts } from '../_rl/kit';
-import { MUTED, TEXT, ease, fmt, lineChart, poly, text, type Env } from '../_rl/svg';
+import { MUTED, TEXT, ease, fmt, lineChart, path, poly, text, type Env } from '../_rl/svg';
 import { gridOf } from './sim';
 import { drawAgent, drawGrid, drawQ, gridIn, triangle } from './draw';
 import { qName, qRun, qStar } from './q-common';
@@ -71,7 +71,7 @@ const mode: ModeImpl<Scene, F> = {
     const gb = nar ? { x: 8, y: 6, w: E.W - 16, h: E.W * 0.74 } : { x: 10, y: 10, w: E.W * 0.5, h: E.H - 20 };
     const G = gridIn(gb), s0 = tr.s[f.tx], a0 = tr.a[f.tx];
     drawGrid(E, G, { highlight: f.seg === 0 ? s0 : null });
-    drawQ(E, G, f.Q, { digits: 2, best: f.seg !== 0, tip: (c, a) => `${qName(c, a)}: Q = ${fmt(f.Q[c * 4 + a], 3)}` });
+    drawQ(E, G, f.Q, { digits: 2, numbers: nar ? false : undefined, best: f.seg !== 0, tip: (c, a) => `${qName(c, a)}: Q = ${fmt(f.Q[c * 4 + a], 3)}` });
     if (f.flash > 0) poly(E, triangle(G, s0, a0), { fill: 'none', stroke: TEXT, sw: 3.5, op: f.flash });
     if (f.seg === 0) drawAgent(E, G, f.fx, f.fy);
     // the update card: real numbers of transition tx
@@ -85,10 +85,9 @@ const mode: ModeImpl<Scene, F> = {
     // the start-cell estimate over episodes, against Q*
     const top = y0 + 112, cb = nar ? { x: 44, y: top, w: E.W - 60, h: E.H - top - 40 } : { x: x + 30, y: top, w: w - 38, h: E.H - top - 44 };
     const xs = Array.from({ length: s.E + 1 }, (_, i) => i);
-    lineChart(E, cb, { lo: 0, hi: s.E, label: 'Episode' }, { lo: -0.2, hi: 1, ticks: [0, 0.5, 1], label: 'Start-cell estimate' }, [
-      { xs: [0, s.E], ys: [s.startStar, s.startStar], color: 'var(--text)', width: 1.25, dash: '5 4' },
-      { xs, ys: s.startQ, color: 'var(--viz-forward)', width: 2 },
-    ], f.seg === 0 ? 0 : f.ep);
+    const { sx, sy } = lineChart(E, cb, { lo: 0, hi: s.E, label: 'Episode' }, { lo: -0.2, hi: 1, ticks: [0, 0.5, 1], label: 'Start-cell estimate' }, [{ xs, ys: s.startQ, color: 'var(--viz-forward)', width: 2 }], f.seg === 0 ? 0 : f.ep);
+    path(E, `M${sx(0)} ${sy(s.startStar)}L${sx(s.E)} ${sy(s.startStar)}`, { stroke: TEXT, sw: 1.25, dash: '5 4' });
+    text(E, `Q* = ${fmt(s.startStar, 3)}`, cb.x + cb.w - 4, sy(s.startStar) - 5, { size: 11, anchor: 'end', fill: MUTED });
   },
   label: (s) => `Tabular Q-learning on the 4 by 3 world: episode 1 move by move with each update's target and error, then ${s.E - 1} more episodes while the Q values and the start-cell estimate approach Q star.`,
 };

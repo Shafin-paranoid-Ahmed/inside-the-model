@@ -48,7 +48,7 @@ const mode: ModeImpl<Scene, F> = {
     const nar = E.narrow, gb = nar ? { x: 8, y: 6, w: E.W - 16, h: E.W * 0.74 } : { x: 10, y: 10, w: E.W * 0.58, h: E.H - 20 };
     const G = gridIn(gb);
     drawGrid(E, G, { highlight: f.cur });
-    drawQ(E, G, s.Q, { digits: 3, show: (c) => (c === f.cur ? f.fade : f.shown.has(c) ? 1 : 0), tip: (c, a) => `${qName(c, a)}: Q = ${fmt(s.Q[c * 4 + a], 3)}` });
+    drawQ(E, G, s.Q, { digits: nar ? 2 : 3, show: (c) => (c === f.cur ? f.fade : f.shown.has(c) ? 1 : 0), tip: (c, a) => `${qName(c, a)}: Q = ${fmt(s.Q[c * 4 + a], 3)}` });
     const pb = nar ? { x: 14, y: G.y0 + G.h + 14, w: E.W - 28, h: 130 } : { x: G.x0 + G.w + 28, y: 30, w: E.W - (G.x0 + G.w + 28) - 14, h: 130 };
     const op = f.tieSeg ? 1 : f.fade;
     const yEnd = actionBars(E, pb, s.Q, f.cur, { op });

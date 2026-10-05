@@ -40,7 +40,7 @@ const mode: ModeImpl<Scene, F> = {
     const d = diff(s.pol[0], s.pol[i]);
     let status = `γ = ${fmt(g, 2)}: the arrows are the same as at γ = ${fmt(s.gs[0], 2)}. The start cell is worth ${fmt(s.v0[i], 2)}.`;
     if (region > 0) {
-      const a = s.pol[s.changes[region - 1] - 1], b = s.pol[s.changes[region - 1]], ch = diff(a, b).map((c) => `${cellName(c)} from ${ARROWS[a[c]]} to ${ARROWS[b[c]]}`).join(' and ');
+      const a = s.pol[s.changes[region - 1] - 1], b = s.pol[s.changes[region - 1]], ch = diff(a, b).map((c) => `${cellName(c)} changes from ${ARROWS[a[c]]} to ${ARROWS[b[c]]}`).join(' and ');
       const ex = s.exact.length === s.changes.length ? s.exact[region - 1] : s.gs[s.changes[region - 1]];
       status = `γ = ${fmt(g, 2)}: ${d.length} ${d.length === 1 ? 'arrow differs' : 'arrows differ'} from the left grid. At γ = ${fmt(ex, 3)} the best move at ${ch}. The start cell is worth ${fmt(s.v0[i], 2)}.`;
     }

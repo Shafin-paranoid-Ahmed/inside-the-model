@@ -76,3 +76,29 @@ describe('numbers quoted in the lesson', () => {
     expect(cells[2]).toBeGreaterThan(cells[0]);
   });
 });
+
+describe('exploration prose numbers', async () => {
+  const { makeGrid } = await import('../../src/lib/rl/gridworld');
+  const { qLearning, greedy } = await import('../../src/lib/rl/tabular');
+  const g = makeGrid({});
+  it('near-tie flips per run rise with alpha; (3,1) gap noise exceeds its true 0.019', () => {
+    const flips = (alpha: number) => {
+      let f = 0, sq = 0, sum = 0, n = 0;
+      for (let r = 0; r < 20; r++) {
+        const res = qLearning(g, { alpha, epsilon: 0.3, episodes: 1000, seed: 21000 + r + 1, record: false });
+        const gaps: number[] = [];
+        for (let e = 500; e < 1000; e++) {
+          const a = greedy(g, res.snapshots[e]), b = greedy(g, res.snapshots[e + 1]);
+          for (const s of [3, 2, 6]) if (a[s] !== b[s]) f++;
+          gaps.push(res.snapshots[e][11] - res.snapshots[e][8]);
+        }
+        const m = gaps.reduce((x, y) => x + y, 0) / gaps.length;
+        sq += Math.sqrt(gaps.reduce((x, y) => x + (y - m) ** 2, 0) / gaps.length) / 20; sum += m; n++;
+      }
+      return { perCell: f / 20 / 3, sd: sq };
+    };
+    const [a, b, c] = [flips(0.05), flips(0.1), flips(0.5)];
+    expect([a.perCell, b.perCell, c.perCell].map((x) => x.toFixed(1))).toEqual(['0.9', '3.4', '10.1']);
+    expect(b.sd.toFixed(3)).toBe('0.063');
+  });
+});

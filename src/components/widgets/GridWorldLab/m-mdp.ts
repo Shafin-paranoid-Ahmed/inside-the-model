@@ -5,7 +5,7 @@
  * Props: focus ("3,1"), seed (5), slip (0.2).
  */
 import { createRng } from '../../../lib/math/rng';
-import { ACTIONS, ARROWS, cellName, step, transitions, xy, type Grid, type Outcome } from '../../../lib/rl/gridworld';
+import { ACTIONS, ARROWS, DX, DY, cellName, step, transitions, xy, type Grid, type Outcome } from '../../../lib/rl/gridworld';
 import { int, type Frame, type ModeImpl, type Opts } from '../_rl/kit';
 import { MUTED, circle, ease, fmt, lerp, text, type Env } from '../_rl/svg';
 import { focusOf, gridOf } from './sim';
@@ -51,29 +51,34 @@ const mode: ModeImpl<Scene, F> = {
     const nar = E.narrow, gb = nar ? { x: 8, y: 8, w: E.W - 16, h: E.H * 0.5 } : { x: 8, y: 8, w: E.W * 0.58, h: E.H - 16 };
     const G = gridIn(gb);
     drawGrid(E, G, { highlight: s.focus, labels: true });
-    drawOutcomes(E, G, s.focus, s.outs[f.a], { op: f.arrowOp });
+    drawOutcomes(E, G, s.focus, s.outs[f.a], { op: f.arrowOp, labels: false });
+    // labels drawn here so 'stay' sits in the cell's top-left corner, clear of the bump arrow and the sample dots
+    const fc = cellXY(G, s.focus);
+    for (const out of s.outs[f.a]) if (out.moved) text(E, fmt(out.p, 1), fc.cx + DX[out.dir] * G.cs * 0.62 + (DY[out.dir] ? 14 : 0), fc.cy - DY[out.dir] * G.cs * 0.62 + (DX[out.dir] ? -8 : 4), { size: 12, anchor: 'middle', weight: 600, halo: true, op: f.arrowOp });
+    const stay = s.outs[f.a].filter((x) => !x.moved).reduce((x, y) => x + y.p, 0);
+    if (stay > 0) text(E, `stay ${fmt(stay, 1)}`, fc.x + 6, fc.y + 15, { size: 12, weight: 600, halo: true, op: f.arrowOp });
     // slot k of a cell: a small lattice along the cell's lower edge
     const slot = (cell: number, k: number): [number, number] => { const c = cellXY(G, cell); return [c.x + 11 + (k % 6) * 10, c.y + G.cs - 12 - Math.floor(k / 6) * 10]; };
     const used = new Map<number, number>(), at0 = at(G, xy(s.focus)[0], xy(s.focus)[1]);
     for (let i = 0; i < f.landed; i++) {
       const cell = s.samples[f.a][i], k = used.get(cell) ?? 0; used.set(cell, k + 1);
       const [x, y] = slot(cell, k);
-      circle(E, x, y, 3.4, { fill: 'var(--viz-forward)', stroke: 'var(--bg-raised)', sw: 1 });
+      circle(E, x, y, 4.2, { fill: 'var(--viz-forward)', stroke: 'var(--bg-raised)', sw: 1 });
     }
     for (const d of f.flying) {
       const cell = s.samples[f.a][d.i], k = [...Array(d.i).keys()].filter((j) => s.samples[f.a][j] === cell).length, [x1, y1] = slot(cell, k), m = ease(d.u);
-      circle(E, lerp(at0[0], x1, m), lerp(at0[1], y1, m) - 22 * Math.sin(Math.PI * m), 3.8, { fill: 'var(--viz-forward)', stroke: 'var(--bg-raised)', sw: 1 });
+      circle(E, lerp(at0[0], x1, m), lerp(at0[1], y1, m) - 22 * Math.sin(Math.PI * m), 4.6, { fill: 'var(--viz-forward)', stroke: 'var(--bg-raised)', sw: 1 });
     }
     // exact chance against the tally
     const tx = nar ? 12 : G.x0 + G.w + 26, ty = nar ? gb.y + gb.h + 30 : 34, w = nar ? E.W - 24 : E.W - tx - 10, sz = 12;
     text(E, `Asking for ${ACTIONS[f.a]} ${ARROWS[f.a]} from ${cellName(s.focus)}`, tx, ty, { weight: 650, size: 13 });
     const cols = [0, w * 0.46, w * 0.72];
-    ['Lands in', 'Exact', 'Tries'].forEach((h, j) => text(E, h, tx + cols[j], ty + 26, { size: sz, fill: MUTED }));
+    ['Lands in', 'Exact', 'Tries so far'].forEach((h, j) => text(E, h, tx + cols[j], ty + 26, { size: sz, fill: MUTED }));
     s.groups[f.a].forEach((x, i) => {
       const y = ty + 48 + i * 22;
       text(E, name(x.s2, s.focus), tx + cols[0], y, { size: sz });
       text(E, fmt(x.p, 1), tx + cols[1], y, { size: sz, mono: true });
-      text(E, `${f.tally.get(x.s2) ?? 0} of ${f.landed}`, tx + cols[2], y, { size: sz, mono: true });
+      text(E, String(f.tally.get(x.s2) ?? 0), tx + cols[2], y, { size: sz, mono: true });
     });
   },
   label: (s) => `A cell of the grid with arrows showing where each of the four moves can end up; twenty sampled tries per move fall into the cells around ${cellName(s.focus)}.`,

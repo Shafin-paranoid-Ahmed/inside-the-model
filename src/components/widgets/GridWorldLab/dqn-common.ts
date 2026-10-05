@@ -22,7 +22,7 @@ export function netDiagram(E: Env, b: Box, w: Float64Array, H: number, x0: numbe
   const q = new Float64Array(4), h = new Float64Array(H), pre = new Float64Array(H);
   forward(w, H, x0, x1, q, h, pre);
   const o = offsets(H), nar = E.narrow;
-  const xi = b.x + (nar ? 62 : 70), xo = b.x + b.w - (nar ? 62 : 74), xh = (xi + xo) / 2, top = b.y + 28, area = b.h - 34;
+  const xi = b.x + (nar ? 96 : 100), xo = b.x + b.w - (nar ? 58 : 74), xh = (xi + xo) / 2, top = b.y + 28, area = b.h - 34;
   const yi = [top + area * 0.33, top + area * 0.67], yh = (j: number) => top + ((j + 0.5) / H) * area, yq = (a: number) => top + ((a + 0.5) / 4) * area;
   const rh = Math.max(3, Math.min(7, (area / H) * 0.4)), x = [x0, x1];
   text(E, 'Input', xi, b.y + 12, { anchor: 'middle', fill: MUTED, size: 11 });

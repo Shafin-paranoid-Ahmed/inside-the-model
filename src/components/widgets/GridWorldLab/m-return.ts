@@ -60,7 +60,8 @@ const mode: ModeImpl<Scene, F> = {
     drawPolicy(E, G, { actions: s.policy, color: 'var(--text-muted)' });
     for (let i = 0; i < f.n; i++) {
       const [x1, y1] = at(G, ...xy(ep.states[i])), [x2, y2] = at(G, ...xy(ep.states[i + 1]));
-      if (x1 !== x2 || y1 !== y2) line(E, x1, y1, x2, y2, { stroke: 'var(--viz-forward)', sw: 3, op: 0.8 });
+      const last = i === T - 1 && f.phase !== 'walk' || (f.phase === 'walk' && i + 1 === T && f.n === T), k = last ? 0.62 : 1;
+      if (x1 !== x2 || y1 !== y2) line(E, x1, y1, x1 + (x2 - x1) * k, y1 + (y2 - y1) * k, { stroke: 'var(--viz-forward)', sw: 3, op: 0.8 });
     }
     drawAgent(E, G, f.fx, f.fy);
     // table: one row per move

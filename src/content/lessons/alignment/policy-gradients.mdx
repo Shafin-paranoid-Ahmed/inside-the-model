@@ -7,126 +7,220 @@ order: 3
 level: advanced
 duration: 35
 prereqs: ["alignment/rl-basics","alignment/q-learning","math/chain-rule"]
-status: stub
+status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
+import BanditLab from '../../../components/widgets/BanditLab/BanditLab.svelte';
+import GridWorldLab from '../../../components/widgets/GridWorldLab/GridWorldLab.svelte';
 
-What if the agent learns its action probabilities directly?
+[Q-learning](/learn/alignment/q-learning/) learns how good each action is and then picks the best one. This lesson skips the middle step. The agent keeps a table of probabilities for its actions and nudges those probabilities directly: up for actions that were followed by reward, down for the rest.
 
 <Step title="Policy gradients: make good actions more likely">
 
-A policy-gradient method skips Q-values and directly adjusts the policy's parameters so that actions followed by high reward become more probable.
+Start with the smallest problem there is: three slot machines (a **bandit**) that pay on average 1, 2 and 3. The agent does not know that. It keeps one number per arm, a **logit**, and turns the three logits into probabilities with a softmax: the bigger the logit, the likelier the arm. That table of probabilities is the **policy**.
 
-{/*
-IDEA: softmax policy pi_theta(a) = softmax(theta); gradient of expected reward = E[r grad log pi(a)]. Exact gradient vs one-sample estimate.
-WIDGET: BanditLab mode="softmax-pg" arms=3 lr=0.1 steps=200 seed=5 (bandit with known means so the exact gradient can be drawn).
-MOTION over t: each step: one arm is sampled (dot drops on it), its reward appears, an arrow on the logit bars shows r times grad log pi (up for the chosen arm, down for the others); probabilities tween; the exact expected-gradient arrow drawn faintly for comparison.
-TRY: notice that a chosen arm with positive reward gets pushed up even when it is not the best arm.
-NUMBERS: probability of the best arm at steps 0, 50, 200.
-SHOW THE MATH: the log-derivative trick, grad log softmax = onehot(a) - pi. Link /learn/math/chain-rule/.
-*/}
+The learning rule fits in one sentence. After pulling an arm and receiving reward $r$, push the pulled arm's logit up by the learning rate times $r$, and push the other logits down a little. A big reward gives a big push. The pulled arm is pushed up by an amount that shrinks the likelier it already was, and each other arm is pushed down in proportion to its own probability, so the likelier rivals lose the most.
+
+In the figure the first six pulls play slowly. Pull 1 picks arm 3 and earns 3.33, so its logit moves up by 0.22 and its probability rises from 0.33 to 0.41. Then the pulls speed up. The chance of the best arm is 0.33 at the start, 0.835 after 50 pulls and 0.964 after 200. The small bar under each push is the **average** push, the exact gradient of expected reward: the agent never sees it, but its noisy single pushes follow it.
+
+<BanditLab client:visible mode="softmax-pg" lr={0.1} title="Each pull pushes the logits; the best arm takes over" />
+
+Now look at pull 8. It lands on arm 1, the worst arm, and earns 1.46. Every reward here is positive, so even this pull raises arm 1's logit, by 0.12 (its probability goes from 0.18 to 0.21). That is fine: single pushes are noisy, and arm 3 is pulled more often and earns more each time, so on average it wins. The next step is about why that noise is a problem.
+
+<details>
+<summary>Show the math</summary>
+
+The policy is $\pi_\theta(a) = e^{\theta_a} / \sum_b e^{\theta_b}$ and we want to increase the expected reward $J(\theta) = \sum_a \pi_\theta(a)\,\mu_a$, where $\mu_a$ is arm $a$'s mean reward. The **log-derivative trick** says $\nabla \pi = \pi \,\nabla \log \pi$, so
+
+$$\nabla_\theta J = \sum_a \pi_\theta(a)\,\mu_a \,\nabla_\theta \log \pi_\theta(a) = \mathbb{E}_{a \sim \pi}\big[\, r \,\nabla_\theta \log \pi_\theta(a) \,\big].$$
+
+An expectation can be estimated by a single sample, so one pull gives an unbiased estimate of the gradient. For a softmax, the chain rule ([chain rule lesson](/learn/math/chain-rule/)) gives $\partial \log \pi(a) / \partial \theta_j = \mathbf{1}[j = a] - \pi(j)$. The update is therefore
+
+$$\theta_j \leftarrow \theta_j + \alpha\, r\,\big(\mathbf{1}[j = a] - \pi(j)\big).$$
+
+Only $\log \pi$ is differentiated. The reward is just a number, which is why policy gradients work when the reward comes from a game, a person or a program that cannot be differentiated.
+
+</details>
 
 </Step>
 
-<Step title="REINFORCE and baselines">
+<Step title="Baselines: subtract what you expected">
 
-Subtracting a baseline from the reward leaves the average gradient unchanged but makes each estimate much less noisy, which is why almost every policy-gradient method uses one.
+Here is the problem with the rule above. When every reward is positive, every pull pushes its own arm up, and what separates a good pull from a bad one is only how much. The signal we care about (arm 3 is better than the average) is buried under a large common push.
 
-{/*
-IDEA: REINFORCE estimator; baseline b (average reward) subtracted; unbiased because E[grad log pi] = 0; variance drops.
-WIDGET: BanditLab mode="baseline" arms=3 samples=400 seed=9 (frozen policy, all rewards positive so the no-baseline estimate is badly noisy).
-MOTION over t: 400 single-sample gradient estimates stream into two histograms (no baseline vs baseline) for the logit of arm 1; the exact gradient is a vertical line; running means converge to it in both.
-TRY: compare the two histogram widths.
-NUMBERS: the two sample variances and their ratio; both sample means vs the exact gradient.
-SHOW THE MATH: proof that E[b grad log pi] = 0.
-*/}
+The fix is a **baseline** $b$: replace $r$ by $r - b$ in the push. Use the average reward, here 2. Now an arm that pays above average is pushed up, and one that pays below average is pushed down. Surprisingly this does not change the gradient on average, only how much each single estimate jumps around.
+
+The figure freezes the policy (all three arms equally likely) and collects 400 one-pull estimates of the gradient for the logit of arm 3. The upper histogram has no baseline, the lower one subtracts 2. The dashed line is the exact gradient, 0.333. Both pile up around it, but the spread (the **variance**) differs: 1.79 without the baseline against 0.31 with it, 5.9 times smaller. For arm 1 the ratio is 3.1 (variance 0.73 against 0.23) and for arm 2 it is 4.6 (1.27 against 0.27). Use the control to switch arms.
+
+<BanditLab client:visible mode="baseline" arm={3} title="400 gradient estimates, with and without a baseline" />
+
+A smaller variance means fewer pulls are needed before the estimate points in a trustworthy direction.
+
+<details>
+<summary>Show the math</summary>
+
+Why does subtracting $b$ leave the average unchanged? Because the average of $\nabla \log \pi$ is zero, as long as $b$ does not depend on the action chosen:
+
+$$\mathbb{E}_{a \sim \pi}\big[\, b \,\nabla_\theta \log \pi_\theta(a) \,\big] = b \sum_a \nabla_\theta \pi_\theta(a) = b\, \nabla_\theta \sum_a \pi_\theta(a) = b\, \nabla_\theta 1 = 0.$$
+
+So $\mathbb{E}[(r - b)\nabla \log \pi] = \mathbb{E}[r \nabla \log \pi]$, and the estimate stays unbiased. With the baseline the sampled arm-3 estimates in the figure average 0.343, against 0.446 without; both are within sampling noise of 0.333.
+
+</details>
 
 </Step>
 
 <Step title="REINFORCE in the grid">
 
-In a multi-step task REINFORCE weights every action in an episode by the return that followed it, so it needs many episodes, and a baseline helps here too.
+Real tasks last many steps, and the reward arrives late. **REINFORCE** (Williams, 1992) handles this by playing a whole episode with the current policy and then crediting every action with the **return** that followed it: the total reward from that step to the end. Each probability table, one per cell of the grid, gets the same push as in the bandit, with the return $G_t$ in place of the reward.
 
-{/*
-IDEA: episode returns G_t as weights; credit assignment is coarse; learning is slower and noisier than Q-learning on this task.
-WIDGET: GridWorldLab mode="reinforce" baseline="both" lr=0.1 episodes=1000 runs=10. Policy arrows drawn with opacity = probability (soft policy sharpening); learning curves with and without a baseline.
-MOTION over t: arrows sharpen as episodes pass; the two curves draw; a sample episode replays at each marker.
-TRY: watch a cell near the pit whose arrow probabilities wobble before settling.
-NUMBERS: mean return at episodes 100 and 1000 for both variants (averaged over 10 runs).
-SHOW THE CODE: REINFORCE with a baseline, about 15 lines NumPy.
-*/}
+This is the same 4 by 3 grid as in the [previous lessons](/learn/alignment/rl-basics/). The left picture shows the policy of one run, the arrow opacity being the probability. The curves show the **expected return** of the policy from the start cell, computed exactly at that moment and averaged over 10 runs; each faint line is one run. The dashed line, 0.71, is the best any policy can do.
+
+<GridWorldLab client:visible mode="reinforce" baseline="both" lr={0.1} episodes={1000} runs={10} title="REINFORCE, 10 runs, without and with a baseline" />
+
+The policy improves a lot, then slowly. Averaged over runs the expected return goes from the starting −1.59 (random wandering mostly ends in the pit) to 0.26 after 100 episodes, 0.59 after 500 and 0.65 after 1000. Each episode gives only one noisy return per visited cell, so progress is gradual.
+
+Here is the honest finding on baselines: the curve with a learned baseline (0.29, 0.60 and 0.66 at the same three points) lies almost on top of the one without. A 100-run average tells the same story, about 0.64 at episode 1000 for both. The baseline does what it was built for, lowering the variance of the gradient: at the uniform policy the gradient variance, summed over all table entries, is about 72 without a baseline and 35 with the exact value baseline. But with this small grid and this learning rate, that does not translate into a faster learning curve.
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def reinforce(env, episodes=1000, lr=0.1, lr_b=0.1, gamma=1.0):
+    theta = np.zeros((env.n_states, 4))      # logits, one row per cell
+    b = np.zeros(env.n_states)               # learned baseline = average return from each cell
+    for _ in range(episodes):
+        s, traj, done = env.start, [], False
+        while not done:                      # play with the policy held fixed
+            p = np.exp(theta[s] - theta[s].max()); p /= p.sum()
+            a = np.random.choice(4, p=p)
+            s2, r, done = env.step(s, a)
+            traj.append((s, a, r, p)); s = s2
+        G = 0.0
+        for s, a, r, p in reversed(traj):    # returns, worked backward
+            G = r + gamma * G
+            adv = G - b[s]                   # how much better than usual
+            onehot = np.eye(4)[a]
+            theta[s] += lr * adv * (onehot - p)
+            b[s] += lr_b * (G - b[s])
+    return theta
+```
+
+</details>
 
 </Step>
 
-<Step title="One episode supplies a policy gradient">
+<Step title="One episode becomes one policy update">
 
-Each sampled action contributes a change to the policy, weighted by how much better its later return was than the baseline.
+Let us follow a single update closely. The agent plays an episode with the policy frozen. When it ends, three things are worked out for every step: the return $G_t$, the baseline $b(s_t)$ (the return the agent has been getting from that cell in earlier episodes) and the **advantage** $A_t = G_t - b(s_t)$, which says whether this episode went better or worse than usual from there. The policy changes once, using all steps together.
 
-{/*
-IDEA: combine the bandit's log-policy gradient with the grid's return-to-go; accumulate the episode gradient before updating the policy, holding its parameters fixed during collection.
-WIDGET: GridWorldLab mode="reinforce-update" baseline="state-value" episode=10 lr=0.1 seed=13. One trajectory beside a chosen state's logits, action probabilities and signed gradient contributions.
-MOTION over t: replay the episode forward, fill returns backward, subtract state baselines, then assemble gradient contributions and apply one policy update; marker labels match these segments.
-TRY: select an action whose return is below its baseline and see its probability fall after the update.
-NUMBERS: selected state's G_t, baseline, advantage, gradient contribution and chosen-action probability before/after; find a seed with the advertised negative advantage before writing the lesson.
-SHOW THE MATH: episode gradient sum_t (G_t - b(s_t)) grad log pi(a_t|s_t). SHOW THE CODE: collect, compute returns, accumulate, update.
-*/}
+In this episode 10 the agent takes 8 steps and falls into the pit. Look at cell (3,2), just left of the pit. It was visited once, at step 8, where the agent chose right and the return was −1.04. The baseline for that cell is −0.49, so the advantage is −0.55: worse than usual. The push on the logit of right is therefore negative, −0.044, and the chance of going right at (3,2) falls from 0.21 to 0.20.
+
+<GridWorldLab client:visible mode="reinforce-update" seed={27} episode={10} lr={0.1} focus="3,2" title="From one episode to one change in the policy" />
+
+The same table also shows something less obvious. The start cell (1,1) has positive advantages (+1.09 and +1.21) even though the episode ended in the pit. At this early point the baseline there is −2.41, because the first episodes wandered long and mostly fell in. Compared to that, a short episode ending in the pit is a relative success. Choose cell (1,1) in the control under the figure to see the two visits add up. Advantages are always relative to the baseline, and a baseline that is still learning is a rough yardstick.
+
+<details>
+<summary>Show the math</summary>
+
+The gradient estimate of one episode is the sum over its steps,
+
+$$\hat g = \sum_t \big(G_t - b(s_t)\big)\, \nabla_\theta \log \pi_\theta(a_t \mid s_t),$$
+
+where for a softmax table $\nabla \log \pi(a_t \mid s_t)$ is nonzero only in the row of $s_t$, equal to $\mathbf{1}[a = a_t] - \pi(a \mid s_t)$. A cell visited twice gets the sum of both contributions, and the update is $\theta \leftarrow \theta + \alpha\,\hat g$. At (3,2) the single visit contributes $-0.55 \times (\mathbf{1}[a = \text{right}] - \pi(a))$ and the update multiplies by $\alpha = 0.1$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def episode_update(theta, b, traj, lr=0.1, gamma=1.0):
+    grad = np.zeros_like(theta)
+    G = 0.0
+    for s, a, r, p in reversed(traj):        # traj: (state, action, reward, probs) with probs frozen
+        G = r + gamma * G
+        adv = G - b[s]
+        grad[s] += adv * (np.eye(4)[a] - p)  # accumulate; do not update yet
+    return theta + lr * grad                  # one update for the whole episode
+```
+
+</details>
 
 </Step>
 
-<Step title="Actor-critic">
+<Step title="Actor-critic: learn from every step">
 
-An actor-critic method combines both families: a critic learns state values and its one-step error tells the actor, a policy, which way to move after every single step.
+REINFORCE waits until the end of the episode to learn anything. **Actor-critic** does not wait. It keeps two tables. The **actor** is the policy, as before. The **critic** estimates $V(s)$, how much return to expect from each cell. After every single step the critic is asked: was that step better than you expected? Its answer is the **TD error**
 
-{/*
-IDEA: advantage estimate delta = r + gamma V(s') - V(s); actor update uses delta in place of the full return; lower variance, some bias. Bridge to advantages and PPO in /learn/alignment/ppo/.
-WIDGET: GridWorldLab mode="actor-critic" lrActor=0.1 lrCritic=0.2 episodes=500 seed=13. Two layers: critic V as a heatmap, actor policy as arrows; the per-step TD error shown as a signed flash on the cell (--viz-pos/--viz-neg).
-MOTION over t: agent moves; each step shows the TD error, the critic cell updates, the actor arrow at that cell tilts; later markers fast-forward episodes; curve vs REINFORCE from the previous step.
-TRY: see a positive TD error raise the chosen action's arrow.
-NUMBERS: episodes to reach a mean return threshold vs REINFORCE (same threshold, from the sim).
-*/}
+$$\delta = r + V(s') - V(s),$$
+
+the reward received plus the value of the cell reached, minus the value of the cell left. If $\delta$ is positive the step went better than expected, so the critic raises $V(s)$ and the actor raises the chance of the action it took. If $\delta$ is negative, both go the other way.
+
+Watch the first part of the figure: episode 7 in 11 steps. Cell colour and number are the critic's value, the arrows are the actor's probabilities. Most steps have $\delta \approx -0.04$, just the cost of one move. The last step goes from (3,3) into the +1 goal and earns 0.96. The critic expected 0.15 from (3,3), so $\delta = +0.81$, and the chance of the action taken there rises from 0.241 to 0.256. (That step asked for up and slipped sideways into the goal, a lucky move. The actor cannot know that, which is one source of noise.)
+
+Then the figure switches to learning curves: actor-critic is the third line, next to the two REINFORCE lines from the last step. It is ahead early (0.38 expected return after 100 episodes, against 0.26 and 0.29), and its runs lie close together, while REINFORCE runs fan out. Reaching an expected return of 0.5 takes 160 episodes for actor-critic, 240 for REINFORCE with a learned baseline and 230 without. By episode 1000 the three are within 0.01 of each other (0.66 for actor-critic, 0.66 for REINFORCE with a baseline and 0.65 without).
+
+<GridWorldLab client:visible mode="actor-critic" episode={7} lrActor={0.1} lrCritic={0.2} episodes={1000} runs={10} title="Actor-critic: one episode, then the learning curves" />
+
+So the critic mainly buys speed and steadiness early on, and little at the end. It is still popular because its one-step error is available after every step, which matters when episodes are long or never end. The price is a bias: the critic's estimate is imperfect, so $\delta$ is not exactly the advantage. The advantage idea carries straight into [PPO](/learn/alignment/ppo/).
 
 </Step>
 
 <Step title="Common misconceptions">
 
-Some common misunderstandings about these methods.
+**You might think policy gradients need a differentiable environment.** Actually only $\log \pi$ is differentiated. The reward and the environment are treated as black boxes that return numbers.
 
-{/*
-NO WIDGET. Misconceptions:
-1. "Policy gradients need a differentiable environment." Actually only log pi is differentiated; the reward is just a number.
-2. "A baseline biases the gradient." It does not, if it does not depend on the action.
-3. "Actor-critic waits until the episode ends." A one-step critic supplies an update after each transition.
-4. "A baseline always reduces variance." Its quality matters; probe the chosen baseline's variance rather than promising this for every baseline.
-*/}
+**You might think a baseline biases the gradient.** Not if it does not depend on the action taken. The proof in step 2 shows the extra term averages to zero. A baseline that peeks at the chosen action would bias the result.
+
+**You might think a baseline always speeds up learning.** It lowers the variance of the gradient, as the histograms show, but in the grid the learning curves with and without it sit almost on top of each other. How much a baseline helps depends on the task and on how good the baseline is.
+
+**You might think actor-critic waits until the episode ends.** A one-step critic gives an update after every transition. The price is bias, from the critic's imperfect values.
 
 </Step>
 
 <Step title="Check yourself">
 
-Try these questions about the ideas above.
+<details>
+<summary>1. A 3-arm softmax policy has probabilities (0.5, 0.3, 0.2). Arm 2 is chosen and pays reward 1. What is the REINFORCE update to each logit with learning rate 1 and no baseline?</summary>
 
-{/*
-NO WIDGET. Questions (answers in details blocks):
-1. For a 3-arm softmax policy with pi = (0.5, 0.3, 0.2), arm 2 is chosen with reward 1: what is the REINFORCE update to each logit?
-2. Why does a baseline lower variance in the bandit with all-positive rewards?
-3. Which would you pick for a continuous action space, Q-learning or policy gradients, and why?
-4. How does the actor-critic TD error differ from a full episode return?
-*/}
+The push is $r\,(\mathbf{1}[j = a] - \pi_j)$, so arm 1: $1 \times (0 - 0.5) = -0.5$, arm 2: $1 \times (1 - 0.3) = +0.7$, arm 3: $1 \times (0 - 0.2) = -0.2$. The pushes sum to zero, because the probabilities must still sum to one.
+
+</details>
+
+<details>
+<summary>2. Why does a baseline lower variance in the bandit where every reward is positive?</summary>
+
+Without it, every pull pushes its own arm up, and the estimates differ mostly by the size of the reward, a large common component that carries no information about which arm is better. Subtracting the average reward removes that common part, so only the "better or worse than average" signal remains. In the figure the arm-3 variance falls from 1.79 to 0.31.
+
+</details>
+
+<details>
+<summary>3. For a continuous action space, would you pick Q-learning or policy gradients?</summary>
+
+Policy gradients. Q-learning needs the best action in each state, which means maximising over a table or a continuous range; with continuous actions that maximisation is a hard problem of its own. A policy can output the parameters of a distribution (for example a mean and a spread) and be trained directly.
+
+</details>
+
+<details>
+<summary>4. How does the actor-critic TD error differ from a full episode return?</summary>
+
+The return $G_t$ adds up all rewards to the end of the episode: it is unbiased but noisy, and available only after the episode. The TD error uses one real reward plus the critic's estimate of the rest: it is available immediately and less noisy, but it is biased by whatever errors the critic has.
+
+</details>
 
 </Step>
 
 <Step title="Going deeper">
 
-Papers and resources for the methods above.
+- Ronald J. Williams, ["Simple statistical gradient-following algorithms for connectionist reinforcement learning"](https://link.springer.com/article/10.1007/BF00992696), Machine Learning 8, 229 to 256, 1992. The REINFORCE paper.
+- Richard S. Sutton, David McAllester, Satinder Singh and Yishay Mansour, ["Policy gradient methods for reinforcement learning with function approximation"](https://papers.nips.cc/paper/1713-policy-gradient-methods-for-reinforcement-learning-with-function-approximation), NeurIPS (NIPS) 1999. Proves the policy gradient theorem.
+- Volodymyr Mnih et al., ["Asynchronous methods for deep reinforcement learning"](https://arxiv.org/abs/1602.01783), ICML 2016. A3C, a widely used actor-critic.
+- John Schulman et al., ["High-dimensional continuous control using generalized advantage estimation"](https://arxiv.org/abs/1506.02438), 2015. A family of advantage estimates between the full return and the one-step TD error.
+- Sutton and Barto, [Reinforcement Learning: An Introduction](http://incompleteideas.net/book/the-book-2nd.html), 2nd edition, chapter 13.
+- OpenAI Spinning Up, [Intro to Policy Optimization](https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html).
 
-{/*
-NO WIDGET. References:
-- Ronald J. Williams, "Simple Statistical Gradient-Following Algorithms for Connectionist Reinforcement Learning", Machine Learning 8, 1992 (REINFORCE).
-- Richard Sutton, David McAllester, Satinder Singh and Yishay Mansour, "Policy Gradient Methods for Reinforcement Learning with Function Approximation", NeurIPS 1999/2000 (VERIFY year label).
-- Volodymyr Mnih et al., "Asynchronous Methods for Deep Reinforcement Learning", ICML 2016, https://arxiv.org/abs/1602.01783 (A3C).
-- John Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation", https://arxiv.org/abs/1506.02438.
-- Sutton and Barto 2018, chapter 13. OpenAI Spinning Up, "Intro to Policy Optimization" (VERIFY section URL before publishing).
-Next: /learn/alignment/deep-rl/
-*/}
+Next: [Deep RL](/learn/alignment/deep-rl/), where the tables are replaced by neural networks.
 
 </Step>

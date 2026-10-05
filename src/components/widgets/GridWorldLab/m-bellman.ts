@@ -3,12 +3,12 @@
  * the converged values; segment 2 runs whole-grid sweeps of value iteration from zero (Q triangles, the focus cell's
  * three terms, and the largest change per sweep on a log axis). Props: focus ("3,1"), action ("up"), sweeps (20).
  */
-import { ACTIONS, cellName } from '../../../lib/rl/gridworld';
+import { ACTIONS, DX, DY, cellName } from '../../../lib/rl/gridworld';
 import { backupTerms, valueIteration } from '../../../lib/rl/tabular';
 import { int, key, type Frame, type ModeImpl, type Opts } from '../_rl/kit';
-import { ACCENT, MUTED, ease, fmt, lineChart, text, type Env } from '../_rl/svg';
+import { ACCENT, MUTED, arrow, ease, fmt, lineChart, text, type Env } from '../_rl/svg';
 import { actionOf, focusOf, gridOf } from './sim';
-import { drawGrid, drawOutcomes, drawQ, drawValues, gridIn } from './draw';
+import { cellXY, drawGrid, drawQ, drawValues, gridIn } from './draw';
 import { qStar } from './q-common';
 
 const LEAD = 0.8, TERM = 1.6, FADE = 0.5, SWEEP = 0.8;
@@ -37,7 +37,7 @@ const mode: ModeImpl<Scene, F> = {
         const o = s.star.terms[j];
         status = `Outcome ${j + 1}: with chance ${fmt(o.p, 1)} the agent ends in ${cellName(o.s2)}. The move pays ${fmt(o.r)} and that cell is worth ${fmt(o.v, 3)}, so this outcome adds ${fmt(o.term, 3)}.`;
       } else status = `The ${n} terms add up to ${fmt(s.star.sum, 3)}, exactly Q*(${name}, ${act}). The best values satisfy the Bellman equation.`;
-      return { seg1, k: 0, vis, sumVis, terms: s.star, status, readouts: [['Cell and action', `${name} ${act}`], ['Sum of terms', fmt(s.star.sum, 3)]] };
+      return { seg1, k: 0, vis, sumVis, terms: s.star, status, readouts: [['Cell and action', `${name} ${act}`], ['Sum of terms', sumVis > 0.99 ? fmt(s.star.sum, 3) : '…']] };
     }
     const k = Math.min(s.sweeps, 1 + Math.floor((t - t1) / SWEEP)), terms = s.per[k - 1], d = s.vi.delta[k - 1];
     return {
@@ -53,8 +53,13 @@ const mode: ModeImpl<Scene, F> = {
     drawGrid(E, G, { highlight: s.s });
     if (f.seg1) {
       drawValues(E, G, s.Vstar, { digits: 3 });
-      drawOutcomes(E, G, s.s, f.terms.terms.map((o, i) => ({ ...o })), { op: 0.15 + 0.85 * Math.max(...f.vis, 0) });
-    } else drawQ(E, G, s.vi.Q[f.k - 1], { digits: 2, tip: (c, a) => `${cellName(c)} ${ACTIONS[a]}` });
+      f.terms.terms.forEach((o, j) => {
+        const c = cellXY(G, s.s), dx = DX[o.dir], dy = -DY[o.dir], L = G.cs, op = f.vis[j], w = 1.5 + 9 * o.p;
+        const e = o.moved ? 0.66 : 0.5;
+        arrow(E, c.cx + dx * L * 0.3, c.cy + dy * L * 0.3, c.cx + dx * L * e, c.cy + dy * L * e, { stroke: 'var(--viz-forward)', width: w, op });
+        text(E, (o.moved ? '' : 'stay ') + fmt(o.p, 1), c.cx + dx * L * 0.48 + (dy ? 14 : 0), c.cy + dy * L * 0.48 + (dx ? -8 : 4), { size: 12, anchor: 'middle', weight: 650, halo: true, op });
+      });
+    } else drawQ(E, G, s.vi.Q[f.k - 1], { digits: 2, numbers: nar ? false : undefined, best: f.k >= 3, tip: (c, a) => `${cellName(c)} ${ACTIONS[a]}` });
     // the backup as a table of terms
     const x = nar ? 14 : G.x0 + G.w + 26, w = nar ? E.W - 28 : E.W - x - 12, y0 = nar ? G.y0 + G.h + 22 : 28;
     text(E, f.seg1 ? `Backup of Q(${cellName(s.s)}, ${ACTIONS[s.a]}) with the best values` : `Sweep ${f.k}: same backup, earlier values`, x, y0, { size: 12, weight: 650 });
@@ -69,7 +74,7 @@ const mode: ModeImpl<Scene, F> = {
     const cb = nar ? { x: 44, y: ys + 44, w: E.W - 60, h: E.H - ys - 44 - 40 } : { x: x + 30, y: ys + 44, w: w - 38, h: E.H - ys - 44 - 44 };
     const ds = Array.from(s.vi.delta), lo = Math.pow(10, Math.floor(Math.log10(Math.min(...ds)))), xs = ds.map((_, i) => i + 1);
     const keep = Math.min(f.k, ds.length);
-    lineChart(E, cb, { lo: 1, hi: s.sweeps, ticks: [1, 5, 10, 15, 20].filter((v) => v <= s.sweeps), label: 'Sweep' }, { lo, hi: 1, log: true, label: 'Largest change' }, [{ xs, ys: ds, color: 'var(--viz-gradient)', width: 2 }], keep);
+    lineChart(E, cb, { lo: 1, hi: s.sweeps, ticks: [1, 5, 10, 15, 20].filter((v) => v <= s.sweeps), label: 'Sweep' }, { lo, hi: 1, log: true, label: 'Largest change', fmt: (v: number) => String(Number(v.toPrecision(1))) }, [{ xs, ys: ds, color: 'var(--viz-gradient)', width: 2 }], keep);
   },
   label: (s) => `Value iteration on the 4 by 3 world: first one Bellman backup at ${cellName(s.s)} going ${ACTIONS[s.a]} assembled from ${s.star.terms.length} weighted terms, then ${s.sweeps} sweeps of the whole grid with the largest change per sweep on a log axis.`,
 };

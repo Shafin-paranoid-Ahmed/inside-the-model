@@ -5,7 +5,7 @@
  * alpha (0.1), gamma (0.9), epsilon (0.3), seed (11), episode (50: pick the first matching update from that episode on).
  */
 import { ACTIONS, GOAL, cellName } from '../../../lib/rl/gridworld';
-import { ACCENT, MUTED, RULE, ease, fmt, rect, signedFill, text, type Env } from '../_rl/svg';
+import { ACCENT, MUTED, RULE, TEXT, ease, fmt, rect, signedFill, text, type Env } from '../_rl/svg';
 import { int, list, num, type Frame, type ModeImpl, type Opts } from '../_rl/kit';
 import { gridOf } from './sim';
 import { qRun } from './q-common';
@@ -64,7 +64,7 @@ const mode: ModeImpl<Scene, F> = {
       const row = (j: number, k: string, v: string, o: { fill?: string; bold?: boolean } = {}) => {
         const yy = y + 62 + j * rh;
         text(E, k, x + pad, yy, { size: 12, fill: MUTED, op: vis[Math.min(4, Math.round(j))] });
-        text(E, v, x + cw - pad, yy, { size: 12, anchor: 'end', mono: true, weight: o.bold ? 650 : 400, fill: o.fill, op: vis[Math.min(4, Math.round(j))] });
+        text(E, v, x + cw - pad, yy, { size: 12, anchor: 'end', mono: true, weight: o.bold ? 650 : 400, fill: o.fill ?? TEXT, op: vis[Math.min(4, Math.round(j))] });
       };
       row(0, 'reward r', fmt(c.r));
       row(1, 'terminal flag', c.done ? '1  (over)' : '0  (goes on)');

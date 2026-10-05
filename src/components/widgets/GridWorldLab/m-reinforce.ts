@@ -24,7 +24,7 @@ const mode: ModeImpl<Scene, F> = {
   },
   timeline(s) {
     const at = (e: number) => timeAt(Math.min(e, s.episodes), PLAY, s.episodes);
-    return { duration: PLAY + HOLD, markers: [{ at: 0, label: 'First 100 episodes' }, { at: at(100), label: 'Episodes 100 to 500' }, { at: at(500), label: `Episodes 500 to ${s.episodes}` }, { at: PLAY, label: 'Training done' }] };
+    return { duration: PLAY + HOLD, markers: [{ at: 0, label: 'First 100 episodes' }, { at: at(100), label: '100 to 500' }, { at: at(500), label: `500 to ${s.episodes}` }, { at: PLAY, label: 'Done' }] };
   },
   frameAt(t, s) {
     const e = episodesAt(t, PLAY, s.episodes), k = e / EVAL_EVERY, a = s.none?.mean[k], b = s.sv?.mean[k];

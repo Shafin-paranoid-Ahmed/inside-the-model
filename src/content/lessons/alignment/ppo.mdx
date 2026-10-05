@@ -7,158 +7,255 @@ order: 5
 level: advanced
 duration: 35
 prereqs: ["alignment/policy-gradients"]
-status: stub
+status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
+import GridWorldLab from '../../../components/widgets/GridWorldLab/GridWorldLab.svelte';
+import PPOLab from '../../../components/widgets/PPOLab/PPOLab.svelte';
 
 How can an agent reuse a good batch without chasing it too far?
 
 <Step title="An advantage compares an action with the usual outcome">
 
-An advantage estimates how much better an action turned out than the critic expected from that state, so its sign tells the policy whether to favour or discourage that action.
+After the agent collects a batch of experience, PPO has to decide which of the actions it took were good. Raw rewards are a poor judge: a step that earns $-0.04$ near the goal is better than one that earns $-0.04$ far from it. So the critic (the value estimate $V$ from the [policy gradients lesson](/learn/alignment/policy-gradients/)) supplies a baseline. The **advantage** of an action is how much better the outcome was than the critic expected from that state. Positive means "do this more", negative means "do this less".
 
-{/*
-IDEA: A(s,a) = Q(s,a) - V(s); connect the actor-critic TD error to generalized advantage estimation (GAE), a discounted sum of later TD errors with lambda setting its horizon.
-WIDGET: GridWorldLab mode="ppo-advantage" gamma=0.9 lambda=0.95 batch=64 seed=29. One batch trajectory beside rewards, frozen critic values, TD errors and selected-step advantage contributions.
-MOTION over t: walk forward, reveal each TD error, accumulate GAE backward with decaying contribution widths, then reveal the selected action's signed advantage.
-TRY: compare the selected action's advantage at lambda 0 and 0.95.
-NUMBERS: selected r, V(s), V(s'), delta and A at both lambdas; probe a batch containing positive and negative advantages. Correctly mask termination and bootstrap at time-limit truncations.
-SHOW THE MATH: delta_t = r + gamma V(s') - V(s); A-hat_t = sum_l (gamma lambda)^l delta_(t+l) with episode masks. SHOW THE CODE: backward GAE recurrence.
-*/}
+The simplest advantage is the one-step **TD error**, $\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)$: the reward plus the discounted value of where you landed, minus the value you expected. It only looks one step ahead, though, and a critic that is still learning can be badly wrong. **Generalized advantage estimation (GAE)** adds up the later errors too, each shrunk by $(\gamma\lambda)^l$. The knob $\lambda$ decides how far to look: $\lambda = 0$ keeps only $\delta_t$, and values near 1 look to the end of the episode.
+
+Watch the table fill in one episode of six steps. In step 1 the agent moves up from $(1,1)$ and its own error is only $+0.043$, because the cell it reached was worth almost exactly what the critic expected. Then the later errors are added to step 1. The last step reaches the +1 goal and its error is $+0.875$; discounted by $(0.9 \times 0.95)^5$ it adds $+0.400$ to step 1. With $\lambda = 0.95$ the advantage of step 1 is $+0.493$, more than ten times its one-step error.
+
+<GridWorldLab client:visible mode="ppo-advantage" gamma={0.9} lambda={0.95} batch={64} seed={29} title="One episode: each step's error, then the advantage of step 1" />
+
+<details>
+<summary>Show the math</summary>
+
+$$\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t), \qquad \hat A_t = \sum_{l \ge 0} (\gamma\lambda)^l\, \delta_{t+l}.$$
+
+At a terminal move $V(s_{t+1})$ counts as 0 and the sum stops. If an episode is cut off by a time limit instead, $V(s_{t+1})$ is still used in $\delta_t$ (the episode could have continued) but the sum stops. Computed backwards, $\hat A_t = \delta_t + \gamma\lambda \hat A_{t+1}$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+adv, nxt = np.zeros(n), 0.0
+for t in reversed(range(n)):
+    live = 0.0 if terminated[t] else 1.0
+    delta = r[t] + gamma * live * v_next[t] - v[t]
+    nxt = delta + gamma * lam * live * (0.0 if truncated[t] else 1.0) * nxt
+    adv[t] = nxt
+returns = adv + v          # the critic's regression target
+```
+
+</details>
 
 </Step>
 
 <Step title="Keep the policy that collected the batch">
 
-PPO saves the old action probabilities when it collects a batch, then compares each new probability with that saved value using a ratio.
+PPO will reuse each batch for several update steps, so the policy changes while the batch stays the same. To measure how much it has changed, PPO saves the probability of every action at the moment it was chosen, $\pi_{\text{old}}(a \mid s)$. After each update it divides the current probability by that saved one:
 
-{/*
-IDEA: rho_t(theta) = pi_theta(a_t|s_t) / pi_old(a_t|s_t); rho starts at 1, old log-probabilities and advantages stay fixed during optimization; denominator is the collection policy, not a permanent reference model.
-WIDGET: GridWorldLab mode="ppo-ratio" batch=64 epochs=4 focus="1,1" seed=29. Old probability bars as labelled outlines; new bars filled; selected action shows old/new log-probability and ratio.
-MOTION over t: collect actions, freeze the old bars, then reveal successive new-policy states; the ratio marker moves only with the new probability.
-TRY: select another sampled action and check its numerator and denominator.
-NUMBERS: old and new probabilities, their ratio, and ratio 1 at the start; compute all readouts from the displayed policy.
-SHOW THE MATH: rho = exp(log pi_new - log pi_old). SHOW THE CODE: storing detached old log-probabilities at collection.
-*/}
+$$\rho = \frac{\pi_{\text{new}}(a \mid s)}{\pi_{\text{old}}(a \mid s)}.$$
+
+A ratio of 1 means "unchanged", above 1 means the action became more likely, below 1 less likely. The saved probabilities are frozen for the whole batch; the next batch will save new ones.
+
+The figure shows 17 visits to the start cell $(1,1)$. The dashed outlines are the saved probabilities (up 0.33, right 0.16, down 0.37, left 0.14) and the filled bars are the current ones. Each chip is one visit, blue for a positive advantage and orange for a negative one; click a chip to follow it. The first chip is an "up" with advantage $+0.49$: after 16 updates its probability has grown from 0.325 to 0.355, a ratio of 1.092. Now click the tenth chip, a "right" with advantage $-0.24$: its ratio falls to 0.746.
+
+<GridWorldLab client:visible mode="ppo-ratio" focus="1,1" batch={64} epochs={4} seed={29} title="Saved probabilities against current ones, in the start cell" />
+
+<details>
+<summary>Show the math</summary>
+
+In practice the ratio is computed from log-probabilities, which are numerically safer: $\rho = \exp(\log\pi_{\text{new}} - \log\pi_{\text{old}})$. At the start of every batch $\pi_{\text{new}} = \pi_{\text{old}}$, so $\rho = 1$ exactly.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+# at collection time
+logp_old = policy.log_prob(a, s).detach()   # saved, never recomputed
+# in every update step
+ratio = torch.exp(policy.log_prob(a, s) - logp_old)
+```
+
+</details>
 
 </Step>
 
 <Step title="Clip the incentive to increase a good action">
 
-For a positive advantage, PPO stops adding reward to its objective once the action's probability ratio grows beyond the upper clip threshold.
+If we simply maximised $\rho A$ over a batch, one lucky sample could push the policy a long way, because nothing stops the ratio from growing. PPO's fix is to **clip** the ratio inside the objective: choose a small $\varepsilon$ (0.2 here) and use
 
-{/*
-IDEA: min(rho A, clip(rho, 1-epsilon, 1+epsilon) A); for A positive the favourable direction plateaus above 1+epsilon, while decreases still hurt the objective.
-WIDGET: PPOLab mode="clip-positive" advantage=1 epsilon=0.2 ratios="0.5,1.6". Two surrogate curves, unclipped and clipped, with a moving ratio cursor and the active branch labelled; use --viz-pos for the advantage sign.
-MOTION over t: ratio sweeps across 0.5 to 1.6; both curves trace, then the clipped objective's cursor enters its upper plateau while the unclipped line continues rising.
-TRY: compare the objective at ratios 1.2 and 1.5.
-NUMBERS: both objective values and the clipped derivative at those ratios; probe exact branch endpoints, not invented training statistics.
-SHOW THE MATH: the clipped surrogate and its positive-advantage piecewise form.
-*/}
+$$\min\bigl(\rho A,\ \operatorname{clip}(\rho,\ 1-\varepsilon,\ 1+\varepsilon)\,A\bigr).$$
+
+The shaded **band** is $1-\varepsilon$ to $1+\varepsilon$. Take a good action, $A = +1$. Inside the band the objective is just $\rho A$ and its slope is $A$, so the update keeps raising the action's probability. Above $1.2$ the clipped term is the smaller one and the objective goes flat: the slope is 0, and there is no more reward for making the action even more likely. Below the band the plain $\rho A$ is smaller, so lowering a good action's probability still costs objective.
+
+The cursor pauses at two ratios. At $\rho = 1.2$ the objective is $1.2$, and at $\rho = 1.5$ it is still $1.2$ while the dashed unclipped line has reached $1.5$.
+
+<PPOLab client:visible mode="clip-positive" advantage={1} epsilon={0.2} ratios="0.5,1.6" title="Clipped objective for an advantage of +1" />
+
+<details>
+<summary>Show the math</summary>
+
+For $A > 0$ the objective is $\rho A$ for $\rho \le 1+\varepsilon$ and $(1+\varepsilon)A$ above, so it has slope $A$ and then slope $0$.
+
+</details>
 
 </Step>
 
 <Step title="Negative advantages clip in the other direction">
 
-For a negative advantage, PPO stops rewarding further decreases in the action's probability once its ratio falls below the lower clip threshold.
+For a bad action, $A = -1$, the same formula flips sides. The minimum now picks the plateau below the band: once the ratio drops under $0.8$ the objective is stuck at $-0.8$ and there is no more reward for making the bad action rarer. Above the band nothing is clipped: the objective $\rho A$ keeps falling as the action becomes more likely, so the update keeps pushing it back down.
 
-{/*
-IDEA: with A negative, the minimum chooses a plateau below 1-epsilon; increasing a bad action's probability still worsens the objective, even beyond the upper band.
-WIDGET: PPOLab mode="clip-negative" advantage=-1 epsilon=0.2 ratios="0.5,1.6". Same axes as the preceding step, negative-advantage curves and explicit lower plateau; distinct signed default and mode.
-MOTION over t: cursor moves from ratio 1 toward 0.5, then toward 1.6, revealing the favourable decrease plateau and the penalized increase segment.
-TRY: compare ratios 0.6 and 1.4 and identify where the gradient is still active.
-NUMBERS: objective and derivative at ratios 0.6, 0.8, 1 and 1.4; show that outside the band does not always mean zero gradient.
-SHOW THE MATH: negative-advantage piecewise surrogate; explain why taking the minimum changes the active side.
-*/}
+That is why "outside the band" does not mean "zero gradient". Which side is flat depends on the sign of the advantage. Read the cursor at its two rests. At $\rho = 0.6$ the objective is $-0.8$ with slope 0. At $\rho = 1.4$ it is $-1.4$ and the slope is still $-1$, so a bad action that has become too likely is still penalised in full.
+
+<PPOLab client:visible mode="clip-negative" advantage={-1} epsilon={0.2} ratios="0.5,1.6" title="Clipped objective for an advantage of −1" />
+
+<details>
+<summary>Show the math</summary>
+
+For $A < 0$, $\rho A \ge (1-\varepsilon)A$ exactly when $\rho \le 1-\varepsilon$, so below the band the minimum is the constant $(1-\varepsilon)A$. Above the band $\rho A$ is the smaller one, so the slope stays $A$.
+
+</details>
 
 </Step>
 
 <Step title="A few epochs reuse one batch">
 
-An epoch is one pass through a collected batch, and PPO makes several such passes while keeping its old probabilities and advantages fixed.
+Collecting experience is the expensive part, so PPO squeezes several updates out of each batch. An **epoch** is one pass over the batch, split into shuffled **mini-batches** (here 16 samples each); PPO does four epochs, which is 16 updates for 64 samples. Throughout, the saved probabilities, the advantages and the critic's targets stay frozen. The critic is trained separately, on its own loss.
 
-{/*
-IDEA: minibatch ascent on the clipped policy surrogate plus a separately trained value loss; few epochs per rollout batch, then collect fresh data. Separate policy loss from critic loss and optional entropy bonus.
-WIDGET: GridWorldLab mode="ppo-epochs" batch=64 minibatch=16 epochs=4 epsilon=0.2 lr=0.03 seed=31. Frozen rollout list, shuffled minibatch selection, ratio histogram and value-loss curve; favourable clipped samples marked separately from ratios merely outside the band.
-MOTION over t: four epoch segments; shuffle and select minibatches within each; update policy and critic, recompute ratios, highlight active/plateau branches.
-TRY: find a sample outside the band whose surrogate gradient remains active.
-NUMBERS: surrogate, value loss, out-of-band ratio fraction and actual plateau fraction per epoch; keep these last two readouts distinct. Freeze GAE during epochs.
-SHOW THE CODE: collect batch, freeze old log-probs/advantages, shuffle minibatches, update for four epochs.
-*/}
+In this figure each square is one step of the batch, coloured by the sign of its advantage (32 positive in blue, 32 negative in orange). The outlined squares are the mini-batch being used. The histogram counts how many ratios sit at each value: teal bars are samples still pushing, grey bars are flat samples (their ratio is outside the band on the side that earns nothing more). Early on every ratio is inside the band. After 7 updates the first ratio leaves it. At the end, 31% of the ratios are outside the band and 27% of the samples are flat, so 3 samples are outside the band but still pushing. Look for the ring in the grid: a sample like that has a positive advantage with a ratio below 0.8, or a negative advantage with a ratio above 1.2. The mean clipped objective rises from 0.124 to 0.145.
+
+<GridWorldLab client:visible mode="ppo-epochs" batch={64} minibatch={16} epochs={4} epsilon={0.2} lr={0.03} seed={31} title="Sixteen updates on one frozen batch" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+batch = collect(policy, 64)                 # states, actions, rewards
+logp_old, adv, ret = freeze(batch, critic)  # computed once
+for epoch in range(4):
+    for idx in shuffled_minibatches(64, size=16):
+        ratio = (policy.log_prob(a[idx], s[idx]) - logp_old[idx]).exp()
+        surr = torch.min(ratio * adv[idx], ratio.clamp(0.8, 1.2) * adv[idx])
+        policy_loss = -surr.mean()
+        value_loss = 0.5 * (critic(s[idx]) - ret[idx]).pow(2).mean()
+        step(policy_loss, value_loss)       # separate optimisers
+```
+
+</details>
 
 </Step>
 
 <Step title="Clipping encourages small moves but does not enforce a wall">
 
-Clipping removes the incentive for some large probability changes, but shared parameters can still move those probabilities, so the policy's actual drift must be measured.
+It is tempting to read the clip as a fence that keeps the ratio between $1-\varepsilon$ and $1+\varepsilon$. It is not. The clip only removes the incentive from one sample's term. The policy parameters are shared by many samples, and the optimizer's momentum can carry them on, so a ratio whose own gradient is zero can still keep moving. The only way to know how far the policy really moved is to measure it. The standard measure is the **KL divergence** from the old policy to the new one, averaged over the states in the batch: $0$ means the policy is unchanged, and larger means further away.
 
-{/*
-IDEA: PPO clipping is not a hard ratio or KL bound; a sample's flat surrogate does not freeze its probability. Measure KL(old || new) across states visited in the fixed batch; optional early stopping uses measured KL.
-WIDGET: PPOLab mode="drift" epsilons="0.1,0.2,0.4" epochs=4 batch=64 lr=0.03 seed=31. Same rollout and initial logits for each setting; old/new action bars, ratio extrema and exact categorical KL averaged over batch states.
-MOTION over t: advance each run one minibatch at a time; ratios can leave the shaded band, and the measured KL cursor traces the change.
-TRY: find an out-of-band ratio and check whether other samples' updates moved it there.
-NUMBERS: min/max ratio, average KL and surrogate per epoch for each epsilon; probe before claiming smaller epsilon gives smaller drift. If no excursion occurs, adjust the documented step size or batch before writing that claim.
-SHOW THE MATH: KL(pi_old || pi_new); distinguish this within-batch diagnostic from RLHF's KL to a fixed SFT reference.
-*/}
+Here the same frozen batch and starting policy are trained three times, with $\varepsilon = 0.1$, $0.2$ and $0.4$. Each strip shows all 64 ratios. After 16 updates the ratios span 0.73 to 1.32 for $\varepsilon = 0.1$, 0.72 to 1.44 for $\varepsilon = 0.2$ and 0.71 to 1.58 for $\varepsilon = 0.4$. So even the narrowest band, which ends at 1.1, ends up with a ratio of 1.32. The width of the band does matter, though: the KL ends at 0.0114, 0.0176 and 0.0237, and 59%, 31% and 14% of the ratios are outside their bands. In this run, a smaller $\varepsilon$ means less drift, but never zero drift and never a hard limit.
+
+<PPOLab client:visible mode="drift" epsilons="0.1,0.2,0.4" epochs={4} batch={64} lr={0.03} seed={31} title="Same batch, three clip widths" />
+
+<details>
+<summary>Show the math</summary>
+
+$$\operatorname{KL}(\pi_{\text{old}} \,\|\, \pi_{\text{new}}) = \sum_a \pi_{\text{old}}(a \mid s)\,\log\frac{\pi_{\text{old}}(a \mid s)}{\pi_{\text{new}}(a \mid s)},$$
+
+averaged over the states in the batch. This compares the new policy with the one that collected the batch. RLHF's KL penalty compares the policy with a fixed reference model, a different quantity with a different job. Some implementations also stop the epochs early once a measured KL passes a target.
+
+</details>
 
 </Step>
 
 <Step title="Collect again after updating">
 
-After a few epochs PPO collects a fresh batch with its updated policy, repeats the advantage and clipping calculations, and can use the same loop to optimise a reward model in RLHF.
+After its few epochs, PPO throws the batch away. It collects a fresh one with the updated policy, saves new old probabilities (so every ratio is 1 again), recomputes the advantages with the updated critic, and repeats. Unlike DQN's replay buffer in the [deep RL lesson](/learn/alignment/deep-rl/), nothing from earlier iterations is reused.
 
-{/*
-IDEA: full on-policy iteration; pi_old resets to the current policy at each new rollout, unlike DQN's persistent replay buffer. Bridge to /learn/alignment/rlhf/ where rewards score responses and a separate fixed-reference KL penalty shapes them.
-WIDGET: GridWorldLab mode="ppo-train" batch=64 epochs=4 iterations=100 gamma=0.9 lambda=0.95 epsilon=0.2 seed=37. Grid policy arrows, rollout batch and greedy evaluation return/critic-error curves; no reuse of earlier iterations' batches.
-MOTION over t: loop through collect, estimate advantages, four training epochs, evaluate and refresh old policy; later markers advance iterations without putting narration ahead of the displayed batch.
-TRY: pause at a batch refresh and see the probability ratios return to 1.
-NUMBERS: evaluation return at iterations 0, 20 and 100, critic error and KL(old || new) per batch; probe all claims and report variability where needed.
-SHOW THE CODE: complete PPO outer loop using shared RL helpers. Next Day 12 begins at /learn/alignment/sft/; PPO is reused in /learn/alignment/rlhf/.
-*/}
+Watch 100 iterations on the grid. The arrows are the policy's action probabilities. The value of the start cell under the current policy begins at $-0.410$ with the uniform policy, reaches $+0.264$ after 20 iterations, $+0.330$ after 50 and $+0.341$ after 100, against $0.351$ for the best possible policy. Most of the gain comes early. The critic's error against the true values falls from 0.443 to 0.227 at iteration 20 and 0.157 at iteration 100. This is one run (seed 37). Other seeds reach 0.18 to 0.29 at iteration 20 and 0.340 to 0.343 at iteration 100, so the end result is steady and the early speed varies.
+
+<GridWorldLab client:visible mode="ppo-train" gamma={0.9} lambda={0.95} epsilon={0.2} batch={64} epochs={4} iterations={100} seed={37} title="PPO on the grid: 100 iterations, a fresh batch each time" />
+
+The same loop trains language models in [RLHF](/learn/alignment/rlhf/), where the reward comes from a learned reward model.
+
+<details>
+<summary>Show the code</summary>
+
+```python
+for it in range(100):
+    batch = collect(policy, 64)                       # fresh, from the current policy
+    logp_old, adv, ret = freeze(batch, critic)        # pi_old := current policy
+    for epoch in range(4):
+        for idx in shuffled_minibatches(64, 16):
+            update_policy_with_clipped_surrogate(idx)
+            update_critic(idx, ret)
+    # the batch is dropped; the next one starts again at ratio 1
+```
+
+</details>
 
 </Step>
 
 <Step title="Common misconceptions">
 
-Some common misunderstandings about PPO's objective.
+**"PPO keeps every probability ratio inside the band."** It clips a term of the objective, not the ratio. In the drift figure, the narrowest band (up to 1.1) still ends with a ratio of 1.32.
 
-{/*
-NO WIDGET. Misconceptions:
-1. "PPO clamps every probability ratio inside the band." It clips an objective term, not the probability itself.
-2. "Every sample outside the band stops contributing." Only the favourable direction plateaus; the advantage sign selects that direction.
-3. "The old policy is the original policy from before training." It is the policy that collected this batch and is refreshed next iteration.
-4. "PPO replays arbitrary old experience like DQN." Its few epochs reuse the current rollout batch before fresh collection.
-5. "Clipping and RLHF's reference KL penalty are the same." One compares with the collection policy; the other penalizes drift from a fixed reference.
-*/}
+**"Every sample outside the band stops contributing."** Only the favourable side is flat, and the advantage's sign decides which side that is. A bad action whose ratio is 1.4 is still pushed down at full strength.
+
+**"The old policy is the one from before training began."** It is the policy that collected the current batch, and it is replaced when the next batch is collected.
+
+**"PPO replays old experience like DQN."** It reuses the current batch for a few epochs and then discards it.
+
+**"Clipping and the RLHF reference penalty are the same thing."** Clipping compares with the policy that collected the batch. The RLHF penalty compares with a fixed reference model.
 
 </Step>
 
 <Step title="Check yourself">
 
-Try these questions about advantages, ratios and batch reuse.
+<details>
+<summary>1. The old probability of an action is 0.25 and the new one is 0.35. What is the ratio?</summary>
 
-{/*
-NO WIDGET. Questions (answers in details blocks):
-1. With old action probability 0.25 and new probability 0.35, what is the ratio?
-2. For A = 1 and epsilon = 0.2, compute the surrogate at ratios 1.1 and 1.5.
-3. For A = -1, which side of the band plateaus, and why does a ratio 1.4 still receive a penalty?
-4. Which values stay fixed while the four epochs optimize one batch?
-5. Can clipping guarantee a small KL to the original SFT model? Explain both the lack of a hard bound and the different reference policies.
-*/}
+$0.35 / 0.25 = 1.4$.
+
+</details>
+
+<details>
+<summary>2. For $A = 1$ and $\varepsilon = 0.2$, what is the objective at ratios 1.1 and 1.5?</summary>
+
+At 1.1 the ratio is inside the band, so the objective is $1.1$. At 1.5 it is clipped to $1.2$.
+
+</details>
+
+<details>
+<summary>3. For $A = -1$, which side of the band is flat, and why does a ratio of 1.4 still get a penalty?</summary>
+
+The side below $1-\varepsilon$ is flat. At 1.4 the minimum of $-1.4$ and $-1.2$ is $-1.4$, the unclipped term, so the gradient is still $-1$ and the action is pushed back down.
+
+</details>
+
+<details>
+<summary>4. Which quantities stay fixed while the four epochs optimise one batch?</summary>
+
+The batch itself, the saved old log-probabilities, the advantages and the critic's regression targets.
+
+</details>
+
+<details>
+<summary>5. Can clipping guarantee a small KL to the original SFT model?</summary>
+
+No. Clipping has no hard bound even on the KL to the collection policy (the drift figure shows ratios far outside the band). And it compares with the policy that collected the current batch, which changes every iteration, so it says nothing about distance from a fixed SFT reference. That needs a separate penalty.
+
+</details>
 
 </Step>
 
 <Step title="Going deeper">
 
-Primary papers and resources on policy improvement with advantages.
+- John Schulman et al., [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347), 2017: the clipped objective.
+- John Schulman et al., [High-Dimensional Continuous Control Using Generalized Advantage Estimation](https://arxiv.org/abs/1506.02438): GAE.
+- John Schulman et al., [Trust Region Policy Optimization](https://arxiv.org/abs/1502.05477): the constrained method that PPO simplifies.
+- OpenAI Spinning Up, [Proximal Policy Optimization](https://spinningup.openai.com/en/latest/algorithms/ppo.html).
 
-{/*
-NO WIDGET. References:
-- John Schulman et al., "Proximal Policy Optimization Algorithms", 2017, https://arxiv.org/abs/1707.06347.
-- John Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation", https://arxiv.org/abs/1506.02438.
-- John Schulman et al., "Trust Region Policy Optimization", https://arxiv.org/abs/1502.05477 (VERIFY before presenting the trust-region comparison).
-- OpenAI Spinning Up, "Proximal Policy Optimization", https://spinningup.openai.com/en/latest/algorithms/ppo.html (VERIFY implementation defaults before quoting them).
-Next: /learn/alignment/sft/; application: /learn/alignment/rlhf/.
-*/}
+Next: [supervised fine-tuning](/learn/alignment/sft/), and then [RLHF](/learn/alignment/rlhf/), which reuses this loop.
 
 </Step>

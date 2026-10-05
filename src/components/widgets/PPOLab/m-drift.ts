@@ -8,9 +8,9 @@
 import { makeGrid } from '../../../lib/rl/gridworld';
 import { batchStats, driftRuns } from '../../../lib/rl/ppo';
 import { int, key, num, nums, type Frame, type ModeImpl, type Opts } from '../_rl/kit';
-import { ACCENT, BG, MUTED, axes, circle, clamp, ease, fmt, lerp, line, mix, path, rect, text, type Env } from '../_rl/svg';
+import { ACCENT, BG, MUTED, TEXT, axes, circle, clamp, ease, fmt, lerp, line, mix, path, rect, text, type Env } from '../_rl/svg';
 
-const LEAD = 1.8, UPD = 0.75, CAT = ['--viz-cat-1', '--viz-cat-2', '--viz-cat-3'];
+const LEAD = 1.8, UPD = 0.75, DASH = [undefined, '7 4', '2 4'];
 interface Run { eps: number; ratios: Float64Array[]; min: number[]; max: number[]; kl: number[]; oob: number[] }
 interface Scene { adv: Float64Array; runs: Run[]; ups: number; per: number; lo: number; hi: number; klMax: number }
 interface F extends Frame { kh: number; w: number; n: number }
@@ -31,7 +31,7 @@ const mode: ModeImpl<Scene, F> = {
     return { ...d, ups, per: Math.max(1, ups / epochs), lo, hi, klMax: Math.max(...d.runs.flatMap((r) => r.kl)) * 1.08 };
   },
   timeline(s) {
-    const mk = [{ at: 0, label: 'Same batch, same start' }];
+    const mk = [{ at: 0, label: 'Same start' }];
     for (let e = 0; e * s.per < s.ups; e++) mk.push({ at: LEAD + e * s.per * UPD, label: `Epoch ${e + 1}` });
     return { duration: LEAD + s.ups * UPD + 2.5, markers: mk };
   },
@@ -60,7 +60,7 @@ const mode: ModeImpl<Scene, F> = {
         const jy = ((i * 0.6180339) % 1 - 0.5) * (sh - 16);
         circle(E, sx(lerp(a0[i], a1[i], f.w)), cy + jy, 3.2, { fill: s.adv[i] >= 0 ? 'var(--viz-pos)' : 'var(--viz-neg)', stroke: BG, sw: 0.75, op: 0.85 });
       }
-      text(E, `ε ${fmt(run.eps, 1)}`, nw ? sb.x + 2 : 14, nw ? y0 + 14 : cy + 4, { size: 12, weight: 650, fill: `var(${CAT[j % 3]})` });
+      text(E, `ε ${fmt(run.eps, 1)}`, nw ? sb.x + 2 : 14, nw ? y0 + 14 : cy + 4, { size: 12, weight: 650, fill: TEXT });
     });
     for (const v of [0.6, 0.8, 1, 1.2, 1.4, 1.6].filter((v) => v >= s.lo && v <= s.hi)) text(E, fmt(v, 1), sx(v), sb.y + sh * R + 14, { size: 11, anchor: 'middle', fill: MUTED });
     // KL chart
@@ -69,10 +69,10 @@ const mode: ModeImpl<Scene, F> = {
     s.runs.forEach((run, j) => {
       let d = '';
       for (let i = 0; i <= Math.min(s.ups, f.n); i++) d += `${d ? 'L' : 'M'}${kx(i).toFixed(1)} ${ky2(run.kl[i]).toFixed(1)}`;
-      if (d) path(E, d, { stroke: `var(${CAT[j % 3]})`, sw: 2.25 });
+      if (d) path(E, d, { stroke: TEXT, sw: 2.25, dash: DASH[j % 3] });
       const i = Math.min(s.ups, f.n);
-      circle(E, kx(i), ky2(run.kl[i]), 4, { fill: `var(${CAT[j % 3]})`, stroke: BG, sw: 2 });
-      text(E, `ε ${fmt(run.eps, 1)}`, kx(s.ups) - 4, ky2(run.kl[s.ups]) - 6, { size: 11, anchor: 'end', fill: `var(${CAT[j % 3]})`, weight: 650 });
+      circle(E, kx(i), ky2(run.kl[i]), 4, { fill: TEXT, stroke: BG, sw: 2 });
+      text(E, `ε ${fmt(run.eps, 1)}`, kx(s.ups) - 4, ky2(run.kl[s.ups]) - 6, { size: 11, anchor: 'end', fill: TEXT, weight: 650 });
     });
   },
   label: (s) => `Probability ratios of a frozen batch after each update for clip widths ${s.runs.map((r) => r.eps).join(', ')}, and the KL divergence from the old policy over ${s.ups} updates.`,

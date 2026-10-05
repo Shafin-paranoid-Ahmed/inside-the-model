@@ -7,7 +7,7 @@
  * Props: lr (0.001, a control), measure (return | error), episodes (500), runs (10), seed (23), epsilon (0.1).
  */
 import { int, num, str, type Frame, type Kit, type ModeImpl, type Opts } from '../_rl/kit';
-import { MUTED, TEXT, fmt, line, lineChart, rect, text, type Env, type Series } from '../_rl/svg';
+import { MUTED, fmt, line, lineChart, rect, text, type Env, type Series } from '../_rl/svg';
 import { optimal } from '../../../lib/rl/tabular';
 import { GAMMA, VARIANT_COLOR, VARIANT_NAME, dqnGrid } from './dqn-common';
 
@@ -39,7 +39,7 @@ const mode: ModeImpl<Scene, F> = {
     for (const c of res) { stats.return[c.variant] = statOf(c.evalReturn); stats.error[c.variant] = statOf(c.qErr); }
     return { stats, at: res[0].evalAt, episodes, runs, lr, vstar: optimal(g, GAMMA).V[0], measure: str(o.measure, ['return', 'error'] as const, 'return') };
   },
-  timeline: (s) => ({ duration: PLAY + HOLD, markers: [{ at: 0, label: 'Early training' }, { at: PLAY * 0.2, label: 'Middle' }, { at: PLAY * 0.6, label: 'Late' }, { at: PLAY, label: `All ${s.episodes} episodes` }] }),
+  timeline: () => ({ duration: PLAY + HOLD, markers: [{ at: 0, label: 'Early training' }, { at: PLAY * 0.2, label: 'Middle' }, { at: PLAY * 0.6, label: 'Late' }, { at: PLAY, label: 'End' }] }),
   frameAt(t, s) {
     const ep = Math.min(s.episodes, Math.round((t / PLAY) * s.episodes)), i = Math.min(s.at.length - 1, Math.floor(ep / 10)), st = s.stats[s.measure];
     const rank = VARIANTS.map((v) => ({ v, m: st[v].mean[i] })).sort((a, b) => (s.measure === 'return' ? b.m - a.m : a.m - b.m));
@@ -51,7 +51,7 @@ const mode: ModeImpl<Scene, F> = {
   },
   draw(E: Env, f, s) {
     const nar = E.narrow, st = s.stats[s.measure], ret = s.measure === 'return';
-    const cb = nar ? { x: 44, y: 24, w: E.W - 58, h: E.H * 0.5 } : { x: 48, y: 26, w: E.W * 0.6 - 48, h: E.H - 84 };
+    const cb = nar ? { x: 44, y: 24, w: E.W - 58, h: E.H * 0.52 } : { x: 48, y: 26, w: E.W * 0.6 - 48, h: E.H - 84 };
     const all = VARIANTS.flatMap((v) => st[v].runs.flatMap((r) => Array.from(r)));
     const ya = ret ? { lo: Math.floor(Math.min(...all, 0) * 5) / 5, hi: Math.ceil(Math.max(...all, s.vstar) * 5) / 5, label: 'Return of the greedy policy' } : { lo: 0, hi: Math.ceil(Math.max(...all) * 2) / 2, label: 'Largest |Q − Q*|' };
     const ser: Series[] = [];
@@ -67,7 +67,6 @@ const mode: ModeImpl<Scene, F> = {
       text(E, VARIANT_NAME[v], tx + 24, y, { size: 12 });
       text(E, `${fmt(st[v].mean[f.i])} ± ${fmt(st[v].sd[f.i])}`, tx + w, y, { anchor: 'end', size: 12, weight: 600 });
     });
-    void TEXT;
   },
   label: (s) => `Learning curves of four DQN variants over ${s.episodes} episodes, ${s.runs} runs each, with the mean and spread of ${s.measure === 'return' ? 'the greedy policy return' : 'the largest error against the optimal Q-values'}.`,
   restTime: () => PLAY + HOLD,

@@ -9,7 +9,7 @@ import { type Frame, type ModeImpl, type Opts } from '../_rl/kit';
 import { ACCENT, MUTED, RULE, clamp, fmt, inkOn, line, rect, signFmt, signedFill, text, type Env } from '../_rl/svg';
 import { warmBatch } from './ppo-batch';
 
-const LEAD = 0.5, ROW = 0.9, BAR = 0.8, HOLD = 3.5;
+const LEAD = 0.5, ROW = 0.9, BAR = 0.8, HOLD = 6;
 interface Scene { T: number; gamma: number; lambda: number; s: number[]; a: number[]; r: number[]; v: number[]; v2: number[]; d: number[]; A: number[]; w: number[]; goal: boolean }
 interface F extends Frame { rows: number; bars: number; sum: number; cmp: boolean }
 
@@ -46,14 +46,14 @@ const mode: ModeImpl<Scene, F> = {
     return { rows, bars, sum, cmp, status, readouts };
   },
   draw(E: Env, f, s) {
-    const nw = E.narrow, T = s.T, rh = nw ? 20 : 24, size = nw ? 11 : 12;
+    const nw = E.narrow, T = s.T, k = nw ? 1 : Math.min(1.3, E.W / 720), rh = nw ? 20 : Math.max(24, Math.min(38, (E.H - 70) / (T + 1.5))), size = nw ? 11 : k > 1.1 ? 14 : 13;
     const x0 = nw ? 8 : 14, y0 = 24, head = ['#', 'Cell', 'Move', 'r', 'V(s)', 'V(s′)', 'δ', 'A'];
-    const px = nw ? [0, 16, 58, 124, 162, 206, 258, 306] : [0, 26, 78, 164, 214, 272, 338, 400];
+    const px = nw ? [0, 14, 64, 118, 166, 214, 264, 314] : [0, 26, 78, 164, 214, 272, 338, 400];
     const an: ('start' | 'end')[] = ['start', 'start', 'start', 'end', 'end', 'end', 'end', 'end'];
-    const cx = (j: number) => x0 + px[j];
+    const cx = (j: number) => x0 + px[j] * k;
     head.forEach((h, j) => text(E, h, cx(j), y0, { size, fill: MUTED, anchor: an[j], weight: j >= 6 ? 650 : 400 }));
     line(E, x0, y0 + 7, cx(7) + 4, y0 + 7, { stroke: RULE, sw: 1 });
-    const vmax = 0.9, bw = nw ? 46 : 52;
+    const vmax = 0.9, bw = nw ? 46 : 56 * k;
     const cell = (j: number, y: number, label: string, v?: number) => {
       if (v !== undefined) rect(E, cx(j) - bw + 4, y - rh * 0.7, bw, rh - 3, { fill: signedFill(v, vmax) });
       text(E, label, cx(j), y, { size, anchor: 'end', mono: true, fill: v !== undefined ? inkOn(Math.min(1, Math.abs(v) / vmax)) : undefined });

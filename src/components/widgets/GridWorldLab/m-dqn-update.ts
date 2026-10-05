@@ -8,7 +8,7 @@ import { createRng } from '../../../lib/math/rng';
 import { ACTIONS, cellName, idx, step, xy } from '../../../lib/rl/gridworld';
 import { allQ, initNet, tdLossGrad, tdTarget, type Transition } from '../../../lib/rl/dqn';
 import { int, num, type Frame, type ModeImpl, type Opts } from '../_rl/kit';
-import { ACCENT, MUTED, RULE, TEXT, arrow, circle, ease, fmt, line, lerp, poly, rect, seg, text, type Env } from '../_rl/svg';
+import { ACCENT, MUTED, RULE, TEXT, arrow, circle, ease, fmt, line, lerp, poly, rect, text, type Env } from '../_rl/svg';
 import { cellXY, drawAgent, drawGrid, drawQ, gridIn } from './draw';
 import { GAMMA, dqnGrid } from './dqn-common';
 import { actionOf, focusOf } from './sim';
@@ -44,7 +44,7 @@ const mode: ModeImpl<Scene, F> = {
     const alpha = ease((t - T[3]) / (T[4] - T[3])), a = ACTIONS[tr.a], S = cellName(tr.s), S2 = cellName(tr.s2), err = s.qsa - s.y;
     const status = [
       `The agent is at ${S}, asks for ${a} and ends up at ${S2}. The move costs ${fmt(tr.r)}.`,
-      tr.done ? `The move ended the episode, so the target is just the reward, y = ${fmt(s.y)}.` : `The move says what Q(${S}, ${a}) should be: the reward ${fmt(tr.r)} plus ${GAMMA} times the best Q-value the network gives ${S2}, ${fmt(s.nextBest)}. That target is y = ${fmt(s.y)}.`,
+      tr.done ? `The move ended the episode, so the target is just the reward, y = ${fmt(s.y)}.` : `The move says what the value of ${a} at ${S} should be: the reward ${fmt(tr.r)} plus ${GAMMA} times the best Q-value the network gives ${S2}, ${fmt(s.nextBest)}. That target is y = ${fmt(s.y)}.`,
       `The network currently predicts ${fmt(s.qsa)} for ${a} at ${S}, so it is off by ${fmt(err)}. The loss is half that error squared, ${fmt(s.loss, 3)}.`,
       `Backpropagation turns the error into a small push on every weight (learning rate ${s.lr}), treating the target ${fmt(s.y)} as a fixed number. The largest push on one weight is ${fmt(s.dw, 3)}.`,
       `After the update the prediction is ${fmt(s.qsa2)}. The same weights also moved ${a} at ${cellName(s.nb.s)}, a cell the agent did not visit, from ${fmt(s.nb.before)} to ${fmt(s.nb.after)}.`,
@@ -70,15 +70,15 @@ const mode: ModeImpl<Scene, F> = {
     text(E, 'Prediction and target for this move', pb.x, pb.y + 10, { fill: MUTED });
     line(E, ax.x, ax.y, ax.x + ax.w, ax.y, { stroke: RULE, sw: 1.5 });
     for (const v of [-1, 0, 1]) { line(E, X(v), ax.y - 4, X(v), ax.y + 4, { stroke: RULE }); text(E, fmt(v, 0), X(v), ax.y + 30, { anchor: 'middle', fill: MUTED, size: 11 }); }
-    const fade = (start: number) => ease((f.time - start) / 0.5);
-    if (f.time >= 4.0 && f.time >= 2.8) arrow(E, X(s.qsa), ax.y, X(s.y), ax.y, { stroke: 'var(--viz-gradient)', width: 2.5, op: fade(4.0) });
-    if (f.time >= 2.8) { poly(E, [[X(s.y), ax.y - 3], [X(s.y) - 6, ax.y - 12], [X(s.y) + 6, ax.y - 12]], { fill: TEXT, op: fade(2.8) }); text(E, 'target y', X(s.y), ax.y - 17, { anchor: 'middle', size: 11, op: fade(2.8) }); }
-    if (f.time >= 4.0) { circle(E, X(s.qsa), ax.y, 6, { fill: ACCENT, op: fade(4.0) }); text(E, 'now', X(s.qsa), ax.y + 18, { anchor: 'middle', size: 11, op: fade(4.0) }); }
-    if (f.time >= T[4]) { circle(E, X(s.qsa2), ax.y, 6, { fill: 'none', stroke: ACCENT, sw: 2.5, op: fade(T[4]) }); text(E, 'after', X(s.qsa2), ax.y + 18, { anchor: 'middle', size: 11, op: fade(T[4]) }); }
+    const fade = (_start: number) => 1;
+    if (f.time >= T[2]) arrow(E, X(s.qsa), ax.y, X(s.y), ax.y, { stroke: 'var(--viz-gradient)', width: 2.5, op: fade(0) });
+    if (f.time >= T[1]) { poly(E, [[X(s.y), ax.y - 3], [X(s.y) - 6, ax.y - 12], [X(s.y) + 6, ax.y - 12]], { fill: TEXT, op: fade(0) }); text(E, 'target y', X(s.y), ax.y - 17, { anchor: 'middle', size: 11, op: fade(0) }); }
+    if (f.time >= T[2]) { circle(E, X(s.qsa), ax.y, 6, { fill: ACCENT, op: fade(0) }); text(E, 'now', X(s.qsa), ax.y + 18, { anchor: 'middle', size: 11, op: fade(0) }); }
+    if (f.time >= T[4]) { circle(E, X(s.qsa2), ax.y, 6, { fill: 'none', stroke: ACCENT, sw: 2.5, op: fade(T[4]) }); text(E, 'after', X(s.qsa2), ax.y - 10, { anchor: 'middle', size: 11, op: fade(T[4]) }); }
     const rows: [string, string, number][] = [
-      ['Reward r', fmt(tr.r), 1.0], [`Best next Q, max Q(${cellName(tr.s2)}, ·)`, fmt(s.nextBest), 1.8], [`Target y = r + ${GAMMA} × best`, fmt(s.y), 2.8],
-      [`Prediction Q(${cellName(tr.s)}, ${ACTIONS[a]})`, fmt(s.qsa), 4.0], ['Error (prediction − y)', fmt(s.qsa - s.y), 4.0], ['Loss, half the error squared', fmt(s.loss, 3), 4.8],
-      ['Largest weight change', fmt(s.dw, 3), 5.8], ['Prediction after the update', fmt(s.qsa2), T[4]], [`${ACTIONS[a]} at ${cellName(s.nb.s)}, before → after`, `${fmt(s.nb.before)} → ${fmt(s.nb.after)}`, T[4]],
+      ['Reward r', fmt(tr.r), 0], [`Best next Q, at ${cellName(tr.s2)}`, fmt(s.nextBest), T[1]], [`Target y = r + ${GAMMA} × best`, fmt(s.y), T[1]],
+      [`Prediction for ${ACTIONS[a]} at ${cellName(tr.s)}`, fmt(s.qsa), T[2]], ['Error (prediction − y)', fmt(s.qsa - s.y), T[2]], ['Loss, half the error squared', fmt(s.loss, 3), T[2]],
+      ['Largest weight change', fmt(s.dw, 3), T[3]], ['Prediction after the update', fmt(s.qsa2), T[4]], [`${ACTIONS[a]} at ${cellName(s.nb.s)}, before → after`, `${fmt(s.nb.before)} → ${fmt(s.nb.after)}`, T[4]],
     ];
     const y0 = ax.y + 52, rh = nar ? 19 : 22;
     rows.forEach(([k, v, st], i) => {

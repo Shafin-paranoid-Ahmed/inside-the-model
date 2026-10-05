@@ -41,16 +41,16 @@ const mode: ModeImpl<Scene, F> = {
     let status = `Step reward ${fmt(R, 3)}: ${parts[0]}, and ${parts[1]}.`;
     if (r > 0) {
       const before = s.pol[r - 1], after = s.pol[r], ch = s.states.filter((c) => before[c] !== after[c]).map((c) => `${cellName(c)} from ${ARROWS[before[c]]} to ${ARROWS[after[c]]}`).join(' and ');
-      status += ` At ${fmt(s.cuts[r - 1], 3)} the best move at ${ch}.`;
+      status += ` At ${fmt(s.cuts[r - 1], 3)} the best move changes at ${ch}.`;
     }
     return { r, R, flash, status, readouts: [['Step reward', fmt(R, 3)], ['Into the pit', String(s.pit[r].length)], ['Into the goal', String(s.goal[r].length)], ['Region', `${r + 1} of ${n}`]] };
   },
   draw(E: Env, f, s) {
-    const nar = E.narrow, stripH = nar ? 96 : 84, gb = nar ? { x: 8, y: 8, w: E.W - 16, h: E.H - stripH - 90 } : { x: 8, y: 8, w: E.W * 0.52, h: E.H - stripH - 16 };
+    const nar = E.narrow, stripH = nar ? 96 : 84, gb = nar ? { x: 8, y: 8, w: E.W - 16, h: 270 } : { x: 8, y: 8, w: E.W * 0.52, h: E.H - stripH - 16 };
     const G = gridIn(gb), cur = s.pol[f.r], prev = s.pol[Math.max(0, f.r - 1)];
     const changed = new Set(s.states.filter((c) => cur[c] !== prev[c]));
     drawGrid(E, G);
-    drawPolicy(E, G, { actions: cur, flash: (c) => (changed.has(c) ? 0.3 + 0.7 * ease(f.flash) : 0) });
+    drawPolicy(E, G, { actions: cur, flash: (c) => (changed.has(c) ? 0.65 + 0.35 * ease(f.flash) : 0) });
     // big number
     const tx = nar ? 12 : G.x0 + G.w + 28, ty = nar ? gb.y + gb.h + 30 : 44;
     text(E, 'Reward for every move', tx, ty - 16, { fill: MUTED });
@@ -67,8 +67,8 @@ const mode: ModeImpl<Scene, F> = {
       line(E, x0 + i * w - 1, y + 16, x0 + i * w - 1, y + 22, { stroke: RULE });
       text(E, lab, x0 + i * w - 1, y + 35 + (!nar && i % 2 === 0 ? 14 : nar ? 0 : 0), { size: 11, anchor: 'middle', fill: MUTED });
     }
-    text(E, fmt(s.lo, 0), x0, y + 35, { size: 11, anchor: 'start', fill: MUTED });
-    text(E, 'Each box is one set of best moves; the numbers are where the best moves change.', x0, y + 62, { size: 11, fill: MUTED });
+    if (!nar) text(E, fmt(s.lo, 0), x0, y + 35, { size: 11, anchor: 'start', fill: MUTED });
+    text(E, nar ? 'Numbers: where the best moves change.' : 'Each box is one set of best moves; the numbers are where the best moves change.', x0, y + 62, { size: 11, fill: MUTED });
   },
   label: (s) => `The 4 by 3 grid with the best move in each cell as the reward for every move runs from ${s.lo} to ${s.hi}; the best moves change at ${s.cuts.map((c) => c.toFixed(3)).join(', ')}.`,
   restTime(s) {

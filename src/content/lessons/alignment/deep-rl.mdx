@@ -7,99 +7,163 @@ order: 4
 level: advanced
 duration: 35
 prereqs: ["alignment/q-learning","neural-networks/mlp","neural-networks/backprop-mlp"]
-status: stub
+status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
+import GridWorldLab from '../../../components/widgets/GridWorldLab/GridWorldLab.svelte';
 
 What changes when one set of weights must predict the value of every action?
 
 <Step title="A network replaces the Q-table">
 
-A deep Q-network, or DQN, takes a state as input and predicts one Q-value per action, sharing its weights across states instead of storing a separate table entry for each pair.
+In [Q-learning](/learn/alignment/q-learning/) the agent kept a table with one number for every cell and action. That works for twelve cells and fails for a video game, which has more screens than there are atoms to write them on. A **deep Q-network (DQN)** replaces the table with a small neural network: it takes the state as input and outputs one Q-value per action. Because the same weights answer for every state, the network can give a sensible answer for a state it has never seen, but it also means that changing the answer for one state changes it for others.
 
-{/*
-IDEA: function approximation Q_theta(s,a); normalized grid coordinates feed a small MLP with four action outputs; shared weights mean an update at one state can change predictions elsewhere.
-WIDGET: GridWorldLab mode="dqn-network" hidden=16 input="coordinates" focus="1,1" seed=17. Reuse the Day 11 4x3 grid; draw a 2-to-16-to-4 typed-array MLP beside the focused cell's four Q triangles.
-MOTION over t: focus moves through three cells; coordinates flow into hidden activations and four output bars; highlight the same weight used for every state.
-TRY: change the focus cell and watch the inputs change while the weights stay fixed.
-NUMBERS: parameter count, normalized inputs and four predicted Q-values at each selected cell; probe initialization before quoting.
-SHOW THE MATH: h = ReLU(W_1 x + b_1), Q = W_2 h + b_2. SHOW THE CODE: typed-array forward pass matching the displayed network.
-*/}
+Here the state is the cell's position, written as two numbers (column and row, scaled to run from −1 to 1). The network has 16 hidden units, so it has 116 weights in total, and every cell is answered with those same 116 numbers. These are the starting, untrained weights. Watch the tour, then click a cell to pin it: at (1,1) the network outputs −0.47, 0.16, 0.79 and −0.92 for up, right, down and left. Those are essentially random, which is where training starts.
+
+<GridWorldLab client:visible mode="dqn-network" title="The same 116 weights give every cell its four Q-values" />
+
+<details>
+<summary>Show the math</summary>
+
+With input $x$ (the scaled column and row), the hidden layer is $h = \max(0, W_1 x + b_1)$ and the four Q-values are $Q_\theta(s,\cdot) = W_2 h + b_2$. The parameters $\theta = (W_1, b_1, W_2, b_2)$ number $16\cdot 2 + 16 + 4\cdot 16 + 4 = 116$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+import numpy as np
+
+def q_values(theta, x):                       # x = (column, row), each in [-1, 1]
+    W1, b1, W2, b2 = theta                    # shapes (16, 2) (16,) (4, 16) (4,)
+    h = np.maximum(0, W1 @ x + b1)            # ReLU hidden layer
+    return W2 @ h + b2                        # one Q-value per action
+```
+
+</details>
 
 </Step>
 
 <Step title="Training on a sampled Bellman target">
 
-One observed transition supplies a target for the chosen action, and backpropagation changes the network weights to bring that prediction closer to the target.
+To train the network we need an answer for it to aim at. Q-learning already supplies one: after a move from $s$ with action $a$, reward $r$ and next state $s'$, the Q-value of $(s,a)$ should be about the reward plus the discounted best Q-value available next, $y = r + 0.9\,\max_{a'} Q(s', a')$. This **target** $y$ is computed by the network itself and then treated as a fixed number: the network is pushed towards it, not the other way round. The loss is half the squared gap between prediction and target, and one step of backpropagation nudges all 116 weights to shrink it.
 
-{/*
-IDEA: semi-gradient Q-learning; target y = r + gamma (1 - terminated) max Q_theta(s',a'), detached from the gradient; loss = 0.5 (Q_theta(s,a) - y)^2. Distinguish terminal transitions from truncations.
-WIDGET: GridWorldLab mode="dqn-update" replay=false targetNetwork=false lr=0.01 gamma=0.9 hidden=16 seed=17. One real transition, selected-action output and target card; other output predictions shown as context.
-MOTION over t: move, form a detached target, reveal the residual, flow gradients backward, then apply one update and recompute predictions at all cells.
-TRY: inspect a neighbouring cell's prediction before and after this one transition's update.
-NUMBERS: r, next max-Q, target, selected Q, loss and neighbouring Q before/after; do not imply the neighbour necessarily improves.
-SHOW THE MATH: the detached squared TD loss and its gradient. SHOW THE CODE: one network update with a stop-gradient target.
-*/}
+Here the agent is at (2,3), asks for right, and lands in (3,3) for a cost of −0.04. The best Q-value the network gives (3,3) is 0.72, so the target is $-0.04 + 0.9 \times 0.72 = 0.60$, while the network said −0.24 for this move. After one update at learning rate 0.05 its answer is −0.04. Now look at the last row. The update also changed right at (3,3), a cell the agent never visited, from −0.33 to −0.13. That is what shared weights do: one transition moves the answers for other cells too, sometimes for the better and sometimes not.
+
+<GridWorldLab client:visible mode="dqn-update" lr={0.05} title="One move, its target and one gradient step" />
+
+<details>
+<summary>Show the math</summary>
+
+For the transition $(s,a,r,s')$, with $d = 1$ if $s'$ ends the episode and $0$ otherwise, the target is
+$$y = r + \gamma\,(1-d)\,\max_{a'} Q_\theta(s',a'),$$
+the loss is $L(\theta) = \tfrac12\,(Q_\theta(s,a) - y)^2$, and the **semi-gradient** is $\nabla_\theta L = (Q_\theta(s,a) - y)\,\nabla_\theta Q_\theta(s,a)$: $y$ is treated as a constant even though it depends on $\theta$. A move that ends the episode has no next state, so its target is just $r$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def dqn_update(theta, s, a, r, s2, done, lr=0.05, gamma=0.9):
+    y = r if done else r + gamma * q_values(theta, s2).max()   # a plain number: no gradient
+    err = q_values(theta, s)[a] - y
+    grads = backprop(theta, s, a)                              # d Q(s, a) / d theta
+    return [w - lr * err * g for w, g in zip(theta, grads)]
+```
+
+</details>
 
 </Step>
 
 <Step title="Why naive updates can become unstable">
 
-Network Q-learning can become unstable because nearby experiences look alike and the same changing weights predict both the value and its bootstrap target.
+There is a trap in step 2. The target $y$ is built from the same weights that the update changes, so every update moves the target it will be compared with next. Chasing a target that moves because you are chasing it can feed on itself: a Q-value that is too high raises the targets of the states leading to it, which raises their Q-values, and so on. Supervised learning does not have this problem, because its answers sit still.
 
-{/*
-IDEA: correlated samples, moving targets, and the interaction of function approximation, bootstrapping and off-policy learning; contrast with a supervised fit to fixed Q-star targets from value iteration.
-WIDGET: GridWorldLab mode="dqn-instability" replay=false targetNetwork=false comparison="fixed-targets" lrs="0.01,0.1" updates=1000 hidden=16 seed=17. Same initial weights and state features; show Q(s,a) and its changing target on tight shared axes, max absolute Q and Bellman error on log axes.
-MOTION over t: predictions and targets trace together per update; highlight when the next target changes because the weights changed; mark any measured oscillation or growth.
-TRY: compare the moving-target trace with the fixed-target fit at the same learning rate.
-NUMBERS: peak absolute Q, target drift, final Bellman error and return for each run. PROBE FIRST: divergence is possible, not guaranteed in this grid; if no run diverges, teach the measured oscillation/target drift and mark a verified divergence counterexample as further reading rather than inventing one.
-SHOW THE MATH: show theta appearing in both Q_theta(s,a) and the detached target. Explain detachment prevents target differentiation but does not freeze targets between updates.
-*/}
+The figure tests this on 1,000 random moves through the grid, with the same starting weights and the same Adam optimiser at learning rate 0.1 for both runs. One network learns from its own targets. The other fits fixed answers, the true Q-values from value iteration, whose largest is 0.89. The fixed fit wobbles early (largest Q 5.3) and settles at 0.40, with a Bellman error of 0.30. The self-targeting network climbs to 40 within 50 updates, peaks at 218, and ends at 109 with a Bellman error of 13.8: the values grew a hundred times larger than any real value. Switch the learning rate to 0.01 and the runaway disappears; the target still wanders, but the largest Q never exceeds 2.8.
+
+<GridWorldLab client:visible mode="dqn-instability" lr={0.1} title="The same data, fitted two ways" />
+
+<details>
+<summary>Show the math</summary>
+
+The update uses $\theta$ in two places: $\theta \leftarrow \theta - \alpha\,\big(Q_\theta(s,a) - y_\theta\big)\,\nabla_\theta Q_\theta(s,a)$, where $y_\theta = r + \gamma \max_{a'} Q_\theta(s',a')$. Not differentiating through $y_\theta$ keeps the gradient simple but does not freeze it. Function approximation, bootstrapping and off-policy data together are known as the deadly triad (Sutton and Barto, chapter 11), and can make the values diverge.
+
+</details>
 
 </Step>
 
 <Step title="A replay buffer mixes past experiences">
 
-A replay buffer stores earlier transitions and samples shuffled mini-batches from them, so each update can learn from a mixture of times and places.
+One cause of the trouble is that consecutive moves look alike: an agent that has just bumped into a wall sends the network a run of nearly identical examples, and the network over-fits to the last few. **Experience replay** fixes the order. The agent stores each transition in a buffer of fixed size (here 256 slots; when it is full, the oldest transition is overwritten), and each update trains on a small batch drawn at random from the buffer.
 
-{/*
-IDEA: finite FIFO replay, uniform sampling, repeated use of experience; replay reduces sequential correlation but does not guarantee convergence or make the data on-policy.
-WIDGET: GridWorldLab mode="dqn-replay" capacity=256 batch=16 targetNetwork=false updates=1000 hidden=16 seed=19. Grid path beside a ring buffer with transition ages; compare sequential versus replay batches from the same collected stream and initial weights.
-MOTION over t: transitions enter the buffer; oldest transition leaves when full; selected batch entries fly to the update panel; state-visit and sample-age histograms fill.
-TRY: pause at a batch and find two sampled transitions collected far apart in time.
-NUMBERS: sampled ages, number of distinct states per batch and lag-one state correlation of the sequential versus sampled stream; probe loss/return differences without promising replay alone fixes instability.
-SHOW THE MATH: uniform sampling from the buffer. SHOW THE CODE: FIFO insertion and seeded mini-batch sampling.
-*/}
+The figure fills the buffer with a wandering agent and then draws three batches of 16. Darker squares are newer. The first batch, taken after 256 steps, contains transitions between 6 and 203 steps old and comes from 6 different cells; the 16 newest steps in a row come from only 4. Across the whole run, how well one sample's column predicts the next sample's column is 0.71 for steps in a row but 0.03 for a randomly drawn sequence. Replay also reuses each transition many times, which saves experience. It does not make the data fresh: every sample still comes from the agent's own recent past.
+
+<GridWorldLab client:visible mode="dqn-replay" title="Sixteen in a row versus sixteen at random" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+buffer = collections.deque(maxlen=256)            # FIFO: appending to a full deque drops the oldest
+buffer.append((s, a, r, s2, done))
+batch = random.sample(buffer, 16)                 # uniform, without repeats inside one batch
+```
+
+</details>
 
 </Step>
 
 <Step title="A target network holds the goal still">
 
-A target network is a copied set of weights held fixed for several updates, so the online network can chase a target that changes less often.
+Replay steadies the inputs. The second fix steadies the targets. Keep two copies of the network: the **online** network, which is trained at every update and picks the actions, and a **target network**, a frozen copy used only to compute $\max_{a'} Q(s', a')$ inside the target. Every 50 updates the online weights are copied over the target ones. Between copies the target cannot move, so the online network chases a fixed number for a while instead of a number that shifts every step.
 
-{/*
-IDEA: online theta predicts Q(s,a), frozen theta-minus supplies the next-state max; hard copy every C updates; a frozen next-state prediction is not a convergence guarantee.
-WIDGET: GridWorldLab mode="dqn-target" replay=true capacity=256 batch=16 targetEvery=50 updates=300 hidden=16 seed=19. Two network outlines, online and target weight-distance readout, and predictions for one fixed diagnostic transition.
-MOTION over t: online weights update while target weights hold; each copy marker transfers all weights and resets distance; the fixed transition's target shows a staircase while online Q changes.
-TRY: scrub just before and after update 50 and compare the target prediction.
-NUMBERS: online/target Q, detached y and weight distance at updates 49, 50 and 51; use a fixed diagnostic transition so target drift is not confused with changing sampled inputs.
-SHOW THE MATH: y = r + gamma (1 - terminated) max Q_theta-minus(s',a'). SHOW THE CODE: hard-copy typed arrays every C updates.
-*/}
+The figure follows one fixed move, up from (3,1), through 300 updates. The target is a staircase: after update 49 it is 0.32, after update 50 (the copy) it drops to 0.13, and it then stays at 0.13 until update 100, while the online prediction climbs from 0.10 to a peak of 0.55 in the same stretch. The weights are 1.49 apart just before the copy, exactly 0 at the copy, and 0.02 one update later. Notice that the prediction does not settle onto the frozen 0.13: it climbs past it. Each update trains on 16 other moves, and this move appears in only 5 of the 49 batches between updates 50 and 99; the other 44 batches account for about 0.30 of its 0.36 rise, because the shared weights drag every cell along. The frozen target removes the moving goal, not the coupling between states. A frozen target stabilises learning in practice but is not a guarantee; the staircase still moves each time the network is copied.
+
+<GridWorldLab client:visible mode="dqn-target" title="The target holds still between copies" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+y = r if done else r + gamma * q_values(theta_target, s2).max()   # frozen weights
+...
+if update_count % 50 == 0:
+    theta_target = [w.copy() for w in theta]                        # hard copy, no gradient
+```
+
+</details>
 
 </Step>
 
 <Step title="Putting DQN together">
 
-DQN alternates acting, storing experience and training on replay batches, with occasional target-network copies to slow the movement of its learning targets.
+The full algorithm repeats four things: act (mostly greedily, sometimes at random), store the transition, train on a random batch from the buffer against the target network's targets, and copy the weights every so often. To see what each part contributes, the figure trains four variants of the same network from the same starting weights and the same environments, 10 runs each: neither trick, replay only, target network only, and both. The curves show the exact return of the greedy policy from the start cell, with no exploration; the best possible is 0.35. Faint lines are single runs, bold lines are means.
 
-{/*
-IDEA: assemble the loop; isolate replay and target-network effects with four variants, neither, replay only, target only and both; tabular Q-learning is the small-grid reference rather than a baseline DQN must beat.
-WIDGET: GridWorldLab mode="dqn-compare" variants="naive,replay,target,both" episodes=500 runs=10 gamma=0.9 epsilon=0.1 lr=0.01 hidden=16 capacity=256 batch=16 targetEvery=50 seed=23. Shared initialization and environment-seed schedule per comparison; display mean greedy evaluation return, variability and Bellman error beside greedy policy arrows.
-MOTION over t: training curves draw by episode; a selected run shows collect, store, sample, update and copy as labelled phases; recompute displayed metrics from the weights shown.
-TRY: compare the replay-only run with the run using both mechanisms.
-NUMBERS: final evaluation return and spread, error to Q-star and target drift for all four variants; if gains are small or reversed report them honestly. Never call training episode return held-out evaluation.
-SHOW THE CODE: a short DQN loop using the shared grid and MLP helpers. Link /learn/alignment/ppo/ for learning action probabilities directly.
-*/}
+At learning rate 0.001 the textbook ordering appears. After 500 episodes, using both gives 0.33 with a run-to-run spread of 0.02, replay alone 0.30 (spread 0.10), the target network alone 0.28 (0.14), and neither 0.26 (0.22). The more telling difference is consistency: with both tricks nearly every run ends up at the same good policy. Replay helps early (0.22 after 100 episodes against −0.02 for neither). Now switch to learning rate 0.01. The ordering reverses: neither gives 0.33 with a spread of 0.01, while both gives only 0.19 with a spread of 0.27. The tricks are not free wins; how well they help depends on the learning rate, and on this tiny grid a plain network with a careful rate does fine. No variant ever found the exact optimal policy in any run, so even at its best, DQN here only approximates what the table in [Q-learning](/learn/alignment/q-learning/) represents exactly. The next lesson, [PPO](/learn/alignment/ppo/), learns the action probabilities directly instead.
+
+<GridWorldLab client:visible mode="dqn-compare" lr={0.001} title="Neither, replay, target network, or both" />
+
+<details>
+<summary>Show the code</summary>
+
+```python
+for episode in range(500):
+    s = start
+    while not done:
+        a = random_action() if random() < 0.1 else q_values(theta, s).argmax()
+        s2, r, done = env.step(s, a)
+        buffer.append((s, a, r, s2, done))
+        if len(buffer) >= 16:
+            theta = dqn_update_batch(theta, theta_target, random.sample(buffer, 16))
+            updates += 1
+            if updates % 50 == 0:
+                theta_target = copy(theta)
+        s = s2
+```
+
+</details>
 
 </Step>
 
@@ -107,14 +171,11 @@ SHOW THE CODE: a short DQN loop using the shared grid and MLP helpers. Link /lea
 
 Some common misunderstandings about deep Q-learning.
 
-{/*
-NO WIDGET. Misconceptions:
-1. "A DQN stores one independent value per state-action pair." Its shared weights couple predictions across states.
-2. "Replay makes every transition independent." Uniform sampling reduces sequential correlation, but samples still come from one finite experience pool.
-3. "The target network learns through backpropagation." It is copied from the online network and held fixed between copies.
-4. "Detaching the target solves moving targets." The same online weights still change the next target unless a separate frozen network supplies it.
-5. "Replay and a target network guarantee convergence." They are stabilizing mechanisms, not a universal guarantee.
-*/}
+- **You might think a DQN stores one independent value per state and action.** Actually its weights are shared, so an update at one cell changes the predictions at others, as in step 2.
+- **You might think replay makes every transition independent.** Actually uniform sampling breaks up the run of similar steps, but every sample still comes from one finite pool of the agent's own recent experience.
+- **You might think the target network learns by backpropagation.** Actually it is never trained; it is a copy of the online network, held fixed between copies.
+- **You might think leaving the target out of the gradient solves the moving-target problem.** Actually the same weights still change the next target, unless a separate frozen network supplies it.
+- **You might think replay and a target network guarantee convergence.** Actually they make training steadier in practice. On this grid, at one learning rate they helped and at another they did not.
 
 </Step>
 
@@ -122,14 +183,40 @@ NO WIDGET. Misconceptions:
 
 Try these questions about networks, replay and targets.
 
-{/*
-NO WIDGET. Questions (answers in details blocks):
-1. How many parameters does the displayed 2-to-16-to-4 MLP have, including biases?
-2. Which network predicts Q(s,a), and which supplies the next-state maximum in DQN?
-3. Why can training on a transition from one cell change another cell's Q-values?
-4. What happens to the target for a fixed diagnostic transition between hard copies?
-5. Why does a transition into a terminal state need no bootstrap term?
-*/}
+<details>
+<summary>1. How many parameters does the 2-to-16-to-4 network have, including biases?</summary>
+
+$16\cdot 2 + 16 = 48$ in the first layer and $4\cdot 16 + 4 = 68$ in the second: 116.
+
+</details>
+
+<details>
+<summary>2. Which network predicts Q(s, a), and which supplies the next-state maximum?</summary>
+
+The online network predicts $Q(s,a)$ and receives the gradient. The frozen target network supplies $\max_{a'} Q(s',a')$ inside the target.
+
+</details>
+
+<details>
+<summary>3. Why can training on a transition from one cell change another cell's Q-values?</summary>
+
+All cells are answered by the same weights. A gradient step changes those weights, so every prediction that depends on them can move.
+
+</details>
+
+<details>
+<summary>4. What happens to the target for a fixed move between hard copies?</summary>
+
+It stays constant, because it comes from the frozen weights. It changes only at a copy, as the staircase in step 5 shows.
+
+</details>
+
+<details>
+<summary>5. Why does a move into a terminal state need no bootstrap term?</summary>
+
+The episode ends there, so there is no future reward to estimate: the target is just the reward of that move.
+
+</details>
 
 </Step>
 
@@ -137,13 +224,11 @@ NO WIDGET. Questions (answers in details blocks):
 
 Primary papers and resources on learning action values with neural networks.
 
-{/*
-NO WIDGET. References:
-- Volodymyr Mnih et al., "Playing Atari with Deep Reinforcement Learning", 2013, https://arxiv.org/abs/1312.5602 (experience replay; distinguish this from the 2015 target-network algorithm).
-- Volodymyr Mnih et al., "Human-level control through deep reinforcement learning", Nature 518, 2015, https://doi.org/10.1038/nature14236 (VERIFY algorithm details in the full paper before publishing).
-- Sutton and Barto, Reinforcement Learning: An Introduction, 2nd ed., 2018, chapter 11, http://incompleteideas.net/book/the-book-2nd.html (VERIFY the chosen divergence counterexample and reproduce its assumptions).
-- Hado van Hasselt, Arthur Guez and David Silver, "Deep Reinforcement Learning with Double Q-learning", https://arxiv.org/abs/1509.06461 (VERIFY before adding an overestimation extension).
-Next: /learn/alignment/ppo/
-*/}
+- Volodymyr Mnih et al., ["Playing Atari with Deep Reinforcement Learning"](https://arxiv.org/abs/1312.5602), 2013: the first DQN, with experience replay.
+- Volodymyr Mnih et al., ["Human-level control through deep reinforcement learning"](https://doi.org/10.1038/nature14236), Nature 518, 2015: adds the separate target network.
+- Sutton and Barto, [Reinforcement Learning: An Introduction](http://incompleteideas.net/book/the-book-2nd.html), 2nd ed., 2018, chapter 11: why approximation, bootstrapping and off-policy learning together can diverge.
+- Hado van Hasselt, Arthur Guez and David Silver, ["Deep Reinforcement Learning with Double Q-learning"](https://arxiv.org/abs/1509.06461): a fix for DQN's tendency to overestimate values.
+
+Next: [PPO](/learn/alignment/ppo/).
 
 </Step>

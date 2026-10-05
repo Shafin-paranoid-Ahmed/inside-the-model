@@ -45,3 +45,44 @@ describe.each(MODES)('%s', (name, mode) => {
     expect(mode.label(a, o).length).toBeGreaterThan(20);
   });
 });
+
+const end = async (mode: ModeImpl<unknown, Frame>, o: Opts, pick: string | null = null) => {
+  const s = await mode.setup(o, nodeKit());
+  return { s, f: mode.frameAt(mode.timeline(s, o).duration, s, o, { pick }) };
+};
+const val = (f: Frame, k: string) => f.readouts?.find(([l]) => l === k)?.[1];
+
+describe('numbers quoted in the lesson', () => {
+  it('advantage: step 1 error 0.043, last step adds 0.400, A 0.493 over 6 steps', async () => {
+    const { s } = await end(advantage as never, { mode: 'ppo-advantage' } as Opts);
+    const sc = s as { T: number; d: number[]; w: number[]; A: number[] };
+    expect([sc.T, +sc.d[0].toFixed(3), +sc.w[5].toFixed(3), +sc.A[0].toFixed(3), +sc.d[5].toFixed(3)]).toEqual([6, 0.043, 0.4, 0.493, 0.875]);
+  });
+  it('ratio: up 0.325 -> 0.355 (1.092); chip 10 falls to 0.746; 17 visits', async () => {
+    const o = { mode: 'ppo-ratio' } as Opts;
+    const a = await end(ratio as never, o), b = await end(ratio as never, o, 's9');
+    expect(val(a.f, 'Ratio')).toBe('1.092');
+    expect(val(b.f, 'Ratio')).toBe('0.746');
+    expect((a.s as { idx: number[] }).idx.length).toBe(17);
+  });
+  it('epochs: 31% outside, 27% flat, 3 pushing; objective 0.124 -> 0.145', async () => {
+    const { f } = await end(epochs as never, { mode: 'ppo-epochs' } as Opts);
+    expect([val(f, 'Outside band'), val(f, 'Flat'), val(f, 'Outside but pushing'), val(f, 'Mean objective')]).toEqual(['31%', '27%', '3', '0.1446']);
+  });
+  it('drift: ratio ranges and KL per epsilon', async () => {
+    const { f } = await end(drift as never, { mode: 'drift' } as Opts);
+    expect(f.readouts?.map(([, v]) => v)).toEqual(['ratios 0.73 to 1.32, KL 0.0114', 'ratios 0.72 to 1.44, KL 0.0176', 'ratios 0.71 to 1.58, KL 0.0237']);
+    const s = (await end(drift as never, { mode: 'drift' } as Opts)).s as { runs: { oob: number[] }[]; ups: number };
+    expect(s.runs.map((r) => Math.round(r.oob[s.ups] * 100))).toEqual([59, 31, 14]);
+  });
+  it('train: start-cell value -0.410, 0.264, 0.330, 0.341; critic error 0.443, 0.227, 0.157', async () => {
+    const o = { mode: 'ppo-train' } as Opts, s = (await end(train as never, o)).s as { res: { evalReturn: Float64Array; criticErr: Float64Array } };
+    expect([0, 20, 50, 100].map((k) => +s.res.evalReturn[k].toFixed(3))).toEqual([-0.41, 0.264, 0.33, 0.341]);
+    expect([0, 20, 99].map((k) => +s.res.criticErr[k].toFixed(3))).toEqual([0.443, 0.227, 0.157]);
+  });
+  it('clipping: A 1 gives 1.2 at 1.2 and 1.5; A -1 gives -0.8 at 0.6 and -1.4 at 1.4 with slope -1', () => {
+    expect([1.2, 1.5].map((r) => rl.clippedSurrogate(r, 1, 0.2).value)).toEqual([1.2, 1.2]);
+    expect(rl.clippedSurrogate(0.6, -1, 0.2)).toMatchObject({ value: -0.8, dRho: 0 });
+    expect(rl.clippedSurrogate(1.4, -1, 0.2)).toMatchObject({ value: -1.4, dRho: -1 });
+  });
+});

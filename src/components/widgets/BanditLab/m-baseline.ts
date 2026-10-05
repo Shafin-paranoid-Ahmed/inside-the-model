@@ -33,7 +33,7 @@ const mode: ModeImpl<BaselineScene, F> = {
   setup: (o: Opts) => baselineScene(o),
   timeline(s) {
     const at = (n: number) => PLAY * Math.sqrt(n / s.n);
-    return { duration: PLAY + HOLD, markers: [{ at: 0, label: 'First 20 samples' }, { at: at(20), label: 'Samples 21 to 100' }, { at: at(100), label: `Samples 101 to ${s.n}` }, { at: PLAY, label: 'All samples in' }] };
+    return { duration: PLAY + HOLD, markers: [{ at: 0, label: 'First 20 samples' }, { at: at(20), label: '21 to 100' }, { at: at(100), label: `101 to ${s.n}` }, { at: PLAY, label: 'Done' }] };
   },
   frameAt(t, s) {
     const n = Math.max(1, Math.min(s.n, Math.round(s.n * Math.min(1, t / PLAY) ** 2))), [a, b] = s.stats;
@@ -68,7 +68,7 @@ const mode: ModeImpl<BaselineScene, F> = {
       line(E, sx(m), b.y, sx(m), b.y + b.h, { stroke: ACCENT, sw: 2 });
       line(E, sx(s.exact), b.y, sx(s.exact), b.y + b.h, { stroke: TEXT, sw: 1.5, dash: '5 4' });
       text(E, 'Count', b.x - 40, b.y - 8, { size: 11, fill: MUTED });
-      if (j === 0) text(E, 'Accent bar: average ± one standard deviation', b.x + b.w, b.y - 8, { size: 11, fill: MUTED, anchor: 'end' });
+      if (j === 0) text(E, 'Line: average. Bar: ± one standard deviation', b.x + b.w, b.y - 8, { size: 11, fill: MUTED, anchor: 'end' });
     });
   },
   label: (s) => `Two histograms of ${s.n} single-pull gradient estimates for the logit of arm ${s.arm + 1}: without a baseline the estimates are spread wide, with a baseline they are narrower, and both average out near the exact gradient ${fmt(s.exact, 2)}.`,

@@ -9,8 +9,8 @@ export default {
     { label: 'REINFORCE, learned baseline', color: '--viz-cat-2', shape: 'line' },
     { label: 'Actor-critic', color: '--viz-cat-3', shape: 'line' },
   ],
-  aspect: '720 / 460',
-  narrowAspect: '360 / 680',
+  aspect: '720 / 400',
+  narrowAspect: '360 / 640',
   lanes: 2,
   loading: 'Training 30 runs in your browser…',
 } satisfies ModeMeta;

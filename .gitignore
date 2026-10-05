@@ -33,3 +33,6 @@ pnpm-debug.log*
 
 .vitest/
 graphify-out/
+.tokensave/
+.claude/
+dos&donts/*.png

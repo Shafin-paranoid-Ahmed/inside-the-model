@@ -7,7 +7,7 @@ export const GET: APIRoute = async () => {
   const days = await getPath();
   const math = await getMathPrimer();
   const body = [
-    '# AI Learner',
+    '# Inside the Model',
     '',
     '> A free, no-login course that teaches how AI actually works in two weeks, through interactive visualizations of real mechanisms.',
     '',

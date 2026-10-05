@@ -13,7 +13,7 @@ import { gridOf } from './sim';
 import { drawGrid, drawPolicy, gridIn } from './draw';
 import { qStar } from './q-common';
 
-const DUR = 14, HOLD = 3, COLORS = ['var(--viz-cat-1)', 'var(--viz-cat-2)', 'var(--viz-cat-3)'];
+const DUR = 14, HOLD = 3, COLORS = ['var(--viz-cat-1)', 'var(--viz-cat-7)', 'var(--viz-cat-3)'];
 interface Agg { epsilon: number; agree: Float64Array; err: Float64Array; first: number[]; pi0: Int8Array }
 interface Scene { aggs: Agg[]; E: number; runs: number; shown: number; opt: Int8Array }
 interface F extends Frame { ep: number }
@@ -72,11 +72,16 @@ const mode: ModeImpl<Scene, F> = {
     const mk = (pick: (a: Agg) => Float64Array) => s.aggs.map((a, i) => ({ xs, ys: pick(a), color: COLORS[i], width: 2 }));
     lineChart(E, b1, { ...xa, label: undefined }, { lo: 0, hi: 9, ticks: [0, 3, 6, 9], label: 'Cells with the optimal action (of 9)' }, mk((a) => a.agree), f.ep);
     lineChart(E, b2, xa, { lo: 0, hi: 1, ticks: [0, 0.5, 1], label: 'Largest error |Q − Q*|' }, mk((a) => a.err), f.ep);
-    // direct labels at the right edge of the chart, at the current value
+    // direct labels at the right edge, pushed apart so they never overlap
+    const lab = (ys: number[]) => {
+      const idx = ys.map((_, i) => i).sort((i, j) => ys[i] - ys[j]), out = ys.slice();
+      idx.forEach((i, k) => { if (k && out[i] < out[idx[k - 1]] + 13) out[i] = out[idx[k - 1]] + 13; });
+      return out;
+    };
+    const l1 = lab(s.aggs.map((a) => b1.y + b1.h * (1 - a.agree[f.ep] / 9))), l2 = lab(s.aggs.map((a) => b2.y + b2.h * (1 - Math.min(1, a.err[f.ep]))));
     s.aggs.forEach((a, i) => {
-      const y1 = b1.y + b1.h * (1 - a.agree[f.ep] / 9), y2 = b2.y + b2.h * (1 - Math.min(1, a.err[f.ep]));
-      text(E, `ε ${a.epsilon}`, b1.x + b1.w + 6, y1 + 4, { size: 11, fill: COLORS[i] });
-      text(E, `ε ${a.epsilon}`, b2.x + b2.w + 6, y2 + 4, { size: 11, fill: COLORS[i] });
+      text(E, `ε ${a.epsilon}`, b1.x + b1.w + 6, l1[i] + 4, { size: 11, fill: COLORS[i] });
+      text(E, `ε ${a.epsilon}`, b2.x + b2.w + 6, l2[i] + 4, { size: 11, fill: COLORS[i] });
     });
   },
   label: (s) => `Learning curves of tabular Q-learning with exploration rates ${s.aggs.map((a) => a.epsilon).join(', ')}, averaged over ${s.runs} runs: the number of cells with the optimal greedy action and the largest error against Q star, over ${s.E} episodes.`,
