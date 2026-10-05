@@ -11,6 +11,7 @@ status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
 import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+import SeqChart from '../../../components/widgets/SeqChart/SeqChart.svelte';
 
 <Step title="A cell with a memory">
 
@@ -61,15 +62,15 @@ A **character vector** here is four fixed numbers: two arbitrary ones from a see
 
 <Step title="The hidden state is a running summary">
 
-Now let the whole word play through. After each character the strip above the cell shows the current hidden state. Notice three things.
+Now follow the state as plain numbers. The chart below plots the four numbers of the hidden state after each character of "hello" (solid lines) and of "help" (dashed lines). Notice three things.
 
-**It is a fixed-size vector.** Whether the sequence is one character or eight, the summary is always these four numbers.
+**It is a fixed-size vector.** Whether the sequence is one character or eight, the summary is always these four numbers: four lines, however long the word.
 
-**It depends on the whole prefix.** The first "l" and the second "l" are the same input, yet the states after them differ. The figure is pinned to step 3, the first "l": $\mathbf h_3 = (0.63,\,-0.58,\,0.42,\,0.16)$. Click step 4, the second "l", and the panel shows $\mathbf h_4 = (-0.07,\,-0.31,\,0.78,\,0.26)$. The state remembers that different things came before.
+**It depends on the whole prefix.** The first "l" and the second "l" are the same input, yet the states after them differ: $\mathbf h_3 = (0.63,\,-0.58,\,0.42,\,0.16)$ after the first and $\mathbf h_4 = (-0.07,\,-0.31,\,0.78,\,0.26)$ after the second. The state remembers that different things came before.
 
-**It only looks backward.** Type "hell" into the box: its four states are exactly the first four states of "hello". A state can only depend on what has been read so far, never on what comes next.
+**It only looks backward.** "hello" and "help" start with the same three characters, so their first three states are identical and the dashed lines lie exactly on the solid ones. They split only at step 4, where one reads "l" and the other "p". A state can only depend on what has been read so far, never on what comes next.
 
-<RNNUnroller client:visible sequence="hello" folded={false} select={3} loopPhase="forward" title="The hidden state after each character (step 3 pinned)" />
+<SeqChart client:visible kind="state" title="The four hidden numbers after each character" />
 
 </Step>
 

@@ -21,7 +21,7 @@
   const init = untrack(() => ({ mode, k }));
 
   let kSel = $state(init.k), moved = $state(false);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
 

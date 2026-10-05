@@ -69,7 +69,7 @@
   let clipC = $state(5);
   let fb = $state(untrack(() => forgetBias));
   let narrow = $state(false);
-  let playing = $state(false), speed = $state(1);
+  let playing = $state(false), speed = $state(0.5);
   let sel = $state(untrack(() => (select ? select - 1 : -1)));
   let uiT = $state(0), uiK = $state(0), phase = $state<Phase>('fold');
   let narration = $state('');

@@ -1,7 +1,7 @@
 /** Dot product of two 2D vectors: geometry, elementwise products, a neuron. Pure logic, no DOM. Fully deterministic (no randomness). */
 export type Vec = [number, number];
-/** geometry: shadow + cosine curve. bars: shadow + elementwise products. neuron: w·x + bias. */
-export type Mode = 'geometry' | 'bars' | 'neuron';
+/** geometry: shadow + cosine curve. stretch: b keeps its angle and changes length. bars: shadow + elementwise products. neuron: w·x + bias. */
+export type Mode = 'geometry' | 'stretch' | 'bars' | 'neuron';
 
 export const dot = (a: Vec, b: Vec) => a[0] * b[0] + a[1] * b[1];
 export const norm = (a: Vec) => Math.hypot(a[0], a[1]);
@@ -24,6 +24,10 @@ export const BIAS = -0.6;
 export const B_LEN = 1.8, X_LEN = 1.6;
 
 export const T = 12;
+/** Stretch mode: b sits at this angle from a while its length runs 0.6 → 3 → 0.6. */
+export const STRETCH_DEG = 60;
+export const stretchLen = (u: number) => 1.8 - 1.2 * Math.cos(2 * Math.PI * u);
+export const STRETCH_MARKERS = [{ at: 0, label: 'stretch b' }, { at: T / 2, label: 'shrink b' }];
 export const MARKERS = [{ at: 0, label: '0°–90°' }, { at: T / 4, label: '90°–180°' }, { at: T / 2, label: '180°–270°' }, { at: (3 * T) / 4, label: '270°–360°' }];
 
 export interface Item { label: string; v: number }
@@ -46,7 +50,9 @@ export function frameAt(t: number, mode: Mode, ov: { a?: Vec; b?: Vec } = {}): F
   const u = (((t % T) + T) % T) / T;
   const neuron = mode === 'neuron';
   const a = ov.a ?? (neuron ? W_DEF : A_DEF);
-  const b = ov.b ?? polar(neuron ? X_LEN : B_LEN, angleOf(a) + 2 * Math.PI * u);
+  const b = ov.b ?? (mode === 'stretch'
+    ? polar(stretchLen(u), angleOf(a) + (STRETCH_DEG * Math.PI) / 180)
+    : polar(neuron ? X_LEN : B_LEN, angleOf(a) + 2 * Math.PI * u));
   const d = dot(a, b);
   const items: Item[] = neuron
     ? [{ label: 'w1·x1', v: a[0] * b[0] }, { label: 'w2·x2', v: a[1] * b[1] }, { label: 'bias', v: BIAS }]
@@ -64,6 +70,7 @@ export function narrate(f: Frame, mode: Mode): string {
       ? 'The neuron fires: z is positive, so ReLU passes it through.'
       : 'The neuron is silent: z is not positive, so ReLU outputs 0.';
   }
+  if (mode === 'stretch') return `Same direction, different length: a·b changes with |b|, but cos θ stays at ${(Math.round(f.cos * 100) / 100).toFixed(2)}.`;
   const m = norm(f.a) * norm(f.b);
   if (f.cos > 0.99) return 'Pointing the same way: the shadow of b covers all of b and the dot product is as large as it can be.';
   if (f.cos < -0.99) return 'Pointing opposite ways: the shadow of b points backwards along a, so the dot product is as negative as it can be.';

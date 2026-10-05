@@ -48,12 +48,17 @@ export function gdPath(start = START, lr = LR, steps = STEPS, pts: Pt[] = POINTS
 export const PATH = gdPath();
 
 // ---- timeline ----
-export type Mode = 'iterative' | 'closed';
+/** iterative: gradient descent walks to the answer. closed: the formula jumps there. tour: the dot visits lines all over the map. */
+export type Mode = 'iterative' | 'closed' | 'tour';
 export const DT = 0.18, T_GUESS = 2;
-export const duration = (m: Mode) => (m === 'iterative' ? T_GUESS + STEPS * DT + 2.5 : 7);
+/** Tour stops on the (w, b) map: a bad line, lines in other corners, then the best one. 2 s per leg, then a 2 s hold. */
+export const TOUR = [START, { w: 2.6, b: -2.4 }, { w: 2.4, b: 3.0 }, { w: -1.3, b: 3.0 }, { w: 0.2, b: 1.6 }, { w: BEST.w, b: BEST.b }];
+const T_LEG = 2;
+export const duration = (m: Mode) => (m === 'iterative' ? T_GUESS + STEPS * DT + 2.5 : m === 'tour' ? (TOUR.length - 1) * T_LEG + 2 : 7);
 export const markers = (m: Mode) =>
   m === 'iterative'
     ? [{ at: 0, label: 'a guess' }, { at: T_GUESS, label: 'descend' }, { at: T_GUESS + STEPS * DT, label: 'settled' }]
+    : m === 'tour' ? [{ at: 0, label: 'a bad line' }, { at: 2 * T_LEG, label: 'other lines' }, { at: (TOUR.length - 2) * T_LEG, label: 'the best line' }]
     : [{ at: 0, label: 'a guess' }, { at: T_GUESS, label: 'solve' }, { at: 4.5, label: 'solved' }];
 const ease = (u: number) => { const c = Math.min(1, Math.max(0, u)); return c * c * (3 - 2 * c); };
 
@@ -61,11 +66,17 @@ export interface Frame {
   w: number; b: number; loss: number;
   /** Fractional index into PATH (iterative) or 0..1 progress (closed). */
   k: number;
-  phase: 'a guess' | 'descend' | 'solve' | 'settled';
+  phase: 'a guess' | 'descend' | 'solve' | 'settled' | 'tour';
 }
 /** `path` lets a widget replay descent from a start point the user chose (its first element is the start). */
 export function frameAt(t: number, mode: Mode, path: PathPt[] = PATH, best = BEST): Frame {
   const S = path[0];
+  if (mode === 'tour') {
+    const u = Math.max(0, t) / T_LEG, i = Math.min(TOUR.length - 2, Math.floor(u)), f = ease(u - i);
+    const a = i === 0 ? S : TOUR[i], z = TOUR[i + 1];
+    const w = a.w + (z.w - a.w) * f, b = a.b + (z.b - a.b) * f;
+    return { w, b, loss: loss(w, b), k: 0, phase: u >= TOUR.length - 1 ? 'settled' : 'tour' };
+  }
   if (mode === 'closed') {
     const u = ease((t - T_GUESS) / 2.5), w = S.w + (best.w - S.w) * u, b = S.b + (best.b - S.b) * u;
     return { w, b, loss: loss(w, b), k: u, phase: t < T_GUESS ? 'a guess' : u < 1 ? 'solve' : 'settled' };

@@ -101,3 +101,13 @@ describe('KNNVoter sim', () => {
     expect(frameAt(sc.T, sc).ratio).toBeCloseTo(lo.ratio, 9);
   });
 });
+
+it('fieldsByK matches field() for every k', async () => {
+  const { fieldsByK, field, moons, KS } = await import('../../src/components/widgets/KNNVoter/sim');
+  const pts = moons(21, 50), n = 24, all = fieldsByK(pts, n, KS);
+  KS.forEach((k, a) => {
+    const one = new Float32Array(n * n);
+    field(pts, n, k, 2, 1, one);
+    expect(Array.from(all[a])).toEqual(Array.from(one));
+  });
+});

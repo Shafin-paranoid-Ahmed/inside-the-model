@@ -44,13 +44,19 @@
   import { RUNS_FOR, CFG, dataOf, fitFrame, field, makeFold, foldFrame, FIT_T, FOLD_T, DEPTH_T,
     FOLD_TIMING, DEPTH_TIMING, FOLD_MARKERS, DEPTH_MARKERS, LIM, paramCount, type Mode, type Fold, type View } from './sim';
 
-  let { title = 'Learned coordinates', mode = 'fold' }: { title?: string; mode?: Mode } = $props();
-  const init = untrack(() => mode);
-  const duration = init === 'depth' ? DEPTH_T : init === 'fold' ? FOLD_T : FIT_T;
+  /** Fold mode only: 'affine' plays Input → Affine and holds; 'squash' starts at Affine and plays Tanh → Cut. */
+  type Part = 'all' | 'affine' | 'squash';
+  let { title = 'Learned coordinates', mode = 'fold', part = 'all' }: { title?: string; mode?: Mode; part?: Part } = $props();
+  const init = untrack(() => mode), PART = untrack(() => (mode === 'fold' ? part : 'all'));
+  /** Fold timeline time for widget time t (the parts are windows onto the full fold timeline). */
+  const foldT = (t: number) => (PART === 'affine' ? Math.min(t, 4.5) : PART === 'squash' ? t + 4.5 : t);
+  const duration = init === 'depth' ? DEPTH_T : PART === 'affine' ? 6 : PART === 'squash' ? FOLD_T - 4.5 : init === 'fold' ? FOLD_T : FIT_T;
   const markers = init === 'depth' ? DEPTH_MARKERS
+    : PART === 'affine' ? FOLD_MARKERS.slice(0, 2)
+    : PART === 'squash' ? FOLD_MARKERS.slice(2).map((m) => ({ ...m, at: m.at - 4.5 }))
     : init === 'fold' ? FOLD_MARKERS
     : [{ at: 0, label: 'Fit' }, { at: 6.8, label: 'Hold' }];
-  let playing = $state(false), speed = $state(1), uiT = $state(0), unit = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0), unit = $state(0);
   let ready = $state(false), error = $state('');
   const phase = $derived(markerAt(uiT, markers)?.label ?? 'Input');
   let canvas: HTMLCanvasElement, values: HTMLParagraphElement, tl: ReturnType<typeof Timeline>;
@@ -100,7 +106,7 @@
         ids.forEach((id, index) => {
           const f = folds[id]!;
           const tm = init === 'depth' ? DEPTH_TIMING : FOLD_TIMING;
-          const frame = foldFrame(f, init === 'fold' && index === 0 ? 0 : t, tm);
+          const frame = foldFrame(f, init === 'fold' && index === 0 ? 0 : foldT(t), tm);
           const finished = frame.m === f.stages.length - 1;
           const name = init === 'fold' && index === 0 ? 'Original coordinates' : `${init === 'depth' ? (id === 'one' ? '1 hidden layer · ' : '3 hidden layers · ') : ''}${frame.m === 0 && frame.s === 0 ? 'Input' : finished ? 'Hidden coordinates' : `${frame.m % 2 ? 'Tanh' : 'Affine'} · layer ${Math.floor(frame.m / 2) + 1}`}`;
           const p = panel(index, name, frame.view);

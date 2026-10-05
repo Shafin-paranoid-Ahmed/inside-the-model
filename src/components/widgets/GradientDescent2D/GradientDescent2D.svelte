@@ -18,9 +18,17 @@
     sgd?: boolean;
     /** Hide the surface picker (the lesson step fixes the surface). */
     lockSurface?: boolean;
+    /**
+     * One job per lesson figure. roll: the map only. starts: also faint paths from other starts. slice: the side-on
+     * slice along the gradient. update: loss per step and the update arithmetic. full: slice plus every control.
+     */
+    view?: 'roll' | 'starts' | 'slice' | 'update' | 'full';
   }
-  let { title = 'Gradient descent: a ball rolling downhill', surface = 'bowl', lr: lr0, sgd: sgd0 = false, lockSurface = false }: Props = $props();
-  const init = untrack(() => ({ surface, lr: lr0, sgd: sgd0, lock: lockSurface }));
+  let { title = 'Gradient descent: a ball rolling downhill', surface = 'bowl', lr: lr0, sgd: sgd0 = false, lockSurface = false, view = 'full' }: Props = $props();
+  const init = untrack(() => ({ surface, lr: lr0, sgd: sgd0, lock: lockSurface, view }));
+  const V = init.view, hasSide = V === 'slice' || V === 'update' || V === 'full';
+  /** Other starting points drawn as faint full paths in the 'starts' view. */
+  const OTHER_STARTS: [number, number][] = [[-3.5, -1.8], [-3.2, 1.9], [0.6, -2], [3.6, -0.6]];
   const T = duration(), MK = markers();
   const uid = $props.id();
 
@@ -29,7 +37,7 @@
   let lr = $state(init.lr ?? SURFACES[init.surface].lr);
   let sgd = $state(init.sgd);
   let start = $state<[number, number]>([...SURFACES[init.surface].start]);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let t = 0, wake = () => {}, dragging = false;
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
 
@@ -45,6 +53,7 @@
       : sgd ? 'Descending with noisy gradients: each step points roughly downhill, plus a random kick.' : 'Descending: each step is the learning rate times the gradient, pointing downhill.',
   );
   const crit = $derived(S.hmax ? 2 / S.hmax : null);
+  const others = $derived(V === 'starts' ? OTHER_STARTS.map((q) => trajectory(S, q, lr, false)) : []);
 
   $effect(() => {
     traj; // any change of surface, start, learning rate or noise restarts the descent
@@ -59,7 +68,8 @@
     let lastUi = 0, cache = { key: '', paths: [] as Path2D[] };
     const NG = 90;
     const lay = () => {
-      const { main, side, stacked } = splitPanels(stage.w, stage.h, stage.w < 540 ? 0.66 : 0.62);
+      const { main, side, stacked } = hasSide ? splitPanels(stage.w, stage.h, stage.w < 540 ? 0.66 : 0.62)
+        : { main: { x: 0, y: 0, w: stage.w, h: stage.h }, side: { x: 0, y: 0, w: 0, h: 0 }, stacked: false };
       const xd = S.xd, yd = S.yd, m = { l: main.x + 6, r: main.x + main.w - 6, t: main.y + 6, b: main.y + main.h - 6 };
       const u = Math.min((m.r - m.l) / (xd[1] - xd[0]), (m.b - m.t) / (yd[1] - yd[0]));
       const cx = (m.l + m.r) / 2, cy = (m.t + m.b) / 2, mx = (xd[0] + xd[1]) / 2, my = (yd[0] + yd[1]) / 2;
@@ -92,6 +102,13 @@
       ctx.save(); ctx.beginPath(); ctx.rect(b.l, b.t, b.r - b.l, b.b - b.t); ctx.clip();
       contours(L).forEach((p, i, a) => { ctx.strokeStyle = c.s4.hex; ctx.globalAlpha = 0.3 + 0.5 * (1 - i / a.length); ctx.lineWidth = 1.3; ctx.stroke(p); });
       ctx.globalAlpha = 1;
+      // faint paths from other starts: every one ends at the same bottom
+      for (const o of others) {
+        ctx.strokeStyle = c.muted.hex; ctx.globalAlpha = 0.45; ctx.lineWidth = 1.3; ctx.setLineDash([4, 3]); ctx.beginPath();
+        o.forEach((q, i) => (i ? ctx.lineTo(L.px(cl(q.x)), L.py(cl(q.y))) : ctx.moveTo(L.px(cl(q.x)), L.py(cl(q.y)))));
+        ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = c.muted.hex; ctx.beginPath(); ctx.arc(L.px(o[0].x), L.py(o[0].y), 4, 0, 6.2832); ctx.fill(); ctx.globalAlpha = 1;
+      }
       // trail
       ctx.strokeStyle = c.text.hex; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.6; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(L.px(cl(traj[0].x)), L.py(cl(traj[0].y)));
       for (let i = 1; i <= fr.k; i++) ctx.lineTo(L.px(cl(traj[i].x)), L.py(cl(traj[i].y)));
@@ -120,8 +137,25 @@
       ctx.fillText('drag the dashed ring to move the start', b.l + 6, b.t + 5);
       if (fr.diverged) { ctx.font = stage.mono(13, 700); ctx.fillStyle = c.neg.hex; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('diverged: loss is exploding', (b.l + b.r) / 2, (b.t + b.b) / 2); }
 
-      // ---- slice along the downhill direction ----
+      if (!hasSide) return;
       const p = L.side, pad = { l: 12, r: 12, t: 26, b: 30 };
+      if (V === 'update') {
+        // ---- loss after each step, log scale ----
+        const lo = -4, hi = Math.max(1, Math.ceil(Math.log10(Math.max(...traj.map((q) => q.f), 1))));
+        const lx = scale(0, STEPS, p.x + pad.l + 22, p.x + p.w - pad.r), ly = (f: number) => scale(lo, hi, p.y + p.h - pad.b, p.y + pad.t)(clamp(Math.log10(Math.max(f, 1e-9)), lo, hi));
+        ctx.font = stage.body(12.5); ctx.fillStyle = c.text.hex; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.fillText('Loss after each step (log scale)', p.x + pad.l, p.y + 2);
+        ctx.font = stage.mono(10.5); ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        for (let e = lo; e <= hi; e += 2) { ctx.strokeStyle = c.rule.hex; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(lx(0), ly(10 ** e)); ctx.lineTo(lx(STEPS), ly(10 ** e)); ctx.stroke(); ctx.fillStyle = c.muted.hex; ctx.fillText(e === 0 ? '1' : `1e${e}`, lx(0) - 4, ly(10 ** e)); }
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        for (const k of [0, 12, 24, 36, 48]) ctx.fillText(String(k), lx(k), p.y + p.h - pad.b + 5);
+        ctx.font = stage.body(12, true); ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('step', p.x + p.w - pad.r, p.y + p.h - 1);
+        ctx.strokeStyle = c.rule.hex; ctx.lineWidth = 2; ctx.beginPath(); traj.forEach((q, i) => (i ? ctx.lineTo(lx(i), ly(q.f)) : ctx.moveTo(lx(i), ly(q.f)))); ctx.stroke();
+        ctx.strokeStyle = c.grad.hex; ctx.beginPath(); for (let i = 0; i <= fr.k; i++) (i ? ctx.lineTo(lx(i), ly(traj[i].f)) : ctx.moveTo(lx(i), ly(traj[i].f))); ctx.lineTo(lx(fr.k + fr.u), ly(fr.f)); ctx.stroke();
+        ctx.fillStyle = c.accent.hex; ctx.strokeStyle = c.raised.hex; ctx.beginPath(); ctx.arc(lx(fr.k + fr.u), ly(fr.f), 6, 0, 6.2832); ctx.fill(); ctx.stroke();
+        return;
+      }
+      // ---- slice along the downhill direction ----
       const sl = slice(S, a.x, a.y, st.tx, st.ty, 2.5), vmin = Math.min(...sl.v), vmax = Math.max(...sl.v);
       const sx = scale(-2.5, 2.5, p.x + pad.l, p.x + p.w - pad.r), sy = scale(vmin, vmax + (vmax - vmin) * 0.05, p.y + p.h - pad.b, p.y + pad.t);
       ctx.font = stage.body(12.5); ctx.fillStyle = c.text.hex; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -171,8 +205,8 @@
   });
 </script>
 
-<FigureCard {title} role="group" aspect="720 / 420" narrowAspect="360 / 640"
-  label="Left: contour map of a loss surface with a ball descending it, a trail of past steps and an arrow for the current gradient step. Right: a slice of the loss along the downhill direction, showing where the next step lands."
+<FigureCard {title} role="group" aspect={hasSide ? '720 / 420' : '720 / 380'} narrowAspect={hasSide ? '360 / 640' : '360 / 300'}
+  label={`Contour map of a loss surface with a ball descending it, a trail of past steps and an arrow for the current gradient step.${V === 'starts' ? ' Faint dashed paths show descent from four other starts.' : ''}${V === 'update' ? ' Right: the loss after each step on a log scale.' : hasSide ? ' Right: a slice of the loss along the downhill direction, showing where the next step lands.' : ''}`}
   legend={[{ label: 'ball', color: '--accent' }, { label: 'gradient step', color: '--viz-gradient', shape: 'line' }, { label: 'contours (equal loss)', color: '--viz-seq-4', shape: 'line' }]}>
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
@@ -180,14 +214,21 @@
       onSeek={(to) => { t = to; wake(); }} onStep={(to) => { t = to >= T ? 0 : to; wake(); }} onReset={() => { t = 0; playing = true; wake(); }} />
   {/snippet}
   {#snippet readout()}
+    {#if V === 'update'}
+      <p class="vals num">θ = ({f2(cur.x)}, {f2(cur.y)}) · ∇L = ({f2(cur.tx)}, {f2(cur.ty)}) · θ − η∇L = ({f2(cur.x - lr * cur.tx)}, {f2(cur.y - lr * cur.ty)})
+        <span class="base">· η = {f2(lr)} · step {k} · loss {f2(cur.f, 3)}</span></p>
+    {:else}
     <p class="vals num">step {k} of {STEPS} · position ({f2(cur.x)}, {f2(cur.y)}) · loss {f2(cur.f, 3)} · |gradient| {f2(Math.hypot(cur.tx, cur.ty))}
-      {#if crit}<span class="base">· on this bowl, η above {f2(crit)} diverges</span>{/if}</p>
+      {#if crit && V === 'full'}<span class="base">· on this bowl, η above {f2(crit)} diverges</span>{/if}</p>
+    {/if}
     <p class="say" role="status" aria-live="polite">{narration}</p>
   {/snippet}
   {#snippet footer()}
     <div class="ctl">
+      {#if V === 'full'}
       <F1Slider label="η" value={lr} min={0.01} max={S.hmax ? 0.32 : 0.6} step={0.005} digits={3} oninput={(v) => (lr = v)} />
       <label class="chk"><input type="checkbox" bind:checked={sgd} /> Noisy gradient (SGD)</label>
+      {/if}
       {#if !init.lock}
         <fieldset class="seg">
           <legend class="sr-only">Loss surface</legend>

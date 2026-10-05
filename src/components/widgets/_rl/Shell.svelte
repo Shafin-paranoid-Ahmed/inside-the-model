@@ -39,7 +39,7 @@
   let impl = $state.raw<Impl | null>(null), scene = $state.raw<unknown>(null), failed = $state(false);
   let shapes = $state.raw<Shape[]>([]);
   let status = $state(''), detail = $state(''), readouts = $state.raw<[string, string][]>([]), live = $state(''), hover = $state('');
-  let playing = $state(false), speed = $state(1), uiT = $state(0), W = $state(0), H = $state(0), pick = $state<string | null>(null);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0), W = $state(0), H = $state(0), pick = $state<string | null>(null);
   const narrow = $derived(W > 0 && W < 540);
   const tl = $derived(impl && scene ? impl.timeline(scene, o) : { duration: 1, markers: [] });
   const label = $derived(impl && scene ? impl.label(scene, o) : title);

@@ -9,7 +9,7 @@
   let { mode = 'playground', text, title = 'How text becomes token IDs' }: Props = $props();
   const init = untrack(() => mode);
   let input = $state(untrack(() => text ?? (init === 'apply' ? APPLY_TEXT : init === 'granularity' ? DEFAULT_TEXT : PLAYGROUND_TEXT)));
-  let width = $state(0), playing = $state(false), speed = $state(1), uiT = $state(0);
+  let width = $state(0), playing = $state(false), speed = $state(0.5), uiT = $state(0);
   const narrow = $derived(width > 0 && width < 540);
   const svgW = $derived(narrow ? 288 : 720);
   const model = defaultModel();

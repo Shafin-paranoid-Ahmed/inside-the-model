@@ -34,9 +34,7 @@ $$L = (a \cdot b + c)^2$$
 
 Evaluating it happens in small steps. First multiply, $m = a \cdot b$. Then add, $s = m + c$. Then square, $L = s^2$. Each step is one **node** with one job, and the arrows show which values feed which operation. This is a **computational graph**.
 
-Watch the forward pass run with $a = 2$, $b = -3$, $c = 10$: values fill in from left to right, then the loop repeats. Drag the timeline to scrub through it, or change $a$, $b$ or $c$ and watch it recompute.
-
-<BackpropViz client:visible mode="expr" loopPhase="forward" title="Evaluating (a·b + c)² one node at a time" />
+You watched this graph run in [Computational Graphs](/learn/neural-networks/computational-graphs/): with $a = 2$, $b = -3$, $c = 10$ it gives $m = -6$, $s = 4$ and $L = 16$.
 
 The graph matters because every node only needs to know its own operation. A multiply node knows how to multiply. It will turn out that this is all it needs to know to take part in backpropagation.
 
@@ -56,9 +54,7 @@ That is the whole algorithm. Going backward, each node holds an **upstream gradi
 
 $$\text{gradient at an input} = \text{local derivative} \times \text{upstream gradient}$$
 
-Watch the backward sweep. A magenta wave travels from $L$ back along the edges, and each node gains a second number: its gradient. Then click node $a$, which pauses the loop, to see the same product with the real numbers.
-
-<BackpropViz client:visible mode="expr" loopPhase="backward" select="a" title="Gradients flow backward through the graph" />
+[The Forward and Backward Pass](/learn/neural-networks/forward-backward-pass/) animates this sweep node by node, and [The Chain Rule, Visually](/learn/neural-networks/chain-rule-visually/) writes out the product for $a$ with these numbers. From here on, the graph is the network.
 
 <details>
 <summary>Show the math</summary>
@@ -192,9 +188,9 @@ The backward pass is done, and every weight now carries a number. Read them like
 - **Size.** Wide edges are the weights whose small changes move the loss most. Here $w_{11}$ and $v_3$ are among the widest.
 - **Zero.** A weight can have gradient zero even when it is large. It just has no influence right now.
 
-Two things are worth trying. Click the input $x_1$: it feeds all three hidden units, so its gradient is a **sum over three paths**, one through each unit. Where paths meet, gradients add. And switch the activation to **ReLU** with the toggle below the figure, and the figure recomputes: the second hidden unit has $z_2 = -0.25$, so ReLU outputs exactly 0 and its local derivative is 0. Everything upstream of it, $w_{21}$ and $w_{22}$, receives exactly zero. That is a dead unit.
+The figure below shows the zero case. Its hidden layer uses **ReLU** instead of tanh. The second hidden unit has $z_2 = -0.25$, so ReLU outputs exactly 0 and its local derivative is 0. Everything upstream of it receives exactly zero: $w_{21}$ and $w_{22}$ have no width, and the panel writes the product for $w_{21}$ with that 0 in it. $v_2$ gets zero too, because its input $h_2$ is 0. That is a dead unit. Switch back to tanh with the toggle below the figure and the gradients return. $w_{11}$ and $v_3$ stay the widest either way.
 
-<BackpropViz client:visible loopPhase="backward" initialPhase="update" select="x1" title="Reading the gradients" />
+<BackpropViz client:visible loopPhase="backward" initialPhase="update" act="relu" select="w21" title="A dead ReLU unit passes no gradient" />
 
 <details>
 <summary>Show the math</summary>

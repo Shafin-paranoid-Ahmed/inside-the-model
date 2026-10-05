@@ -35,9 +35,11 @@ There are two standard penalties.
 - **L2** (also called *ridge* regression or *weight decay*) adds the sum of squares, $\sum_j w_j^2$. Big weights are punished much more than small ones.
 - **L1** (the *lasso*) adds the sum of absolute values, $\sum_j |w_j|$. Every unit of weight costs the same, big or small.
 
-Both push weights toward zero. The difference is in *how* they get there, and the rest of this lesson is about that difference. In the figure, use the L1 and L2 buttons under the plot while it plays, and compare the coefficient lines.
+Both push weights toward zero. The difference is in *how* they get there, and the rest of this lesson is about that difference.
 
-<RegularizationPaths client:visible title="L1 or L2: the same λ, two different paths" />
+The figure below runs both penalties side by side at the same $\lambda$: L1 on the left, L2 on the right. Each line is one of the model's six weights, and the horizontal axis is $\lambda$, rising as the timeline plays. Don't read the details yet; a later step does. Just notice the shapes. On the left, lines hit zero one after another and stay there. On the right, every line bends toward zero, but none reaches it.
+
+<RegularizationPaths client:visible view="compare" title="L1 or L2: the same λ, two different paths" />
 
 <details>
 <summary>Show the math</summary>
@@ -58,7 +60,7 @@ Take a model with just two weights, $w_1$ and $w_2$. The loss is a bowl, drawn a
 
 There is an equivalent way to see a penalty: as a **budget**. "Minimize the loss subject to $\lvert w_1\rvert + \lvert w_2\rvert \le s$" gives the same answers as the L1 penalty, with a smaller budget $s$ corresponding to a larger $\lambda$. For L2 the budget is $w_1^2 + w_2^2 \le s^2$. The shaded region is the set of weights we can afford. When the minimum lies outside it, the best affordable point is the one where a loss contour first touches the region's edge. That is the filled dot. Watch it slide inward as the budget shrinks.
 
-<RegularizationPaths client:visible penalty="l2" toggle={false} title="L2: a circular budget, the optimum slides toward the origin" />
+<RegularizationPaths client:visible view="region" penalty="l2" toggle={false} title="L2: a circular budget, the optimum slides toward the origin" />
 
 The L2 region is a circle. A contour touches a smooth circle at a generic point, so both weights get smaller together, and neither is exactly zero.
 
@@ -70,7 +72,7 @@ Now the region is an L1 diamond. It has flat sides and sharp corners, and the co
 
 Watch the timeline in the figure. At about $\lambda = 1.12$ the optimum reaches the $w_1$ axis at $(0.90, 0)$, and from then on $w_2$ stays at exactly zero while $w_1$ keeps shrinking. That is not rounding: the solution really is zero, and the readout counts it. This is **sparsity**: L1 acts as an automatic feature selector.
 
-<RegularizationPaths client:visible penalty="l1" toggle={false} title="L1: a diamond budget, the optimum snaps onto an axis" />
+<RegularizationPaths client:visible view="region" penalty="l1" toggle={false} title="L1: a diamond budget, the optimum snaps onto an axis" />
 
 <details>
 <summary>Show the math</summary>
@@ -91,7 +93,7 @@ With six features we cannot draw the region, so we draw **coefficient paths**: e
 
 Play the L1 version. The dashed noise lines hit zero first: $x_4$ at $\lambda \approx 0.01$, $x_6$ at $0.08$ and $x_5$ at $0.37$. The three real features survive much longer: $x_3$ reaches zero at $1.86$, $x_2$ at $2.02$ and finally $x_1$ at $3.17$, where everything is zero. Then switch to L2: every line curves smoothly toward the axis, and at the right edge all six are still non-zero.
 
-<RegularizationPaths client:visible title="Coefficient paths for six features" />
+<RegularizationPaths client:visible view="paths" title="Coefficient paths for six features" />
 
 In real models, features are correlated and weights are not so cleanly separated. L1 often keeps one of two near-duplicate features and drops the other, and which one it keeps can change with the sample. Treat the selected set as a useful guess, not a proof.
 
@@ -101,17 +103,17 @@ In real models, features are correlated and weights are not so cleanly separated
 
 Why does shrinking help? The previous lesson split error into bias and variance. An unpenalized fit on 30 noisy points has low bias but high variance: its weights swing with the particular noise in the sample. A penalty makes the fit a bit *wrong on purpose* (more bias, since weights are shrunk below their best-fit values) but much more stable (less variance).
 
-The bottom-right panel shows the result. The grey line is the training error, which can only rise as $\lambda$ grows, from $2.67$ at $\lambda = 0$ toward $18.1$ (all weights zero, for L1). The black line is the error on 400 fresh points, and it is **U-shaped**: it falls from $4.97$ to a minimum of $4.45$ near $\lambda = 0.41$ for L1 (for L2, $4.44$ near $0.29$) and then climbs again as the model becomes too rigid. The small diamond marks that minimum.
+The figure below shows the result, as the error panel from the first figure on its own. The grey line is the training error, which can only rise as $\lambda$ grows, from $2.67$ at $\lambda = 0$ toward $18.1$ (all weights zero, for L1). The black line is the error on 400 fresh points, and it is **U-shaped**: it falls from $4.97$ to a minimum of $4.45$ near $\lambda = 0.41$ for L1 (for L2, $4.44$ near $0.29$) and then climbs again as the model becomes too rigid. The small diamond marks that minimum.
 
 This is the same picture as the model-complexity curve from last lesson, except that the dial is now $\lambda$ instead of polynomial degree. Larger $\lambda$ means a simpler model.
 
-<RegularizationPaths client:visible title="Training error rises, error on new data is U-shaped" />
+<RegularizationPaths client:visible view="error" title="Training error rises, error on new data is U-shaped" />
 
 </Step>
 
 <Step title="Choosing λ">
 
-$\lambda$ is a **hyperparameter**: it is not learned from the training loss, because the training loss always prefers $\lambda = 0$. We choose it the way the [train/validation/test lesson](/learn/foundations/train-val-test/) prescribes: try a grid of values, train on the training set for each, measure error on a held-out validation set, and pick the $\lambda$ with the lowest validation error. In the figure, that is the diamond in the bottom panel.
+$\lambda$ is a **hyperparameter**: it is not learned from the training loss, because the training loss always prefers $\lambda = 0$. We choose it the way the [train/validation/test lesson](/learn/foundations/train-val-test/) prescribes: try a grid of values, train on the training set for each, measure error on a held-out validation set, and pick the $\lambda$ with the lowest validation error. In the figure above, that is the diamond.
 
 In practice:
 

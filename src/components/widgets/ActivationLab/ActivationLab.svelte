@@ -29,7 +29,7 @@
   const Tdur = duration(MODE), MK = markers(MODE);
   const DIP = geluDip();
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
   let values: HTMLParagraphElement;

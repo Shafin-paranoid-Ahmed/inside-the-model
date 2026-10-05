@@ -6,7 +6,7 @@
   import { setupStage, f2 } from '../F1Shared/canvas';
   import { splitPanels } from '../F1Shared/plot';
   import F1Slider from '../F1Shared/F1Slider.svelte';
-  import { T, MARKERS, DOM, RMAX, BIAS, frameAt, narrate, polar, angleOf, norm, type Mode, type Vec } from './sim';
+  import { T, MARKERS, STRETCH_MARKERS, DOM, RMAX, BIAS, frameAt, narrate, polar, angleOf, norm, type Mode, type Vec } from './sim';
 
   interface Props {
     title?: string;
@@ -20,7 +20,7 @@
   }));
   const nm = init.mode === 'neuron' ? { a: 'w', b: 'x' } : { a: 'a', b: 'b' };
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let over = $state<{ a: Vec; b: Vec } | null>(null);
   let ui = $state(frameAt(0, init.mode));
   let t = 0, wake = () => {};
@@ -104,7 +104,22 @@
       ctx.fillText(neuron ? 'shaded: z > 0, the neuron fires' : 'drag either arrow', x0 + 6, y0 + 5);
 
       // ---- side panel ----
-      if (init.mode === 'geometry') curve(L, f); else bars(L, f);
+      if (init.mode === 'geometry') curve(L, f); else if (init.mode === 'stretch') pair(L, f); else bars(L, f);
+    }
+
+    /** Stretch mode: a·b and cos θ side by side, each on its own fixed scale. */
+    function pair(L: ReturnType<typeof lay>, f: ReturnType<typeof frame>) {
+      const { ctx, c } = stage, S = L.side, top = S.y + 40, bot = S.y + S.h - 30, H = bot - top;
+      ctx.fillStyle = c.text.hex; ctx.font = stage.body(12.5); ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText('as b stretches', S.x + 4, S.y + 2);
+      const maxDot = norm(f.a) * 3;
+      ([['a·b', f.dot / maxDot, f2(f.dot), 0.3], ['cos θ', f.cos, f2(f.cos), 0.72]] as const).forEach(([nm, frac, txt, at]) => {
+        const cx = S.x + S.w * at, bw = Math.min(56, S.w / 5), y = bot - H * Math.max(0, frac);
+        ctx.strokeStyle = c.rule.hex; ctx.lineWidth = 1; ctx.strokeRect(cx - bw / 2, top, bw, H);
+        ctx.fillStyle = c.pos.hex; ctx.globalAlpha = 0.85; ctx.fillRect(cx - bw / 2, y, bw, bot - y); ctx.globalAlpha = 1;
+        ctx.font = stage.mono(12.5, 650); ctx.fillStyle = c.text.hex; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(txt, cx, Math.min(y, bot) - 4);
+        ctx.font = stage.body(12.5, true); ctx.fillStyle = c.muted.hex; ctx.textBaseline = 'top'; ctx.fillText(nm, cx, bot + 6);
+      });
     }
 
     function curve(L: ReturnType<typeof lay>, f: ReturnType<typeof frame>) {
@@ -200,7 +215,7 @@
       : 'Left: two arrows a and b in the plane, with the angle between them and the shadow of b on a. Right: a curve of the dot product against the angle, with a dot marking the current value.'}>
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
-    <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MARKERS} label="Timeline: b turns around a"
+    <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={init.mode === 'stretch' ? STRETCH_MARKERS : MARKERS} label={init.mode === 'stretch' ? 'Timeline: b stretches and shrinks' : 'Timeline: b turns around a'}
       onSeek={(to) => { over = null; t = to; wake(); }} onStep={(to) => { over = null; t = to >= T ? 0 : to; wake(); }} onReset={() => { over = null; t = 0; playing = true; wake(); }} />
   {/snippet}
   {#snippet readout()}

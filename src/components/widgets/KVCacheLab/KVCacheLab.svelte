@@ -26,7 +26,7 @@
   let failed = $state(false);
   let total = $state(untrack(() => totalProp)), compare = $state(untrack(() => compareProp)), batch = $state(untrack(() => batchProp));
   let promptLen = $state(untrack(() => promptProp)), modelKey = $state<ModelKey>(untrack(() => modelProp)), ctx = $state(untrack(() => ctxProp));
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
 
   const scene: Scene | null = $derived.by(() => {
     if (!weights) return null;

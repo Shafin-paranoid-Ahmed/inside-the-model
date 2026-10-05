@@ -19,7 +19,7 @@
   import Timeline from '../_shared/Timeline.svelte';
   import { advance, createLoop, prefersReducedMotion, reducedMotion } from '../_shared';
   import {
-    CLASS_NAMES, CLASS_TOKENS, GROUPS, PRESETS, PROBES, STAGES, buildScene, classOf, clusterWords, fmt, frameAt, idOf, neighbours, project,
+    CLASS_NAMES, CLASS_TOKENS, GROUPS, PRESETS, PROBES, STAGES, buildScene, prepareContext, classOf, clusterWords, fmt, frameAt, idOf, neighbours, project,
     type Metric, type Mode, type Pt,
   } from './sim';
   import { VOCAB } from '../../../lib/transformer/grammar';
@@ -45,7 +45,7 @@
 
   let data = $state.raw<Data | null>(null);
   let failed = $state(false);
-  let width = $state(0), playing = $state(false), speed = $state(1), uiT = $state(0);
+  let width = $state(0), playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let probeChoice = $state('cycle'), metric = $state<Metric>('cosine'), presetChoice = $state(untrack(() => (cycle ? 'cycle' : '0')));
   let selected = $state(untrack(() => idOf(select))), withThe = $state(false);
   const narrow = $derived(width > 0 && width < 540);
@@ -74,7 +74,7 @@
   const restart = () => { t = 0; uiT = 0; wake(); };
 
   onMount(() => {
-    load().then((d) => { data = d; }, () => { failed = true; forget(); });
+    load().then(async (d) => { if (init === 'contextual') await prepareContext(d); data = d; }, () => { failed = true; forget(); });
     const loop = createLoop(stage.closest('[data-figure]') ?? stage, (dt, now) => {
       if (!scene) return false;
       t = advance({ t, playing, speed }, dt, { duration: scene.T }).t;

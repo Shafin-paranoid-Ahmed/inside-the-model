@@ -61,9 +61,9 @@ The sigmoid $\sigma(z) = 1/(1+e^{-z})$ has derivative $\sigma'(z) = \sigma(z)(1 
 
 In the figure the readout reports the average $\varphi'$ over units (about $0.23$ here, close to the ceiling of $0.25$) and the **gain** per layer, the geometric mean factor by which one layer shrinks the gradient: about $0.22$.
 
-Larger weights can make up some of the difference. Slide the weight scale $s$ up to 3: the gradient at layer 0 rises from $10^{-19.5}$ to about $10^{-8.8}$, better but still hopeless. Sigmoid pays a $\times 0.25$ price at every layer, and no weight scale with a stable forward pass can buy that back. This is the chief reason sigmoid fell out of favor as a hidden activation in deep networks, and why it survives mostly at the output, where there is only one of it.
+Larger weights can make up some of the difference. The figure below starts at weight scale $s = 3$: the gradient at layer 0 is about $10^{-8.8}$, against $10^{-19.5}$ at $s = 1$ in the first figure. Better, but still hopeless. Sigmoid pays a $\times 0.25$ price at every layer, and no weight scale with a stable forward pass can buy that back. This is the chief reason sigmoid fell out of favor as a hidden activation in deep networks, and why it survives mostly at the output, where there is only one of it.
 
-<GradientDepth client:visible activation="sigmoid" scale={1} title="Try the weight scale slider on sigmoid" />
+<GradientDepth client:visible activation="sigmoid" scale={3} title="Sigmoid at s = 3: better, still hopeless" />
 
 </Step>
 
@@ -125,9 +125,9 @@ Since the factor is set by the weight scale, the first fix is to choose it so th
 - **Glorot / Xavier** (2010), weights of variance about $1/n$, i.e. $s = 1$, for tanh-like activations.
 - **He** (2015), variance $2/n$, i.e. $s = \sqrt2$, for ReLU.
 
-Try both buttons under the figure on each activation. With ReLU, He is stable (about $10^{-0.7}$) and Glorot shrinks the gradient by a factor of about $10^{5}$ over 30 layers. With tanh in this network both are close to stable ($10^{-1.3}$ for Glorot, $10^{0.1}$ for He), although the theory behind them assumes different things. With sigmoid neither helps. The rule of thumb: match the initialization to the activation. A detailed derivation and the reasons all-zero initialization fails (symmetry) belong to the [weight initialization](/learn/neural-networks/weight-initialization/) lesson.
+The figure opens on tanh with He's scale. Try both buttons under it on each activation. With ReLU, He is stable (about $10^{-0.7}$) and Glorot shrinks the gradient by a factor of about $10^{5}$ over 30 layers. With tanh in this network both are close to stable ($10^{-1.3}$ for Glorot, $10^{0.1}$ for He), although the theory behind them assumes different things. With sigmoid neither helps. The rule of thumb: match the initialization to the activation. A detailed derivation and the reasons all-zero initialization fails (symmetry) belong to the [weight initialization](/learn/neural-networks/weight-initialization/) lesson.
 
-<GradientDepth client:visible activation="tanh" scale={1} title="Use the Glorot and He buttons on each activation" />
+<GradientDepth client:visible activation="tanh" scale={1.4142} title="Use the Glorot and He buttons on each activation" />
 
 Good initialization sets up the first step of training. It does not keep the factor at 1 as the weights change; for that the architecture has to help.
 

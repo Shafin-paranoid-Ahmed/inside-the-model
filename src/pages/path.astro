@@ -11,10 +11,10 @@ const groups = [
   ...days.map((d) => ({ heading: `Day ${d.day}: ${d.title}`, lessons: d.lessons })),
 ];
 ---
-<Base title="Path" description="The full 14-day curriculum: every day, track and lesson." jsonLd={courseLd(days.map((d) => ({ day: d.day, title: d.title, lessons: d.lessons.map((l) => ({ id: l.id, title: l.data.title })) })))}>
+<Base title="Path" description="The full 15-day curriculum: every day, track and lesson." jsonLd={courseLd(days.map((d) => ({ day: d.day, title: d.title, lessons: d.lessons.map((l) => ({ id: l.id, title: l.data.title })) })))}>
   <div class="wrap page">
     <h1>The path</h1>
-    <p class="lede">Fourteen days from “what is a model?” to the frontier. Each day is a few short lessons; each lesson is a few steps you can touch.</p>
+    <p class="lede">Fifteen days from “what is a model?” to the frontier. Each day is a few short lessons; each lesson is a few steps you can touch.</p>
     {groups.map((g) => (
       <section class="day">
         <h2 id={g.heading.split(':')[0].toLowerCase().replace(/\W+/g, '-')}>{g.heading}</h2>

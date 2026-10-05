@@ -32,14 +32,17 @@ export const FEATURES = [
 export const HOUSE_POINT: V = { x: FEATURES[0].value / FEATURES[0].unit, y: FEATURES[1].value };
 
 // ---- timeline ----
-export type Scene = 'add' | 'scale' | 'length' | 'features';
-export const DURATION: Record<Scene, number> = { add: 9, scale: 11, length: 10, features: 13 };
+/** 'norm' and 'distance' are the two halves of 'length', for steps that teach one idea each. */
+export type Scene = 'add' | 'scale' | 'length' | 'norm' | 'distance' | 'features';
+export const DURATION: Record<Scene, number> = { add: 9, scale: 11, length: 10, norm: 5.6, distance: 5.6, features: 13 };
 export const duration = (s: Scene) => DURATION[s];
 const M = (...m: [number, string][]) => m.map(([at, label]) => ({ at, label }));
 export const MARKERS: Record<Scene, { at: number; label: string }[]> = {
   add: M([0, 'a and b'], [2, 'slide b'], [4.5, 'a + b'], [7.2, 'reset']),
   scale: M([0, 'c = 1'], [1, 'stretch'], [3.5, 'shrink'], [5, 'flip'], [8.3, 'back']),
   length: M([0, 'a'], [0.6, 'length'], [4.8, 'distance'], [8.4, 'reset']),
+  norm: M([0, 'a'], [0.6, 'length'], [4.6, 'reset']),
+  distance: M([0, 'a and b'], [0.6, 'distance'], [4.6, 'reset']),
   features: M([0, 'a point'], [2.6, 'read off'], [5.2, 'add features'], [8.6, 'a row of 6']),
 };
 export const markers = (s: Scene) => MARKERS[s];
@@ -93,6 +96,9 @@ export function frameAt(t: number, scene: Scene, a: V = DEFAULT_A, b: V = DEFAUL
     f.sum = pulse(t, 4.5, 6, 7.2, 8.2);
   } else if (scene === 'scale') {
     f.c = scaleAt(t);
+  } else if (scene === 'norm' || scene === 'distance') {
+    const p = pulse(t, 0.6, 3.2, 4.6, 5.4);
+    if (scene === 'norm') { f.legs = p; f.lenA = norm(a) * p; } else { f.gap = p; f.distAB = dist(a, b) * p; }
   } else if (scene === 'length') {
     f.legs = pulse(t, 0.6, 3.2, 8.4, 9.4);
     f.gap = pulse(t, 4.8, 7.4, 8.4, 9.4);

@@ -21,7 +21,7 @@
   const groups = init.show === 'both' ? (['bow', 'rnn'] as const) : ([init.show] as const);
   const Hh = 20 + groups.length * 140;
   let sa = $state(untrack(() => a)), sb = $state(untrack(() => b));
-  let narrow = $state(false), playing = $state(false), speed = $state(1);
+  let narrow = $state(false), playing = $state(false), speed = $state(0.5);
   let uiT = $state(0), narration = $state('');
   const demo: Demo = $derived(makeDemo(sa, sb));
   const tm = $derived(timing(demo.n));

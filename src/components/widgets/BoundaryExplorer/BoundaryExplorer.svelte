@@ -18,12 +18,14 @@
     model?: Model;
     /** Show the dataset / model pickers and the add-point tools. */
     editable?: boolean;
+    /** Draw labelled score contours z = −2…2 instead of the 12% / 88% probability contours. */
+    scores?: boolean;
   }
-  let { title = 'A classifier learning where to cut the plane', dataset = 'linear', model = 'linear', editable = true }: Props = $props();
+  let { title = 'A classifier learning where to cut the plane', dataset = 'linear', model = 'linear', editable = true, scores = false }: Props = $props();
   const init = untrack(() => ({ dataset, model }));
 
   let ds = $state<Dataset>(init.dataset), mdl = $state<Model>(init.model), cls = $state<0 | 1>(1);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let ui = $state({ k: 0, loss: Math.LN2, acc: 0.5, phase: 'start', extra: 0 });
   let hov = $state<{ x: number; y: number; p: number; z: number; d: number } | null>(null);
   let t = 0, wake = () => {};
@@ -89,15 +91,35 @@
           ctx.lineTo(L.px0 + (seg[k + 2] + 0.5) * cell, L.py0 + L.s - (seg[k + 3] + 0.5) * cell);
         }
         ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+        return seg;
       };
-      stroke(0.12, 1, c.muted.hex, [3, 4], 0.7); stroke(0.88, 1, c.muted.hex, [3, 4], 0.7);
-      stroke(0.5, 2.6, c.text.hex, [], 1);
+      const labels: [number, number, string][] = [];
+      if (scores) {
+        for (const z of [-2, -1, 0, 1, 2]) {
+          const seg = z ? stroke(1 / (1 + Math.exp(-z)), 1.2, c.muted.hex, [], 0.9) : stroke(0.5, 2.6, c.text.hex, [], 1);
+          // label the top end of each line, away from the data in the middle
+          let k = -1;
+          for (let q = 0; q < seg.length; q += 4) if (k < 0 || seg[q + 1] > seg[k + 1]) k = q;
+          if (k >= 0) labels.push([
+            Math.min(L.px0 + L.s - 26, Math.max(L.px0 + 26, L.px0 + (seg[k] + 0.5) * cell)),
+            Math.max(L.py0 + 14, L.py0 + L.s - (seg[k + 1] + 0.5) * cell + 14), 'z = ' + String(z).replace('-', '−')]);
+        }
+      } else {
+        stroke(0.12, 1, c.muted.hex, [3, 4], 0.7); stroke(0.88, 1, c.muted.hex, [3, 4], 0.7);
+        stroke(0.5, 2.6, c.text.hex, [], 1);
+      }
       for (const p of pts) {
         const x = L.gx(p.x), y = L.gy(p.y), wrong = (score(run.model, f.w, p.x, p.y) > 0 ? 1 : 0) !== p.c;
         ctx.fillStyle = p.c ? c.pos.hex : c.neg.hex; ctx.strokeStyle = wrong ? c.text.hex : c.raised.hex; ctx.lineWidth = wrong ? 2 : 1.5;
         ctx.beginPath();
         if (p.c) ctx.arc(x, y, 4.6, 0, 6.2832); else { ctx.moveTo(x, y - 5.6); ctx.lineTo(x + 5.6, y); ctx.lineTo(x, y + 5.6); ctx.lineTo(x - 5.6, y); ctx.closePath(); }
         ctx.fill(); ctx.stroke();
+      }
+      ctx.font = stage.mono(11, 600); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const [x, y, txt] of labels) {
+        const w = ctx.measureText(txt).width + 8;
+        ctx.fillStyle = c.raised.hex; ctx.globalAlpha = 0.85; ctx.fillRect(x - w / 2, y - 8, w, 16); ctx.globalAlpha = 1;
+        ctx.fillStyle = c.text.hex; ctx.fillText(txt, x, y);
       }
       if (hover) {
         const x = L.gx(hover.x), y = L.gy(hover.y);
@@ -154,7 +176,7 @@
 
 <FigureCard {title} role="group" aspect="720 / 400" narrowAspect="360 / 640"
   label="Left: a plane of blue circles (class 1) and orange diamonds (class 0), coloured by the classifier's probability, with a black line where the probability is 0.5. Right: the training loss falling over gradient steps."
-  legend={[{ label: 'class 1', color: '--viz-pos' }, { label: 'class 0', color: '--viz-neg' }, { label: 'boundary, P = 0.5', color: '--text', shape: 'line' }, { label: 'loss', color: '--viz-gradient', shape: 'line' }]}>
+  legend={[{ label: 'class 1', color: '--viz-pos' }, { label: 'class 0', color: '--viz-neg' }, { label: scores ? 'boundary, z = 0' : 'boundary, P = 0.5', color: '--text', shape: 'line' }, ...(scores ? [{ label: 'score z = ±1, ±2', color: '--text-muted', shape: 'line' as const }] : []), { label: 'loss', color: '--viz-gradient', shape: 'line' }]}>
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MARKERS} label="Timeline: training the classifier"

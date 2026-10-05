@@ -21,7 +21,7 @@
   const HW: Record<Mode, number> = { objective: 270, loss: 250, data: 366, compute: 300, learning: 380, base: 290 };
   const HN: Record<Mode, number> = { objective: 296, loss: 250, data: 366, compute: 340, learning: 470, base: 420 };
 
-  let width = $state(0), playing = $state(false), speed = $state(1), uiT = $state(0);
+  let width = $state(0), playing = $state(false), speed = $state(0.5), uiT = $state(0);
   const narrow = $derived(width > 0 && width < 540);
   const W = $derived(narrow ? 288 : 720), H = $derived(narrow ? HN[init] : HW[init]);
   let w = $state.raw<Weights | null>(null), log = $state.raw<Log | null>(null), failed = $state(false);

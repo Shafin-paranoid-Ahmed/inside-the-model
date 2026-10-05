@@ -21,7 +21,7 @@
   const init = untrack(() => ({ decompose, degree, title }));
 
   let t = untrack(() => (init.degree != null ? timeOfDegree(init.degree) : 0));
-  let playing = $state(false), speed = $state(1), uiT = $state(untrack(() => t));
+  let playing = $state(false), speed = $state(0.5), uiT = $state(untrack(() => t));
   let showGhosts = $state(untrack(() => ghosts));
   let over = $state<number | null>(init.degree ?? null);
   let seed = $state(SEED0);

@@ -37,8 +37,6 @@ $$m = a \cdot b = -6, \qquad s = m + c = 4, \qquad L = s^2 = 16.$$
 
 Two things happen at every node, and the second one is easy to miss. The node **computes its output** and passes it on. It also **keeps** what it will need later: its inputs or its output, whichever its local derivative depends on. The multiply node keeps $a$ and $b$; the square node keeps $s$. This stored state is the reason a backward pass costs memory: activations from the forward pass are held until the gradient comes back for them. It is the standard cost of training as opposed to just running a model.
 
-<BackpropViz client:visible mode="expr" loopPhase="forward" title="Forward pass: each node computes and remembers" />
-
 </Step>
 
 <Step title="The loss is the last node">
@@ -50,8 +48,6 @@ The first answer is free. $L$ responds to itself exactly one-for-one: if $L$ ris
 $$\frac{\partial L}{\partial L} = 1.$$
 
 This is the **seed** of the backward pass. It is the value placed on the output node before anything moves. Every other gradient will be a product that starts from this 1.
-
-<BackpropViz client:visible mode="expr" loopPhase="loss" title="The loss node, before the backward pass starts" />
 
 </Step>
 
@@ -67,7 +63,7 @@ $$\text{gradient sent to an input} = \text{upstream gradient} \times \text{local
 
 Watch the wave move through those three nodes in exactly that order. The order is not a matter of taste: a node can only send gradients down once **everything downstream of it** has sent its gradient in. That is reverse topological order.
 
-<BackpropViz client:visible mode="expr" loopPhase="backward" select="a" title="The backward pass, node by node" />
+<BackpropViz client:visible mode="expr" loopPhase="backward" showPanel={false} title="The backward pass, node by node" />
 
 </Step>
 

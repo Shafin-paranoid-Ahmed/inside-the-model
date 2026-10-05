@@ -6,33 +6,41 @@
   import { setupStage, f2 } from '../F1Shared/canvas';
   import { scale, splitPanels, contour, clamp } from '../F1Shared/plot';
   import F1Slider from '../F1Shared/F1Slider.svelte';
-  import { POINTS, BEST, START, W_DOM, B_DOM, X_DOM, LR, STEPS, PATH, loss, sigmoid, accuracy, gdPath, duration, markers, frameAt, T_GUESS, type Mode, type PathPt } from './sim';
+  import { POINTS, BEST, START, W_DOM, B_DOM, X_DOM, LR, STEPS, PATH, loss, sigmoid, accuracy, grad, gdPath, duration, markers, frameAt, T_GUESS, type Mode, type PathPt } from './sim';
 
   interface Props {
     title?: string;
-    /** 'train': gradient descent on log-loss. 'sweep': a probe slides along x and reads off score and probability. 'steepen': the curve sharpens with the boundary fixed. */
+    /** 'train': gradient descent on log-loss. 'sweep': a probe slides along x and reads off score and probability. 'steepen': the curve sharpens with the boundary fixed. 'knobs': slide b, then tilt w. */
     mode?: Mode;
     /** Draw the dashed decision boundary (where p = 0.5). */
     boundary?: boolean;
+    /** Draw the downhill (negative gradient) arrow on the map and write the update out in the readout. */
+    showGrad?: boolean;
   }
-  let { title = '', mode = 'train', boundary = true }: Props = $props();
-  const init = untrack(() => ({ mode, boundary, title: title || 'A line, squashed into a probability' }));
+  let { title = '', mode = 'train', boundary = true, showGrad = false }: Props = $props();
+  const init = untrack(() => ({ mode, boundary, showGrad, title: title || 'A line, squashed into a probability' }));
   const T = duration(init.mode), MK = markers(init.mode);
   const LOSS_MIN = BEST.loss;
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
+  /** Hand-set knobs in the demo modes; cleared when the timeline plays again. */
   let over = $state<{ w: number; b: number } | null>(null);
+  /** Train mode: true after the reader placed a guess, until Play. The guess is path[0], so every replay starts there. */
+  let manual = $state(false);
   let path = $state.raw<PathPt[]>(PATH);
   let ui = $state({ ...START, loss: loss(START.w, START.b), acc: accuracy(START.w, START.b), probe: null as null | { x: number; z: number; p: number } });
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
 
-  const phase = $derived(over ? 'manual' : (markerAt(uiT, MK)?.label ?? ''));
+  const phase = $derived(over || manual ? 'manual' : (markerAt(uiT, MK)?.label ?? ''));
+  const g = $derived(grad(ui.w, ui.b));
   const narration = $derived(
-    phase === 'manual' ? 'You set w and b by hand. Press the button to start training from this spot.'
+    phase === 'manual' ? (init.mode === 'train' ? 'You placed a new guess. Press Play (or Descend from here) and training starts from this spot.' : 'You set w and b by hand. Press Play to resume the demo.')
+      : phase === 'slide b' ? 'Only b changes: the curve slides left and right, and the dashed boundary at x = −b/w slides with it. The steepness stays the same.'
+      : phase === 'tilt w' ? 'Only w changes: the curve gets steeper or flatter. Steep means confident far from the boundary; flat means unsure everywhere.'
       : phase === 'a guess' ? 'A first guess: the curve is nearly flat and pushed to the right, so points of both classes get poor probabilities.'
       : phase === 'descend' ? 'Each step nudges (w, b) downhill on the log-loss. The curve shifts and steepens; the dot on the map slides to the minimum.'
-      : phase === 'settled' && init.mode === 'train' ? 'Settled: no direction lowers the average log-loss any further.'
+      : phase === 'settled' && init.mode === 'train' ? (ui.loss - LOSS_MIN > 0.005 ? `All ${STEPS} steps used, and the dot is not at the diamond yet: from this start the valley floor is nearly flat, so the gradient and the steps are tiny. Gradient descent would need many more steps.` : 'Settled: no direction lowers the average log-loss any further.')
       : phase === 'far left' ? 'Far to the left the score is very negative, so the probability is close to 0.'
       : phase === 'near the boundary' ? 'Near the boundary the score is close to 0 and the probability passes through 0.5.'
       : phase === 'far right' ? 'Far to the right the score is large and positive, so the probability is close to 1.'
@@ -42,20 +50,22 @@
       : phase === 'overconfident' ? 'Overconfident: wrong points now sit at probabilities near 0 or 1, and the log-loss climbs again.'
       : '',
   );
-  $effect(() => { if (playing) over = null; speed; wake(); });
+  $effect(() => { if (playing) { over = null; manual = false; } speed; wake(); });
 
   const frame = () => {
     if (over) return { w: over.w, b: over.b, loss: loss(over.w, over.b), k: 0, probe: null };
     return frameAt(t, init.mode, path);
   };
   const snap = () => { const f = frame(); return { w: f.w, b: f.b, loss: f.loss, acc: accuracy(f.w, f.b), probe: f.probe }; };
-  const place = (w: number, b: number) => { over = { w: clamp(w, W_DOM[0], W_DOM[1]), b: clamp(b, B_DOM[0], B_DOM[1]) }; playing = false; ui = snap(); wake(); };
-  function launch() {
-    const s = over ?? { w: ui.w, b: ui.b };
-    path = gdPath(s, LR, STEPS);
-    over = null; t = T_GUESS; playing = true; wake();
-  }
-  function reset() { path = PATH; over = null; t = 0; playing = true; wake(); }
+  const place = (w: number, b: number) => {
+    const s = { w: clamp(w, W_DOM[0], W_DOM[1]), b: clamp(b, B_DOM[0], B_DOM[1]) };
+    // In train mode the guess becomes the start of the descent, so Play, Step and scrubbing all run from it.
+    if (init.mode === 'train') { path = gdPath(s, LR, STEPS); t = 0; uiT = 0; manual = true; }
+    else over = s;
+    playing = false; ui = snap(); wake();
+  };
+  function launch() { manual = false; over = null; t = T_GUESS; playing = true; wake(); }
+  function reset() { path = PATH; over = null; manual = false; t = 0; playing = true; wake(); }
 
   onMount(() => {
     const stage = setupStage(cv, () => render());
@@ -152,6 +162,16 @@
         ctx.setLineDash([4, 4]); ctx.strokeStyle = c.grad.hex; ctx.lineWidth = 1.6; ctx.beginPath();
         ctx.moveTo(L.cw(BEST.w * 0.1), L.cb(BEST.b * 0.1)); ctx.lineTo(L.cw(BEST.w * 3), L.cb(BEST.b * 3)); ctx.stroke(); ctx.setLineDash([]);
       }
+      if (init.showGrad) {
+        // the step gradient descent is about to take: -lr * gradient, drawn from the dot
+        const [gw, gb] = grad(f.w, f.b), x0 = L.cw(f.w), y0 = L.cb(f.b), x1 = L.cw(f.w - LR * gw), y1 = L.cb(f.b - LR * gb);
+        if (Math.hypot(x1 - x0, y1 - y0) > 2) {
+          const ang = Math.atan2(y1 - y0, x1 - x0);
+          ctx.strokeStyle = c.grad.hex; ctx.fillStyle = c.grad.hex; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 - 8 * Math.cos(ang - 0.45), y1 - 8 * Math.sin(ang - 0.45)); ctx.lineTo(x1 - 8 * Math.cos(ang + 0.45), y1 - 8 * Math.sin(ang + 0.45)); ctx.closePath(); ctx.fill();
+        }
+      }
       ctx.restore();
       const bx = L.cw(BEST.w), by = L.cb(BEST.b);
       ctx.strokeStyle = c.accent.hex; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx, by - 7); ctx.lineTo(bx + 7, by); ctx.lineTo(bx, by + 7); ctx.lineTo(bx - 7, by); ctx.closePath(); ctx.stroke();
@@ -179,16 +199,18 @@
 
 <FigureCard title={init.title} role="group" aspect="720 / 400" narrowAspect="360 / 620"
   label="Left: sixteen points of two classes on a line, with the sigmoid curve P(y=1) and a small ring on the curve above each point showing its probability. Right: contour map of the log-loss over steepness w and offset b, with a dot for the current curve, a diamond at the minimum, and the path taken."
-  legend={[{ label: 'class 1', color: '--viz-pos' }, { label: 'class 0', color: '--viz-neg' }, { label: 'P(y=1) curve', color: '--viz-forward', shape: 'line' }, { label: 'error (stem)', color: '--viz-gradient', shape: 'line' }, { label: 'minimum / boundary', color: '--accent' }]}>
+  legend={[{ label: 'class 1', color: '--viz-pos' }, { label: 'class 0', color: '--viz-neg' }, { label: 'P(y=1) curve', color: '--viz-forward', shape: 'line' }, { label: init.showGrad ? 'error (stem) / downhill step' : 'error (stem)', color: '--viz-gradient', shape: 'line' }, { label: 'minimum / boundary', color: '--accent' }]}>
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MK} label="Timeline: the sigmoid model"
-      onSeek={(to) => { over = null; t = to; wake(); }} onStep={(to) => { over = null; t = to >= T ? 0 : to; wake(); }} onReset={reset} />
+      onSeek={(to) => { over = null; manual = false; t = to; wake(); }} onStep={(to) => { over = null; manual = false; t = to >= T ? 0 : to; wake(); }} onReset={reset} />
   {/snippet}
   {#snippet readout()}
     <p class="vals num">w = <b>{f2(ui.w)}</b> · b = <b>{f2(ui.b)}</b> · log-loss = <b>{f2(ui.loss, 3)}</b> · accuracy = <b>{Math.round(ui.acc * 16)}/16</b>
       {#if ui.probe}<span class="base">· at x = {f2(ui.probe.x, 1)}: score z = {f2(ui.probe.z)}, P(y=1) = {f2(ui.probe.p)}</span>
       {:else}<span class="base">· minimum: w = {f2(BEST.w)}, b = {f2(BEST.b)}, log-loss = {f2(LOSS_MIN, 3)}</span>{/if}</p>
+    {#if init.showGrad}<p class="vals num grad">∂L/∂w = <b>{f2(g[0], 3)}</b> · ∂L/∂b = <b>{f2(g[1], 3)}</b>
+      <span class="base">· next step: w → {f2(ui.w - LR * g[0])}, b → {f2(ui.b - LR * g[1])} (step size {LR})</span></p>{/if}
     <p class="say" role="status" aria-live="polite">{narration}</p>
   {/snippet}
   {#snippet footer()}
@@ -205,6 +227,7 @@
   p { margin: 0; }
   .vals { font: 0.95rem var(--font-code); font-variant-numeric: tabular-nums; }
   .vals b { font-weight: 650; color: var(--viz-forward); }
+  .vals.grad b { color: var(--viz-gradient); }
   .base { font-size: 0.8rem; color: var(--text-muted); }
   .say { font: var(--step--1) var(--font-ui); color: var(--text-muted); margin-top: 0.3em; }
   .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-5); padding: var(--s-3) var(--s-4); }

@@ -15,17 +15,19 @@
     inputs?: number;
     /** Where the timeline starts: 'record' (t = 0) or 'backward' (after the tape is recorded). */
     phase?: 'record' | 'backward';
+    /** Reverse mode: loop only the recording, stopping before the backward sweep. */
+    recordOnly?: boolean;
   }
-  let { mode = 'reverse', title = '', showCost = true, inputs = 3, phase: startPhase = 'record' }: Props = $props();
+  let { mode = 'reverse', title = '', showCost = true, inputs = 3, phase: startPhase = 'record', recordOnly = false }: Props = $props();
 
   const uid = $props.id();
-  const init = untrack(() => ({ mode, n: inputs, start: startPhase === 'backward' ? (mode === 'reverse' ? B0 : REC + 0.5) : 0, T: durationOf(mode), markers: markersOf(mode), title: title || (mode === 'reverse' ? 'A tape recorded forward, replayed backward' : 'Forward mode: one sweep per input') }));
+  const init = untrack(() => ({ mode, n: inputs, start: startPhase === 'backward' ? (mode === 'reverse' ? B0 : REC + 0.5) : 0, T: recordOnly && mode === 'reverse' ? B0 : durationOf(mode), markers: recordOnly && mode === 'reverse' ? markersOf(mode).slice(0, 1) : markersOf(mode), title: title || (mode === 'reverse' ? 'A tape recorded forward, replayed backward' : 'Forward mode: one sweep per input') }));
   const tape = buildTape();
   const N = tape.N;
   let seed = $state(0); // index into PARAM_NAMES (forward mode)
   let logN = $state(Math.log10(Math.max(1, init.n)));
   const nIn = $derived(Math.round(10 ** logN));
-  let playing = $state(false), speed = $state(1), uiT = $state(init.start);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(init.start);
   let vertical = $state(false);
   let narration = $state('');
 
@@ -39,6 +41,7 @@
   ];
   const SAY = {
     record: 'Recording: each operation is appended to the tape, with its value, as the forward pass runs.',
+    taped: `Recorded: ${N} rows, each one referring only to rows above it. Nothing has been differentiated yet.`,
     backward: 'Backward: walk the tape from the last row. Each row hands its adjoint to its inputs, times a local derivative, and shared inputs add up.',
     doneR: `Done: one backward sweep gave every gradient at once. ∂L/∂w1 = ${g4(fin[tape.paramRows[0]])}, ∂L/∂w2 = ${g4(fin[tape.paramRows[1]])}, ∂L/∂b = ${g4(fin[tape.paramRows[2]])}.`,
   };
@@ -151,7 +154,7 @@
       tl.paint(t);
       if (now - lastUi > 100 || !playing) {
         lastUi = now; uiT = t;
-        const key = mode === 'forward' ? (fr.phase === 'record' ? 'record' : 'doneF') : fr.phase === 'record' ? 'record' : fr.phase === 'backward' ? 'backward' : t >= init.T - 0.01 || fr.phase === 'done' ? 'doneR' : 'backward';
+        const key = mode === 'forward' ? (fr.phase === 'record' ? 'record' : 'doneF') : fr.phase === 'record' ? 'record' : t < B0 ? 'taped' : fr.phase === 'backward' ? 'backward' : 'doneR';
         if (key !== phase) {
           phase = key;
           narration = key === 'doneF'

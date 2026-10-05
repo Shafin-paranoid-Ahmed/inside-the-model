@@ -15,7 +15,7 @@
   let curves = $state.raw<{ masked: Pt[]; free: Pt[] } | null>(null);
   let failed = $state(false);
   let editPos = $state(untrack(() => editAt));
-  let width = $state(0), playing = $state(false), speed = $state(1), uiT = $state(0);
+  let width = $state(0), playing = $state(false), speed = $state(0.5), uiT = $state(0);
   const narrow = $derived(width > 0 && width < 540);
   const wide = layoutOf(init, false), small = layoutOf(init, true);
   const lay = $derived(narrow ? small : wide);

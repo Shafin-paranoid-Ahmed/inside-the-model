@@ -27,7 +27,7 @@
   let lr = $state(0.3), depth = $state(2), loss = $state<S.Loss>('sq');
   let run = $state.raw<S.BoostRun | null>(isBoost ? S.boostRun({ lr: 0.3, depth: 2, rounds: R, loss: 'sq' }) : null);
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let ui = $state<{ vals: { k: string; v: string }[]; say: string }>({ vals: [], say: '' });
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;

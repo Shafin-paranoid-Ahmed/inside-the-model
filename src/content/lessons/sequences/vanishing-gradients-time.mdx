@@ -11,14 +11,13 @@ status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
 import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+import GradientReach from '../../../components/widgets/GradientReach/GradientReach.svelte';
 
 <Step title="A signal that has to cross many steps">
 
 Take the sentence "The keys that I left on the table in the kitchen **are** missing." To predict "are" (and not "is"), a language model has to remember that the subject, "keys", is plural, ten words earlier. During training the gradient of the loss at "are" has to travel back through ten copies of the recurrent cell to tell the weights that "keys" mattered.
 
-The [last lesson](/learn/sequences/bptt/) showed that this backward trip multiplies the gradient by the same kind of factor at every step. Here we ask what happens when the trip is long. Drag the slider below: it sets how strongly the recurrent weights $W_{hh}$ amplify a vector, and the bars show how much gradient reaches each step. Small values make the early steps starve, and large values make them get far more than the last step.
-
-<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={0.8} folded={false} maxLen={12} loopPhase="backward" showScale showPanel={false} title="How much gradient reaches each step depends on the recurrent weights" />
+The [last lesson](/learn/sequences/bptt/) showed that this backward trip multiplies the gradient by the same kind of factor at every step. Here we ask what happens when the trip is long. That lesson ended on a slider for how strongly the recurrent weights $W_{hh}$ amplify a vector, with bars for how much gradient reaches each step: small values starve the early steps, large values give them far more than the last step. The next step brings that figure back with one addition, a bound that explains the bars.
 
 </Step>
 
@@ -98,7 +97,9 @@ This is the **vanishing gradient problem for recurrent networks**, described by 
 
 In practice a plain tanh RNN learns dependencies of roughly ten to twenty steps and struggles beyond that. Making the sequence longer does not help; it just adds more steps for the gradient to die on.
 
-<RNNUnroller client:visible mode="bptt" sequence="hello world" scale={0.5} folded={false} maxLen={12} loopPhase="backward" showPanel={false} title="s = 0.5: the first step gets 0.03% of the last step’s gradient" />
+The chart below shows this directly. It grows the sequence ("hello world" repeated) from 2 to 30 characters and plots how much of the last step's gradient reaches the first step, on a log scale. At $s = 0.5$ each extra step multiplies that share by about $0.44$, so the line falls straight: $0.033\%$ at 11 steps, about $10^{-10}$ at 30. At $s = 1$ the fall is slower but steady, down to $0.03\%$ at 30. At $s = 1.5$ and $2$ the saturated $\tanh$ from the previous step keeps the share between about $0.2\times$ and $13\times$ the whole way.
+
+<GradientReach client:visible title="Longer sequences: the first step's share of the gradient" />
 
 </Step>
 

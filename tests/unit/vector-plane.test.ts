@@ -56,3 +56,12 @@ describe('frameAt', () => {
     }
   });
 });
+
+it('norm and distance scenes each animate one idea', () => {
+  const n = frameAt(3.2, 'norm'), d = frameAt(3.2, 'distance');
+  expect(n.lenA).toBeCloseTo(norm(DEFAULT_A), 9);
+  expect(n.gap).toBe(0);
+  expect(d.distAB).toBeCloseTo(dist(DEFAULT_A, DEFAULT_B), 9);
+  expect(d.legs).toBe(0);
+  expect(frameAt(5.6, 'norm').legs).toBeCloseTo(0, 9);
+});

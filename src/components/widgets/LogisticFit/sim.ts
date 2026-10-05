@@ -49,10 +49,11 @@ export const BEST = (() => { const p = gdPath(START, 2, 20000); return p[p.lengt
 export const PATH = gdPath();
 
 // ---- timeline ----
-export type Mode = 'train' | 'sweep' | 'steepen';
+/** train: gradient descent. sweep: a probe reads off probabilities. steepen: sharpen with the boundary fixed. knobs: slide b, then tilt w. */
+export type Mode = 'train' | 'sweep' | 'steepen' | 'knobs';
 export const DT = 0.18, T_GUESS = 2;
-const T_SWEEP = 9, T_STEEP = 9, S_LO = 0.1, S_HI = 3;
-export const duration = (m: Mode) => (m === 'train' ? T_GUESS + STEPS * DT + 2.5 : m === 'sweep' ? T_SWEEP : T_STEEP);
+const T_SWEEP = 9, T_STEEP = 9, S_LO = 0.1, S_HI = 3, T_KNOB = 5;
+export const duration = (m: Mode) => (m === 'train' ? T_GUESS + STEPS * DT + 2.5 : m === 'sweep' ? T_SWEEP : m === 'knobs' ? 2 * T_KNOB : T_STEEP);
 const ease = (u: number) => { const c = Math.min(1, Math.max(0, u)); return c * c * (3 - 2 * c); };
 /** Steepen: the fitted (w, b) are both multiplied by s, so the boundary stays put while the curve sharpens. */
 const steepU = (t: number) => ease((t - 1) / 7);
@@ -67,6 +68,7 @@ export const markers = (m: Mode) =>
     ? [{ at: 0, label: 'a guess' }, { at: T_GUESS, label: 'descend' }, { at: T_GUESS + STEPS * DT, label: 'settled' }]
     : m === 'sweep'
       ? [{ at: 0, label: 'far left' }, { at: tBound - 0.7, label: 'near the boundary' }, { at: tBound + 0.7, label: 'far right' }]
+      : m === 'knobs' ? [{ at: 0, label: 'slide b' }, { at: T_KNOB, label: 'tilt w' }]
       : [{ at: 0, label: 'too flat' }, { at: tOne, label: 'best fit' }, { at: T_STEEP - 1.4, label: 'overconfident' }];
 
 export interface Frame {
@@ -83,6 +85,12 @@ export function frameAt(t: number, mode: Mode, path: PathPt[] = PATH): Frame {
     const x = X_DOM[0] + (X_DOM[1] - X_DOM[0]) * Math.min(1, Math.max(0, (t - 0.5) / 8)), z = BEST.w * x + BEST.b;
     const near = Math.abs(x - X_BOUND) < 0.7;
     return { w: BEST.w, b: BEST.b, loss: BEST.loss, k: 0, phase: near ? 'near the boundary' : x < X_BOUND ? 'far left' : 'far right', probe: { x, z, p: sigmoid(z) } };
+  }
+  if (mode === 'knobs') {
+    // one knob at a time, each swinging out to both sides and back to the fit
+    const tt = ((t % (2 * T_KNOB)) + 2 * T_KNOB) % (2 * T_KNOB), first = tt < T_KNOB, swing = Math.sin((2 * Math.PI * (tt % T_KNOB)) / T_KNOB);
+    const w = first ? BEST.w : BEST.w + (swing > 0 ? 2.2 : 1.1) * swing, b = first ? BEST.b + 2.3 * swing : BEST.b;
+    return { w, b, loss: loss(w, b), k: 0, phase: first ? 'slide b' : 'tilt w', probe: null };
   }
   if (mode === 'steepen') {
     const u = steepU(t), s = steepS(u), w = BEST.w * s, b = BEST.b * s;

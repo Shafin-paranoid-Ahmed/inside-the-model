@@ -24,21 +24,21 @@ The fix is simple: never grade the model on data it trained on. Set some data as
 
 <Step title="Training error is optimistic">
 
-Once the dots have settled, the model starts training. It is a degree-13 polynomial fitted by gradient descent (the [previous lesson's](/learn/foundations/overfitting-bias-variance/) flexible model), and the horizontal axis counts training steps. The blue curve is the loss on the training bin. It only ever goes down: gradient descent is built to make exactly this number smaller.
+Once the dots have settled, the model starts training. It is a degree-13 polynomial fitted by gradient descent (the [previous lesson's](/learn/foundations/overfitting-bias-variance/) flexible model), and the horizontal axis counts training steps. The teal curve is the loss on the training bin, and for now it is the only curve. It only ever goes down: gradient descent is built to make exactly this number smaller.
 
 By the end, the training loss is about 0.14. The data was generated with noise that no model can explain, and that sets a **noise floor** of 0.25 (the dotted line, the average squared noise). A training loss well *below* the floor is not skill, it is the model fitting noise it has seen. The training loss is therefore an optimistic report card.
 
-<DataSplitter client:visible lockSplit startAt={2.5} title="Training loss keeps falling, even below the noise floor" />
+<DataSplitter client:visible lockSplit show="train" startAt={2.5} title="Training loss keeps falling, even below the noise floor" />
 
 </Step>
 
 <Step title="The validation set: an honest score you may look at">
 
-The orange curve is the loss on the **validation set**: examples the model never trains on, used to measure progress and to choose settings. It first falls along with the training loss, because the model really is learning the pattern. Then it turns upward while the training loss keeps falling. The model has started memorizing the training points' noise, which does not carry over to new points.
+The indigo curve, new in this figure, is the loss on the **validation set**: examples the model never trains on, used to measure progress and to choose settings. It first falls along with the training loss, because the model really is learning the pattern. Then it turns upward while the training loss keeps falling. The model has started memorizing the training points' noise, which does not carry over to new points.
 
 Everything you can tune, the number of training steps, the model size, the learning rate, the strength of regularization, is called a **hyperparameter**, and you choose it by watching validation loss. Here the choice is how long to train. **Early stopping** means keeping the model from the step where validation loss is lowest. Watch the timeline pass the dashed marker: for the default split that is around epoch 18, with a validation loss near 0.42, while by the end it has climbed to about 0.53.
 
-<DataSplitter client:visible lockSplit startAt={2.5} title="Validation loss bottoms out: the early-stopping point" />
+<DataSplitter client:visible lockSplit show="val" startAt={2.5} title="Validation loss bottoms out: the early-stopping point" />
 
 <details>
 <summary>Show the code</summary>
@@ -70,9 +70,9 @@ Drag the two handles on the bin bar, or use the sliders, and the model retrains 
 
 The validation set has a weakness: because you use it to choose, your choices slowly fit *it* too. Pick among enough options by their validation score and the winner will look better than it really is, partly by luck. So keep a third set, the **test set**, locked away. You look at it once, after every choice is made, to report the final score.
 
-In the figure the test bin is dashed and marked sealed. Once the stopping point has been chosen by validation, the test score is read once and printed under the figure next to the score on a large fresh sample (600 points standing in for the real world). In the default split the test score is about 0.36 and the fresh-data score about 0.30. They differ because 40 test points are few and noisy, but nothing pushed the test score in a flattering direction: it is an honest, if noisy, estimate.
+In the figure the test bin is dashed and marked sealed. Nothing about it is shown while the model trains. Once the timeline passes the stopping point chosen by validation, the test score is read once and appears as an orange square on the dashed line. Next to it is a ring: the same model's score on a large fresh sample (600 points standing in for the real world). Both numbers are also printed under the figure. In the default split the test score is about 0.36 and the fresh-data score about 0.30. They differ because 40 test points are few and noisy, but nothing pushed the test score in a flattering direction: it is an honest, if noisy, estimate.
 
-<DataSplitter client:visible lockSplit startAt={2.5} title="Choose with validation, report once on test" />
+<DataSplitter client:visible lockSplit show="test" startAt={2.5} title="Choose with validation, report once on test" />
 
 </Step>
 

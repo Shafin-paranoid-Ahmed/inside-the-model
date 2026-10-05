@@ -28,7 +28,7 @@
   let sFloor = $state(untrack(() => floor)), sSwap = $state(untrack(() => swap)), sPoints = $state(untrack(() => fitPoints));
   let sBudget = $state(untrack(() => budget)), sFit = $state<PubFit>(untrack(() => fit));
   let hover = $state(-1);
-  let playing = $state(false), speed = $state(1), uiT = $state(0), width = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0), width = $state(0);
   const narrow = $derived(width > 0 && width < 516);
 
   const settings: Settings = $derived({ floor: sFloor, swap: sSwap, fitPoints: sPoints, budget: sBudget, pubFit: sFit });

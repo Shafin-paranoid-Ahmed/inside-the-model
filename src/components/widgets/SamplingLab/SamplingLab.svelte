@@ -38,7 +38,7 @@
 
   let w: Weights | null = null;
   let ready = $state(false), failed = $state(false);
-  let playing = $state(false), speed = $state(1), uiT = $state(0), narrow = $state(false);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0), narrow = $state(false);
   let narration = $state(''), extra = $state(''), phaseName = $state('');
   let kNow = $state(5), pNow = $state(0.9);
   let markers = $state.raw<Marker[]>(markersOf(M));

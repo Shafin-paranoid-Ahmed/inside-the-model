@@ -34,7 +34,7 @@ $$P(X=1) + P(X=0) = 1.$$
 
 Here the coin is biased. Drag the slider for $p = P(\text{heads})$. The dashed black lines mark the true probabilities, $p$ for heads and $1-p$ for tails. The bars are what we *observe*, and they chase the dashed lines as samples arrive. A distribution over two outcomes like this one is called a **Bernoulli** distribution.
 
-<ProbabilityLab client:visible p={0.3} title="A biased coin: the bars chase the true probabilities" />
+<ProbabilityLab client:visible p={0.3} mean={false} title="A biased coin: the bars chase the true probabilities" />
 
 In real models the outcomes are rarely two. A classifier outputs one probability per class, and they add up to 1. That is what [softmax](/learn/foundations/softmax-cross-entropy/) produces.
 

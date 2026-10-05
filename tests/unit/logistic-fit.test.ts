@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { POINTS, BEST, START, PATH, STEPS, loss, grad, sigmoid, accuracy, gdPath, frameAt, duration, markers, X_DOM } from '../../src/components/widgets/LogisticFit/sim';
+import { POINTS, BEST, START, PATH, STEPS, loss, grad, sigmoid, accuracy, gdPath, frameAt, duration, markers, X_DOM, W_DOM, B_DOM } from '../../src/components/widgets/LogisticFit/sim';
 
 describe('LogisticFit sim', () => {
   it('sigmoid basics and stability', () => {
@@ -47,5 +47,20 @@ describe('LogisticFit sim', () => {
   it('custom start descends', () => {
     const p = gdPath({ w: 3, b: 2 });
     expect(p[STEPS].loss).toBeLessThan(p[0].loss);
+  });
+  it("knobs mode moves only b, then only w, and stays on the map", () => {
+    const T = duration("knobs");
+    for (let t = 0; t < T; t += 0.05) {
+      const f = frameAt(t, "knobs");
+      expect(f.w).toBeGreaterThanOrEqual(W_DOM[0]); expect(f.w).toBeLessThanOrEqual(W_DOM[1]);
+      expect(f.b).toBeGreaterThanOrEqual(B_DOM[0]); expect(f.b).toBeLessThanOrEqual(B_DOM[1]);
+      if (t < T / 2) expect(f.w).toBeCloseTo(BEST.w); else expect(f.b).toBeCloseTo(BEST.b);
+    }
+    expect(markers("knobs").map((m) => m.label)).toEqual(["slide b", "tilt w"]);
+  });
+  it("training replays from a placed guess and still reaches the minimum", () => {
+    const s = { w: 3.5, b: 2.5 }, p = gdPath(s);
+    expect(frameAt(0, "train", p).w).toBeCloseTo(s.w);
+    expect(frameAt(duration("train"), "train", p).loss).toBeLessThan(loss(s.w, s.b));
   });
 });

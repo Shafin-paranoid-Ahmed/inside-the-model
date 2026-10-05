@@ -40,13 +40,21 @@ export function sizes(trainFrac: number, valFrac: number): Split {
   return { nTrain, nVal, nTest: N - nTrain - nVal };
 }
 
+/** Features of every point of a dataset, row-major (n × DEG), computed once: mse runs ~2,000 times per training run. */
+const phiCache = new Map<Data, Float64Array>();
+const phiOf = (d: Data): Float64Array => {
+  let m = phiCache.get(d);
+  if (!m) { m = new Float64Array(d.x.length * DEG); for (let i = 0; i < d.x.length; i++) m.set(features(d.x[i]), i * DEG); phiCache.set(d, m); }
+  return m;
+};
+
 const mse = (w: Float64Array, d: Data, idx?: number[]): number => {
-  const n = idx ? idx.length : d.x.length;
+  const n = idx ? idx.length : d.x.length, phi = phiOf(d);
   let s = 0;
   for (let q = 0; q < n; q++) {
-    const i = idx ? idx[q] : q, f = features(d.x[i]);
+    const i = idx ? idx[q] : q, o = i * DEG;
     let p = 0;
-    for (let k = 0; k < DEG; k++) p += w[k] * f[k];
+    for (let k = 0; k < DEG; k++) p += w[k] * phi[o + k];
     s += (p - d.y[i]) ** 2;
   }
   return s / n;

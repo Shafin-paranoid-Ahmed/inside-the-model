@@ -16,7 +16,7 @@
   const init = untrack(() => mode);
   const needsModel = init === 'shuffle' || init === 'ablate' || init === 'learned';
 
-  let width = $state(0), playing = $state(false), speed = $state(1), uiT = $state(0);
+  let width = $state(0), playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let weights = $state.raw<Weights | null>(null), failed = $state(false);
   let seed = $state(0);
   let manual = $state<{ m: number; n: number } | null>(null);

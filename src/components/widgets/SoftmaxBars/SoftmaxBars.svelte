@@ -10,17 +10,17 @@
 
   interface Props {
     title?: string;
-    /** 'softmax': scores and probabilities. 'loss': adds the true class and cross-entropy. 'grad': adds the gradient bars. */
+    /** 'softmax': scores and probabilities ('swing' / 'temp' play only its first / second half). 'loss': adds the true class and cross-entropy. 'grad': adds the gradient bars. */
     mode?: Mode;
     /** Index of the true class (0 to 3). */
     truth?: number;
   }
   let { title = '', mode = 'softmax', truth: truth0 = 2 }: Props = $props();
   const init = untrack(() => ({ mode, title: title || 'Scores in, probabilities out', truth: truth0 }));
-  const T = duration(init.mode), MK = markers(init.mode), hasLoss = init.mode !== 'softmax', hasGrad = init.mode === 'grad';
+  const T = duration(init.mode), MK = markers(init.mode), hasLoss = init.mode === 'loss' || init.mode === 'grad', hasGrad = init.mode === 'grad';
 
   const uid = $props.id();
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let truth = $state(init.truth);
   /** Values the user set by hand; null while the timeline drives them. */
   let over = $state<{ z: number[]; tau: number } | null>(null);

@@ -5,7 +5,7 @@
     /** Playhead in seconds. Parent writes it at most ~10x/s (the canvas keeps its own copy). */
     t: number;
     playing: boolean;
-    /** Speed multiplier: 0.5 / 1 / 2. */
+    /** Speed multiplier: 0.25 / 0.5 (default, owner choice 2026-10-05) / 1 / 2. */
     speed?: number;
     duration: number;
     /** Labeled phase ticks on the scrubber; click to seek. */
@@ -19,7 +19,7 @@
     /** Shows a Reset button. */
     onReset?: () => void;
   }
-  let { t = $bindable(0), playing = $bindable(false), speed = $bindable(1), duration, markers = [], label = 'Timeline', onSeek, onStep, onReset }: Props = $props();
+  let { t = $bindable(0), playing = $bindable(false), speed = $bindable(0.5), duration, markers = [], label = 'Timeline', onSeek, onStep, onReset }: Props = $props();
 
   const clamp = (v: number) => Math.min(Math.max(v, 0), duration);
   const shown = $derived(clamp(t));
@@ -69,9 +69,10 @@
   <p class="tro num">t = <span>{shown.toFixed(2)}</span> s <span class="phn">{cur?.label ?? ''}</span></p>
   <label class="spd">Speed
     <select bind:value={speed}>
-      <option value={0.5}>Slow 0.5×</option>
-      <option value={1}>Normal</option>
-      <option value={2}>Fast 2×</option>
+      <option value={0.25}>0.25×</option>
+      <option value={0.5}>0.5× (default)</option>
+      <option value={1}>1×</option>
+      <option value={2}>2×</option>
     </select>
   </label>
   {#if onStep}

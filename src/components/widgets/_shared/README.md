@@ -32,7 +32,7 @@ export const frameAt = (t: number) => ({ v: t < 3 ? t / 3 : 1 - (t - 3) / 3, pha
   import { T, MARKERS, frameAt } from './sim';
 
   let { title = 'A pulse' }: { title?: string } = $props();
-  let playing = $state(false), speed = $state(1), uiT = $state(0); // uiT: readout only, ~10x/s
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0); // uiT: readout only, ~10x/s
   let t = 0;                                   // truth for the canvas: plain variable
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>, wake = () => {};
   $effect(() => { playing; speed; wake(); });  // any control change restarts an idle loop

@@ -54,7 +54,7 @@
   let tr = $state.raw<Trained | null>(null);
   let failed = $state(false);
   let sel = $state(untrack(() => ({ target, c1: channel1, c2: channel2, image })));
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let ui = $state.raw({ a: '', b: '', say: '' });
   let t = 0, wake = () => {}, prog = progress;
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;

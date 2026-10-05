@@ -1,7 +1,7 @@
-# AI Learner — Project Idea & Specification
+# Inside the Model — Project Idea & Specification
 
-> **Working title:** AI Learner (final name TBD — see [Open Questions](#15-open-questions))
-> **Status:** Planning. No code yet.
+> **Name:** Inside the Model (chosen 2026-10-05; live at https://inside-model.vercel.app until a custom domain exists)
+> **Status:** In build. Days 1–11 drafted; see `BUILDING.md` §1 for the live status table.
 > **Owner:** Shafin Ahmed
 > **Last updated:** 2026-09-29
 
@@ -494,7 +494,7 @@ Flagship lessons (M2) come before filling in easier lessons because they are the
 
 ## 15. Open Questions
 
-- **Name & domain.** "AI Learner" is a placeholder.
+- **Domain.** The name is Inside the Model (2026-10-05). A custom domain is still needed; the site runs on `inside-model.vercel.app` until then.
 - **License.** Suggested: code under MIT, lesson content under CC BY-NC-SA 4.0.
 - **Analytics.** None, or a privacy-friendly option (e.g. Vercel Analytics without cookies)?
 - **Languages.** English only at launch; i18n later?

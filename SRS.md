@@ -1,10 +1,10 @@
-# Software Requirements Specification — AI Learner
+# Software Requirements Specification — Inside the Model
 
 **Document status:** Draft, refreshed from current source  
 **Version:** 0.4  
 **Date:** 2026-10-05  
 **Product owner:** Shafin Ahmed  
-**Working product name:** AI Learner  
+**Product name:** Inside the Model  
 **System type:** Static interactive educational website  
 **Baseline note:** Inventory and implementation states refreshed from the working tree on 2026-10-05. Earlier wave results, including Day 10 acceptance, are attributed to their recorded checkpoints; they are not fresh validation of subsequent edits. Counts and completion states must be refreshed before a release is declared.
 
@@ -12,7 +12,7 @@
 
 ## 1. Purpose
 
-This Software Requirements Specification (SRS) defines the intended behavior, architecture, interfaces, content model, constraints, quality requirements, and acceptance criteria for AI Learner.
+This Software Requirements Specification (SRS) defines the intended behavior, architecture, interfaces, content model, constraints, quality requirements, and acceptance criteria for Inside the Model.
 
 It is intended to:
 
@@ -50,7 +50,7 @@ An observed implementation shall not silently redefine a stated product requirem
 
 ## 2. Product overview
 
-AI Learner is a free, no-login website that teaches how artificial intelligence works through interactive explanations of real mechanisms. It is intended to take a motivated learner from introductory ideas to modern AI topics through a fifteen-day path while also serving as a quick refresher for experienced readers.
+Inside the Model is a free, no-login website that teaches how artificial intelligence works through interactive explanations of real mechanisms. It is intended to take a motivated learner from introductory ideas to modern AI topics through a fifteen-day path while also serving as a quick refresher for experienced readers.
 
 The site uses small, deterministic models that run in the browser. It emphasizes direct manipulation, visible numerical state, technically honest simplifications, and a progression from intuition to visualization, mathematics, and code.
 

@@ -87,7 +87,7 @@ The **partial derivative** $\partial f/\partial x$ is the ordinary slope you get
 
 Watch the two arrows grow, one after the other.
 
-<SlopeExplorer client:visible lockMode mode="gradient" title="One partial derivative per knob" />
+<SlopeExplorer client:visible lockMode mode="gradient" part="partials" title="One partial derivative per knob" />
 
 <details>
 <summary>Show the math</summary>
@@ -108,7 +108,7 @@ In the figure the two partial arrows slide together into the magenta diagonal, $
 
 Uphill means the opposite direction is downhill. So a ball that repeatedly steps against the gradient rolls to the bottom: new position = old position $- \eta\,\nabla f$. With $\eta = 0.2$ the ball starts at height 4.25 and after 10 steps is at about 0.02. The small chart shows its height dropping at every step. Drag the ring to start it somewhere else: it always goes down. This is exactly gradient descent, the subject of [the gradient descent lesson](/learn/foundations/gradient-descent/).
 
-<SlopeExplorer client:visible lockMode mode="gradient" title="Stepping against the gradient always goes downhill" />
+<SlopeExplorer client:visible lockMode mode="gradient" part="descent" title="Stepping against the gradient always goes downhill" />
 
 <details>
 <summary>Show the code</summary>

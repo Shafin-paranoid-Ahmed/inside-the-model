@@ -43,7 +43,7 @@ describe('shipped model', () => {
     expect(COUNTS.map((k) => accuracy(w, k))).toEqual([0.124, 1, 0.994, 1, 1, 1]);
     expect(accuracy(w, 4, { random: true })).toBe(0.14);
     expect(FORMATS.map((f) => accuracy(w, 4, { format: f.id }))).toEqual([1, 0.302, 0.262, 0.168, 0.232]);
-  });
+  }, 15_000); // ~12 × 500 forward passes; close to the 5 s default on a loaded machine
   test('attention rows are distributions; layer 2 looks at the query letter', () => {
     const p = predict(w, DEFAULT_PROMPT);
     expect(p.weights).toHaveLength(4);

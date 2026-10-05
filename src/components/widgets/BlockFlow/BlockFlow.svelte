@@ -14,7 +14,7 @@
   const init = untrack(() => mode), L1 = untrack(() => layer), qWord = untrack(() => query), sent = untrack(() => sentence);
   const needsModel = init !== 'norm' && init !== 'count';
 
-  let width = $state(0), playing = $state(false), speed = $state(1), uiT = $state(0);
+  let width = $state(0), playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let data = $state<Data | null>(null), failed = $state(false);
   let custom = $state<{ d: number; L: number } | null>(null);
   const narrow = $derived(width > 0 && width < 540);

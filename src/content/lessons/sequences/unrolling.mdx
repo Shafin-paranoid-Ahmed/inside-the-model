@@ -11,6 +11,7 @@ status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
 import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+import SeqChart from '../../../components/widgets/SeqChart/SeqChart.svelte';
 
 <Step title="A loop hides time">
 
@@ -85,7 +86,9 @@ It differs from the MLPs of earlier days in three ways:
 
 Two practical consequences follow. **Memory:** to run backpropagation later, every hidden state and every $\tanh$ input must be stored, so memory grows in proportion to $T$. **Gradient paths:** the influence of the first input on a loss at the last step travels through $T-1$ copies of the cell. The next three lessons are about what happens on that long path.
 
-<RNNUnroller client:visible sequence="twelve steps" folded={false} maxLen={12} showPanel={false} loopPhase="forward" title="Twelve characters make a twelve-layer network" />
+The chart below gives a first look at that path on "twelve steps". Each bar asks: if the state after this character were nudged a little, how much would the final state move? For the last steps the answer is close to one for one. Going back, every copy of the cell in between shrinks the effect a little, and a nudge to the very first state reaches the end at only $0.23$ times its size.
+
+<SeqChart client:visible kind="position" title="Twelve layers deep: how much each step can still move the end" />
 
 <details>
 <summary>Show the code</summary>

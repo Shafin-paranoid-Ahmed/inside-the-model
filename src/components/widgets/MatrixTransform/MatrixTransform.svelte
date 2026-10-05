@@ -24,9 +24,11 @@
     x?: Vec2;
     /** Hide the vector x and its image. */
     hideVector?: boolean;
+    /** Shapes mode: starting sizes [m, n, q, p] of the left (m×n) and right (q×p) matrices. */
+    dims?: [number, number, number, number];
   }
-  let { title = 'A matrix bends the plane', mode = 'transform', preset = 'shear', firstPreset = 'rotate', x: x0 = [1.5, 1], hideVector = false }: Props = $props();
-  const init = untrack(() => ({ mode, preset, firstPreset, x: x0, hide: hideVector }));
+  let { title = 'A matrix bends the plane', mode = 'transform', preset = 'shear', firstPreset = 'rotate', x: x0 = [1.5, 1], hideVector = false, dims: dims0 = [2, 3, 3, 4] }: Props = $props();
+  const init = untrack(() => ({ mode, preset, firstPreset, x: x0, hide: hideVector, dims: dims0 }));
   const MODE = init.mode;
   const plane = MODE !== 'shapes';
   const showVec = plane && MODE !== 'compose' && !init.hide;
@@ -37,7 +39,7 @@
   let xv = $state<Vec2>([...init.x]);
   // shapes state: dims of the two factors and their (4×4) entries
   let baseA = $state(makeGrid(11)), baseB = $state(makeGrid(23));
-  let dims = $state({ m: 2, n: 3, q: 3, p: 4 });
+  let dims = $state({ m: init.dims[0], n: init.dims[1], q: init.dims[2], p: init.dims[3] });
 
   const first = $derived<Mat2>(order === 'AB' ? B : A);
   const second = $derived<Mat2>(order === 'AB' ? A : B);
@@ -46,7 +48,7 @@
   const Tdur = $derived(plane ? duration(MODE) : shapesDuration(dims));
   const MK = $derived(plane ? markers(MODE) : shapesMarkers(dims));
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let t = 0, wake = () => {}, dragging = false;
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
 

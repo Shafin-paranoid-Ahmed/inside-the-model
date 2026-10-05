@@ -10,7 +10,7 @@
   const uid = $props.id();
   let config = $state(defaultConfig(untrack(() => mode)));
   let selectedNorm = $state<Norm>('layer'), methodChanged = $state(false);
-  let uiT = $state(0), playing = $state(false), speed = $state(1);
+  let uiT = $state(0), playing = $state(false), speed = $state(0.5);
   let t = 0;
   let stage: HTMLDivElement, tl: Timeline, wake = $state<() => void>(() => {});
   const normForMode = (value: Mode): Norm => value === 'batch' || value === 'inference' ? 'batch' : value === 'rms' ? 'rms' : 'layer';

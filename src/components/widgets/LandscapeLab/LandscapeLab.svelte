@@ -15,7 +15,7 @@
   let coordinateScale = $state(4);
   let alphaMax = $state(0.5);
   let playing = $state(false);
-  let speed = $state(1);
+  let speed = $state(0.5);
   let uiT = $state(0);
   let t = 0;
   let wake = () => {};

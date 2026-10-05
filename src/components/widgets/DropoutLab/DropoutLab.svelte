@@ -11,7 +11,7 @@
   const uid = $props.id();
   let keep = $state(0.5);
   let task = $state<AugmentTask>('presence');
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
   let t = 0, wake = () => {};
   let colors: ReturnType<typeof readColors>;

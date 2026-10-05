@@ -23,9 +23,13 @@
     lockMode?: boolean;
     /** Hide the curve picker. */
     lockFn?: boolean;
+    /** Gradient mode: 'partials' plays only the two partial arrows; 'descent' starts there and plays the gradient and the ball. */
+    part?: 'all' | 'partials' | 'descent';
   }
-  let { title = 'Slope: from secant to tangent', mode: mode0 = 'secant', fn: fn0 = 'square', x0: x00, lockMode = false, lockFn = false }: Props = $props();
-  const init = untrack(() => ({ mode: mode0, fn: fn0, x0: x00, lockMode, lockFn }));
+  let { title = 'Slope: from secant to tangent', mode: mode0 = 'secant', fn: fn0 = 'square', x0: x00, lockMode = false, lockFn = false, part = 'all' }: Props = $props();
+  const init = untrack(() => ({ mode: mode0, fn: fn0, x0: x00, lockMode, lockFn, part }));
+  /** Gradient-timeline time for widget time t (the parts are windows onto the full gradient timeline). */
+  const gt = (t: number) => (init.part === 'partials' ? Math.min(t, 4) : init.part === 'descent' ? t + 4 : t);
   const uid = $props.id();
 
   let mode = $state<'secant' | 'gradient'>(init.mode);
@@ -33,23 +37,26 @@
   const F = $derived(FNS[fnId]);
   let x0 = $state(init.x0 ?? FNS[init.fn].x0);
   let start = $state<[number, number]>([...GRAD_START]);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let t = 0, wake = () => {}, dragging = false;
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
 
-  const T = $derived(mode === 'secant' ? SECANT_T : GRAD_T);
-  const MK = $derived(mode === 'secant' ? secantMarkers() : gradMarkers());
+  const T = $derived(mode === 'secant' ? SECANT_T : init.part === 'partials' ? 5.5 : init.part === 'descent' ? GRAD_T - 4 : GRAD_T);
+  const MK = $derived(mode === 'secant' ? secantMarkers()
+    : init.part === 'partials' ? gradMarkers().slice(0, 2)
+    : init.part === 'descent' ? gradMarkers().slice(2).map((m) => ({ ...m, at: m.at - 4 }))
+    : gradMarkers());
   const path = $derived(ballPath(start));
   const sf = $derived(secantAt(uiT, F, x0));
-  const gf = $derived(gradAt(uiT, start, path));
+  const gf = $derived(gradAt(gt(uiT), start, path));
   const narration = $derived(
     mode === 'secant'
       ? sf.h > 0.5 ? 'A wide gap: the secant joins two far-apart points, so its slope is only a rough guess.'
         : sf.h > 0.005 ? 'The second point slides toward the first and the secant rotates toward the tangent.'
         : 'The gap is tiny: the secant and the tangent are the same line, and the slope has settled on the derivative.'
-      : uiT < 2 ? 'Nudge x only: the partial derivative in x is the slope along the horizontal direction.'
-        : uiT < 4 ? 'Nudge y only: the partial derivative in y is the slope along the vertical direction.'
-        : uiT < 6 ? 'Put the two partials side by side and the diagonal is the gradient, pointing straight uphill.'
+      : gt(uiT) < 2 ? 'Nudge x only: the partial derivative in x is the slope along the horizontal direction.'
+        : gt(uiT) < 4 ? 'Nudge y only: the partial derivative in y is the slope along the vertical direction.'
+        : gt(uiT) < 6 ? 'Put the two partials side by side and the diagonal is the gradient, pointing straight uphill.'
         : 'The ball steps against the gradient, and each step lands lower on the bowl.',
   );
 
@@ -157,7 +164,7 @@
     }
 
     function renderGrad(L: Lay) {
-      const { ctx, c } = stage, px = X(L), py = Y(L), b = L.box, fr = gradAt(t, start, path);
+      const { ctx, c } = stage, px = X(L), py = Y(L), b = L.box, fr = gradAt(gt(t), start, path);
       ctx.strokeStyle = c.rule.hex; ctx.lineWidth = 1; ctx.strokeRect(b.l, b.t, b.r - b.l, b.b - b.t);
       ctx.save(); ctx.beginPath(); ctx.rect(b.l, b.t, b.r - b.l, b.b - b.t); ctx.clip();
       contours(L).forEach((p, i, a) => { ctx.strokeStyle = c.s4.hex; ctx.globalAlpha = 0.3 + 0.5 * (1 - i / a.length); ctx.lineWidth = 1.3; ctx.stroke(p); });
@@ -185,6 +192,18 @@
       ctx.fillStyle = c.fwd.hex; if (fr.ex > 0.6 && fr.ball.alpha < 0.5) ctx.fillText('∂f/∂x', ax + 4, ay + 16);
       ctx.fillStyle = c.pos.hex; if (fr.ey > 0.6 && fr.slide < 0.5) ctx.fillText('∂f/∂y', ax + 10, ay + dy * fr.ey * 0.6);
       ctx.fillStyle = c.grad.hex; if (fr.eg > 0.7 && fr.ball.alpha < 0.5) ctx.fillText('∇f', ax + dx * 0.55 - 28, ay + dy * 0.55);
+      if (init.part === 'partials') {
+        // side: the two slopes as bars, growing with their arrows
+        const S = sidePanel(L, 'The two slopes at the point', ''), top = Math.max(4, Math.abs(fr.gx), Math.abs(fr.gy)) * 1.1;
+        const sy = scale(0, top, S.yb, S.yt), bw = Math.min(56, (S.x1 - S.x0) / 5);
+        ([[fr.gx * fr.ex, '∂f/∂x', c.fwd.hex], [fr.gy * fr.ey, '∂f/∂y', c.pos.hex]] as const).forEach(([v, nm, col], i) => {
+          const cx = S.x0 + (S.x1 - S.x0) * (i ? 0.7 : 0.3), y = sy(Math.max(0, v)), y0 = sy(Math.min(0, v));
+          ctx.fillStyle = col; ctx.globalAlpha = 0.85; ctx.fillRect(cx - bw / 2, y, bw, Math.max(1, y0 - y)); ctx.globalAlpha = 1;
+          ctx.font = stage.mono(12.5, 600); ctx.fillStyle = c.text.hex; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(f2(v), cx, y - 4);
+          ctx.font = stage.body(12.5, true); ctx.fillStyle = col; ctx.textBaseline = 'top'; ctx.fillText(nm, cx, S.yb + 6);
+        });
+        return;
+      }
       // side: height of the ball against step
       const S = sidePanel(L, 'Height of the ball at each step', 'step');
       const hs = path.map((q) => bowl(q[0], q[1])), sx = scale(0, N_STEPS, S.x0, S.x1), sy = scale(0, hs[0] * 1.05 + 1e-9, S.yb, S.yt);
@@ -239,7 +258,7 @@
     : 'Left: contour map of a bowl with arrows for the two partial derivatives at a point, combining into the gradient arrow that points uphill, and a ball stepping downhill. Right: the height of the ball at each step.'}
   legend={mode === 'secant'
     ? [{ label: 'point', color: '--accent' }, { label: 'secant', color: '--viz-forward', shape: 'line' }, { label: 'tangent', color: '--viz-gradient', shape: 'line' }]
-    : [{ label: '∂f/∂x', color: '--viz-forward', shape: 'line' }, { label: '∂f/∂y', color: '--viz-pos', shape: 'line' }, { label: 'gradient', color: '--viz-gradient', shape: 'line' }, { label: 'ball', color: '--accent' }]}>
+    : [{ label: '∂f/∂x', color: '--viz-forward', shape: 'line' }, { label: '∂f/∂y', color: '--viz-pos', shape: 'line' }, ...(init.part === 'partials' ? [] : [{ label: 'gradient', color: '--viz-gradient', shape: 'line' as const }, { label: 'ball', color: '--accent' }])]}>
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MK}
@@ -250,7 +269,7 @@
     {#if mode === 'secant'}
       <p class="vals num">h = {f2(sf.h, 3)} · secant slope {f2(sf.secant, 3)} · true slope f′({f2(x0)}) = {f2(sf.tangent, 3)} · gap {f2(sf.gap, 3)}</p>
     {:else}
-      <p class="vals num">at ({f2(start[0])}, {f2(start[1])}): ∂f/∂x = {f2(gf.gx)} · ∂f/∂y = {f2(gf.gy)} · |∇f| = {f2(Math.hypot(gf.gx, gf.gy))} · ball step {gf.ball.k} of {N_STEPS} (η = {LR}) · height {f2(gf.ball.f, 3)}</p>
+      <p class="vals num">at ({f2(start[0])}, {f2(start[1])}): ∂f/∂x = {f2(gf.gx)} · ∂f/∂y = {f2(gf.gy)}{#if init.part !== 'partials'}&nbsp;· |∇f| = {f2(Math.hypot(gf.gx, gf.gy))} · ball step {gf.ball.k} of {N_STEPS} (η = {LR}) · height {f2(gf.ball.f, 3)}{/if}</p>
     {/if}
     <p class="say" role="status" aria-live="polite">{narration}</p>
   {/snippet}

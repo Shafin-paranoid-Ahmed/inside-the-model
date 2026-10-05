@@ -7,27 +7,29 @@
   import { scale, splitPanels, clamp } from '../F1Shared/plot';
   import F1Slider from '../F1Shared/F1Slider.svelte';
   import {
-    points, CLASS_PTS, sigmoid, logLoss1, residuals, lossValue, curve, W_RANGE, B_RANGE, duration, markers, frameAt,
-    type Task, type Loss, type Frame,
+    points, CLASS_PTS, sigmoid, logLoss1, pCorrect, residuals, lossValue, curve, W_RANGE, B_RANGE, duration, markers, frameAt, taskOf,
+    type View, type Loss, type Frame,
   } from './sim';
 
   interface Props {
     title?: string;
-    /** 'regression': a line through points, squared or absolute error. 'classification': a sigmoid and log loss. */
-    task?: Task;
-    /** Regression loss shown as squares and on the curve. */
-    loss?: 'mse' | 'mae';
+    /** Which job this figure does; each lesson figure gets its own so no two repeat each other. */
+    view?: View;
   }
-  let { title = '', task = 'regression', loss = 'mse' }: Props = $props();
-  const init = untrack(() => ({ task, loss, title: title || (task === 'regression' ? 'Drag the line: how wrong is it?' : 'Drag the curve: how surprised is the model?') }));
-  const T = duration(init.task), MK = markers(init.task), isReg = init.task === 'regression';
+  let { title = '', view = 'squares' }: Props = $props();
+  const V = untrack(() => view), task = taskOf(V), isReg = task === 'regression';
+  const init = untrack(() => ({ title: title || (isReg ? 'Drag the line: how wrong is it?' : 'Drag the curve: how surprised is the model?') }));
+  const T = duration(V), MK = markers(V);
+  /** Loss-vs-knob chart (regression) or loss-vs-probability chart (classification) beside the plot. */
+  const hasSide = V === 'curve' || V === 'outlier' || V === 'classify';
+  const hasToggle = V === 'squares' || V === 'outlier';
 
   const uid = $props.id();
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
-  let kind = $state<Loss>(isReg ? init.loss : 'logloss');
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
+  let kind = $state<Loss>(isReg ? 'mse' : 'logloss');
   /** Knobs the user set by hand; null while the timeline drives them. */
   let over = $state<{ w: number; b: number } | null>(null);
-  let ui = $state<Frame>(frameAt(init.task, 0));
+  let ui = $state<Frame>(frameAt(V, 0));
   let outOn = $state(false);
   let t = 0, amtCur = 0, amtTgt = 0, drag = -1, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
@@ -35,17 +37,29 @@
   const phase = $derived(over ? 'manual' : (markerAt(uiT, MK)?.label ?? ''));
   const cur = $derived({ mse: lossValue('mse', ui.w, ui.b, ui.amt), mae: lossValue('mae', ui.w, ui.b, ui.amt), log: lossValue('logloss', ui.w, ui.b, 0) });
   const base = $derived(ui.amt > 0.02 ? { mse: lossValue('mse', ui.w, ui.b, 0), mae: lossValue('mae', ui.w, ui.b, 0) } : null);
+  const res = $derived(isReg ? residuals(ui.w, ui.b, points(ui.amt)) : []);
+  const best = $derived(V === 'curve' ? curve('mse', ui.b, 0).best : 0);
+  /** Classification: share of the total loss carried by points on the wrong side of 0.5. */
+  const wrong = $derived.by(() => {
+    if (isReg) return { n: 0, share: 0 };
+    const ls = CLASS_PTS.map((p) => { const pc = pCorrect(p.label, sigmoid(ui.w * p.x + ui.b)); return { pc, l: logLoss1(p.label, sigmoid(ui.w * p.x + ui.b)) }; });
+    const tot = ls.reduce((s, q) => s + q.l, 0), bad = ls.filter((q) => q.pc < 0.5);
+    return { n: bad.length, share: tot > 0 ? bad.reduce((s, q) => s + q.l, 0) / tot : 0 };
+  });
   const narration = $derived(
-    phase === 'manual' ? 'You are moving the model by hand.' : !isReg ? 'The curve sharpens: confident correct answers cost little, confident mistakes cost a lot.'
-      : phase === 'tilt the line' ? 'The line tilts away from the best fit and back: watch the loss curve on the right.'
-      : phase === 'add an outlier' ? 'One point slides away from the trend. The line has not moved, but the loss jumps.' : 'The outlier comes back to the trend.',
+    phase === 'manual' ? 'You are moving the model by hand.'
+      : V === 'classify' ? 'The curve sharpens: points on the right side get cheap, the two on the wrong side climb the steep wall of the loss chart.'
+      : V === 'residuals' ? 'The line tilts away from the best fit and back. The gaps grow, then shrink.'
+      : V === 'squares' ? (kind === 'mse' ? 'Each square has side |r|, so its area is the squared error.' : 'Each bar has length |r|: the absolute error.')
+      : V === 'curve' ? 'As the line tilts, the dot on the right rides up and down the loss curve.'
+      : phase === 'add an outlier' ? 'One point slides away from the trend. The line has not moved, but the loss jumps and the best slope shifts.' : 'The outlier returns to the trend.',
   );
   $effect(() => { if (playing) over = null; speed; kind; wake(); });
 
-  const frame = (): Frame => (over ? { ...over, amt: amtCur } : frameAt(init.task, t));
+  const frame = (): Frame => (over ? { ...over, amt: amtCur } : frameAt(V, t));
   function take() {
     if (over) return;
-    const f = frameAt(init.task, t);
+    const f = frameAt(V, t);
     over = { w: f.w, b: f.b }; amtCur = amtTgt = f.amt; playing = false;
   }
   const setW = (v: number) => { take(); over = { ...over!, w: v }; sync(); wake(); };
@@ -60,7 +74,8 @@
     const HX = isReg ? [-4, 4] : [0];
 
     const lay = () => {
-      const { main, side, stacked } = splitPanels(stage.w, stage.h, 0.6);
+      const { main, side, stacked } = hasSide ? splitPanels(stage.w, stage.h, 0.6)
+        : { main: { x: 0, y: 0, w: stage.w, h: stage.h }, side: { x: 0, y: 0, w: 0, h: 0 }, stacked: false };
       const sx = scale(X[0], X[1], main.x + 34, main.x + main.w - 10), sy = scale(Y[0], Y[1], main.y + main.h - 26, main.y + 10);
       return { main, side, stacked, sx, sy };
     };
@@ -80,17 +95,17 @@
       ctx.save(); ctx.beginPath(); ctx.rect(m.l, m.t, m.r - m.l, m.b - m.t); ctx.clip();
       const ppu = Math.abs(sy(1) - sy(0));
       if (isReg) {
-        const pts = points(f.amt), res = residuals(f.w, f.b, pts);
+        const pts = points(f.amt), rs = residuals(f.w, f.b, pts), squares = V !== 'residuals' && kind === 'mse';
         ctx.lineCap = 'round';
         pts.forEach((p, i) => {
-          const r = res[i], yl = f.w * p.x + f.b, col = r >= 0 ? c.pos : c.neg, out = i === pts.length - 1 && pts.length > 8;
-          if (kind === 'mse') {
+          const r = rs[i], yl = f.w * p.x + f.b, col = r >= 0 ? c.pos : c.neg, out = i === pts.length - 1 && pts.length > 8;
+          if (squares) {
             const s = Math.abs(r) * ppu;
             ctx.fillStyle = `rgba(${col.rgb.join(',')},0.2)`; ctx.strokeStyle = `rgba(${col.rgb.join(',')},0.7)`; ctx.lineWidth = 1;
             const y0 = Math.min(sy(p.y), sy(yl));
             ctx.beginPath(); ctx.rect(sx(p.x), y0, s, s); ctx.fill(); ctx.stroke();
           }
-          ctx.strokeStyle = col.hex; ctx.lineWidth = kind === 'mae' ? 3 : 1.6;
+          ctx.strokeStyle = col.hex; ctx.lineWidth = V === 'residuals' || kind === 'mae' ? 3 : 1.6;
           ctx.beginPath(); ctx.moveTo(sx(p.x), sy(p.y)); ctx.lineTo(sx(p.x), sy(yl)); ctx.stroke();
           ctx.fillStyle = out ? c.neg.hex : c.text.hex; ctx.strokeStyle = c.raised.hex; ctx.lineWidth = 1.5;
           ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), out ? 6 : 4.5, 0, 6.2832); ctx.fill(); ctx.stroke();
@@ -98,16 +113,18 @@
         ctx.strokeStyle = c.fwd.hex; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(sx(X[0]), sy(f.w * X[0] + f.b)); ctx.lineTo(sx(X[1]), sy(f.w * X[1] + f.b)); ctx.stroke();
       } else {
-        // sigmoid curve and per-point loss segments (thicker = costlier)
+        // the gap from each point to the curve is the probability the model withheld from the right answer
         for (const p of CLASS_PTS) {
-          const pr = sigmoid(f.w * p.x + f.b), l = logLoss1(p.label, pr);
-          ctx.strokeStyle = c.neg.hex; ctx.globalAlpha = 0.85; ctx.lineWidth = 1 + 5 * Math.min(1, l / 3);
+          const pr = sigmoid(f.w * p.x + f.b);
+          ctx.strokeStyle = c.neg.hex; ctx.globalAlpha = 0.8; ctx.lineWidth = 2.5;
           ctx.beginPath(); ctx.moveTo(sx(p.x), sy(p.label)); ctx.lineTo(sx(p.x), sy(pr)); ctx.stroke(); ctx.globalAlpha = 1;
         }
         ctx.strokeStyle = c.fwd.hex; ctx.lineWidth = 3; ctx.beginPath();
         for (let i = 0; i <= 80; i++) { const x = X[0] + ((X[1] - X[0]) * i) / 80, y = sigmoid(f.w * x + f.b); i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y)); }
         ctx.stroke();
         for (const p of CLASS_PTS) {
+          const bad = pCorrect(p.label, sigmoid(f.w * p.x + f.b)) < 0.5;
+          if (bad) { ctx.strokeStyle = c.neg.hex; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx(p.x), sy(p.label), 9.5, 0, 6.2832); ctx.stroke(); }
           ctx.fillStyle = p.label ? c.accent.hex : c.raised.hex; ctx.strokeStyle = p.label ? c.raised.hex : c.text.hex; ctx.lineWidth = p.label ? 1.5 : 2;
           ctx.beginPath(); ctx.arc(sx(p.x), sy(p.label), 5, 0, 6.2832); ctx.fill(); ctx.stroke();
         }
@@ -121,19 +138,51 @@
       }
       ctx.font = stage.body(12, true); ctx.fillStyle = c.muted.hex; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
       ctx.fillText(isReg ? 'x' : 'x (feature)', m.r, main.y + main.h - 1);
-      if (!isReg) { ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('thicker red bar = costlier point', m.l + 4, m.t + 2); }
+      if (!isReg) {
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('label 1', m.l + 4, sy(1) + 8);
+        ctx.textBaseline = 'bottom'; ctx.fillText('label 0', m.l + 4, sy(0) - 8);
+      }
+      if (!hasSide) return;
 
-      // ---- side panel: loss against w, b held fixed ----
+      // ---- side panel ----
       const s = { l: side.x + 40, r: side.x + side.w - 10, t: side.y + 26, b: side.y + side.h - 30 };
-      const [w0, w1] = W_RANGE[isReg ? 'regression' : 'classification'];
+      if (!isReg) {
+        // each point's log loss on the curve -ln(p), p = probability given to the correct label
+        const cx = scale(0, 1, s.l, s.r), cy = scale(0, 5, s.b, s.t);
+        ctx.font = stage.body(12.5); ctx.fillStyle = c.text.hex; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.fillText('each point’s loss = −ln p', s.l - 30, side.y + 2);
+        ctx.font = stage.mono(11); ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        for (const v of [0, 1, 2, 3, 4, 5]) { ctx.strokeStyle = c.rule.hex; ctx.beginPath(); ctx.moveTo(s.l, cy(v)); ctx.lineTo(s.r, cy(v)); ctx.stroke(); ctx.fillStyle = c.muted.hex; ctx.fillText(String(v), s.l - 5, cy(v)); }
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        for (const v of [0, 0.5, 1]) ctx.fillText(String(v), cx(v), s.b + 5);
+        ctx.font = stage.body(12, true); ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+        ctx.fillText('p given to the right label', s.r, side.y + side.h - 1);
+        ctx.save(); ctx.beginPath(); ctx.rect(s.l, s.t - 6, s.r - s.l, s.b - s.t + 6); ctx.clip();
+        ctx.strokeStyle = c.text.hex; ctx.lineWidth = 2; ctx.beginPath();
+        for (let i = 1; i <= 100; i++) { const p = i / 100, y = cy(-Math.log(p)); i > 1 ? ctx.lineTo(cx(p), y) : ctx.moveTo(cx(p), y); }
+        ctx.stroke();
+        ctx.strokeStyle = c.muted.hex; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+        ctx.beginPath(); ctx.moveTo(cx(0.5), s.b); ctx.lineTo(cx(0.5), cy(Math.LN2)); ctx.lineTo(s.l, cy(Math.LN2)); ctx.stroke(); ctx.setLineDash([]);
+        for (const p of CLASS_PTS) {
+          const pc = pCorrect(p.label, sigmoid(f.w * p.x + f.b)), bad = pc < 0.5;
+          ctx.fillStyle = bad ? c.neg.hex : c.text.hex; ctx.strokeStyle = c.raised.hex; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(cx(pc), clamp(cy(-Math.log(Math.max(pc, 1e-9))), s.t - 4, s.b), bad ? 6 : 4.5, 0, 6.2832); ctx.fill(); ctx.stroke();
+        }
+        ctx.restore();
+        ctx.font = stage.mono(10.5); ctx.fillStyle = c.muted.hex; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+        ctx.fillText('guess 0.5 → 0.693', cx(0.5) + 6, cy(Math.LN2) - 3);
+        return;
+      }
+      // loss against w, b held fixed
+      const [w0, w1] = W_RANGE.regression;
       const cv2 = curve(kind, f.b, f.amt, 81), ym = Ymax[kind];
       const cx = scale(w0, w1, s.l, s.r), cy = scale(0, ym, s.b, s.t);
       ctx.font = stage.body(12.5); ctx.fillStyle = c.text.hex; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText(`${kind === 'mse' ? 'MSE' : kind === 'mae' ? 'MAE' : 'log loss'} as w changes (b fixed)`, s.l - 30, side.y + 2);
+      ctx.fillText(`${kind === 'mse' ? 'MSE' : 'MAE'} as w changes (b fixed)`, s.l - 30, side.y + 2);
       ctx.font = stage.mono(11); ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
       for (const v of [0, ym / 2, ym]) { ctx.strokeStyle = c.rule.hex; ctx.beginPath(); ctx.moveTo(s.l, cy(v)); ctx.lineTo(s.r, cy(v)); ctx.stroke(); ctx.fillStyle = c.muted.hex; ctx.fillText(v % 1 ? v.toFixed(1) : String(v), s.l - 5, cy(v)); }
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      for (let v = Math.ceil(w0); v <= w1; v += isReg ? 1 : 2) { ctx.fillStyle = c.muted.hex; ctx.fillText(String(v).replace('-', '−'), cx(v), s.b + 5); }
+      for (let v = Math.ceil(w0); v <= w1; v += 1) { ctx.fillStyle = c.muted.hex; ctx.fillText(String(v).replace('-', '−'), cx(v), s.b + 5); }
       ctx.font = stage.body(12, true); ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillStyle = c.muted.hex; ctx.fillText('w', s.r, side.y + side.h - 1);
       ctx.save(); ctx.beginPath(); ctx.rect(s.l, s.t - 4, s.r - s.l, s.b - s.t + 4); ctx.clip();
       ctx.strokeStyle = c.text.hex; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.beginPath();
@@ -196,11 +245,11 @@
   });
 </script>
 
-<FigureCard title={init.title} role="group" aspect="720 / 400" narrowAspect="360 / 580"
-  label={isReg ? 'A scatter plot with a draggable line. Vertical segments show each point\'s error. A small chart shows the loss as the slope changes.'
-    : 'Points labelled 0 or 1 along one feature with a draggable S-shaped curve. Red bars show each point\'s loss. A small chart shows the loss as the steepness changes.'}
-  legend={isReg ? [{ label: 'model', color: '--viz-forward', shape: 'line' }, { label: 'above the line', color: '--viz-pos' }, { label: 'below', color: '--viz-neg' }, { label: 'you are here', color: '--accent' }]
-    : [{ label: 'model', color: '--viz-forward', shape: 'line' }, { label: 'loss per point', color: '--viz-neg' }, { label: 'you are here', color: '--accent' }]}>
+<FigureCard title={init.title} role="group" aspect={hasSide ? '720 / 400' : '720 / 360'} narrowAspect={hasSide ? '360 / 580' : '360 / 340'}
+  label={isReg ? `A scatter plot with a draggable line. Vertical segments show each point's error.${hasSide ? ' A small chart shows the loss as the slope changes.' : ''}`
+    : 'Points labelled 0 or 1 along one feature with a draggable S-shaped probability curve. Red bars show the probability each point did not get. A side chart places every point on the curve loss = −ln p.'}
+  legend={isReg ? [{ label: 'model', color: '--viz-forward', shape: 'line' }, { label: 'above the line', color: '--viz-pos' }, { label: 'below', color: '--viz-neg' }, ...(hasSide ? [{ label: 'you are here', color: '--accent' }] : [])]
+    : [{ label: 'model: p(label 1)', color: '--viz-forward', shape: 'line' }, { label: 'probability missed', color: '--viz-neg' }, { label: 'wrong side of 0.5', color: '--viz-neg' }]}>
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MK} label="Timeline: the model moves automatically"
@@ -208,25 +257,34 @@
   {/snippet}
   {#snippet readout()}
     <p class="vals num">
-      {#if isReg}
+      {#if V === 'residuals'}
+        residuals {#each res as r, i (i)}<b class={r >= 0 ? 'pos' : 'neg'}>{r >= 0 ? '+' : '−'}{f2(Math.abs(r))}</b>{' '}{/each}
+      {:else if V === 'squares'}
+        MSE <b class:on={kind === 'mse'}>{f2(cur.mse, 3)}</b> · MAE <b class:on={kind === 'mae'}>{f2(cur.mae, 3)}</b>
+      {:else if V === 'curve'}
+        slope w <b>{f2(ui.w)}</b> · MSE <b class="on">{f2(cur.mse, 3)}</b> <span class="base">· best w for this b: {f2(best)}</span>
+      {:else if V === 'outlier'}
         MSE <b class:on={kind === 'mse'}>{f2(cur.mse, 3)}</b> · MAE <b class:on={kind === 'mae'}>{f2(cur.mae, 3)}</b>
         {#if base}<span class="base">· without the outlier: MSE {f2(base.mse, 3)}, MAE {f2(base.mae, 3)}</span>{/if}
       {:else}
-        log loss <b class="on">{f2(cur.log, 3)}</b> <span class="base">· guessing 0.5 everywhere would score {f2(Math.LN2, 3)}</span>
+        average log loss <b class="on">{f2(cur.log, 3)}</b>
+        <span class="base">· {wrong.n} point{wrong.n === 1 ? '' : 's'} on the wrong side carry {Math.round(wrong.share * 100)}% of it · guessing 0.5 scores 0.693</span>
       {/if}
     </p>
     <p class="say" role="status" aria-live="polite">{narration}</p>
   {/snippet}
   {#snippet footer()}
     <div class="ctl">
-      <F1Slider label={isReg ? 'slope w' : 'steepness w'} value={ui.w} min={W_RANGE[init.task][0]} max={W_RANGE[init.task][1]} step={0.01} oninput={setW} />
-      <F1Slider label={isReg ? 'intercept b' : 'offset b'} value={ui.b} min={B_RANGE[init.task][0]} max={B_RANGE[init.task][1]} step={0.01} oninput={setB} />
-      {#if isReg}
+      <F1Slider label={isReg ? 'slope w' : 'steepness w'} value={ui.w} min={W_RANGE[task][0]} max={W_RANGE[task][1]} step={0.01} oninput={setW} />
+      <F1Slider label={isReg ? 'intercept b' : 'offset b'} value={ui.b} min={B_RANGE[task][0]} max={B_RANGE[task][1]} step={0.01} oninput={setB} />
+      {#if hasToggle}
         <fieldset class="seg">
           <legend class="sr-only">Loss</legend>
           <label><input type="radio" name="loss-{uid}" value="mse" bind:group={kind} /><span>Squared (MSE)</span></label>
           <label><input type="radio" name="loss-{uid}" value="mae" bind:group={kind} /><span>Absolute (MAE)</span></label>
         </fieldset>
+      {/if}
+      {#if V === 'outlier'}
         <label class="chk"><input type="checkbox" checked={over ? outOn : ui.amt > 0.5} onchange={(e) => toggleOut(e.currentTarget.checked)} /> Outlier</label>
       {/if}
     </div>
@@ -237,6 +295,7 @@
   p { margin: 0; }
   .vals { font: 0.95rem var(--font-code); font-variant-numeric: tabular-nums; color: var(--text-muted); }
   .vals b { font-weight: 500; color: var(--text); } .vals b.on { color: var(--accent); font-weight: 700; }
+  .vals b.pos { color: var(--viz-pos); } .vals b.neg { color: var(--viz-neg); }
   .base { font-size: 0.82rem; }
   .say { font: var(--step--1) var(--font-ui); color: var(--text-muted); margin-top: 0.3em; }
   .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-5); padding: var(--s-3) var(--s-4); }

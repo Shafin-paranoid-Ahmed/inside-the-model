@@ -78,7 +78,7 @@ Lesson = ONE scrolling page of several <Step>s, each with a widget instance (dif
 CLARITY RULES (BUILDING.md §5a; these are where past agents failed):
 - Each core step: plain-language intuition first, define every term, then ONE concrete thing to look at or try, quoting a real number the widget shows. Write like a teacher, not a widget manual. At most one short caveat where it really matters; no "this is a toy, not a claim…" disclaimers, no meta-notes about how the widget computes ("not interpolated", "recorded", "seeded").
 - Before writing a claim about what a demo shows ("momentum overshoots", "warmup helps"), print the simulation's numbers and check. If the sim shows something else, change the prose (or the demo), never the other way round.
-- No repeated figures: misconceptions / check-yourself / going-deeper steps get NO widget, and no two core steps may show the same widget with identical props.
+- No repeated figures: misconceptions / check-yourself / going-deeper steps get NO widget, and no two core steps may show the same widget with identical props. `node scripts/check-repeats.mjs` checks this (props compared apart from the title); near-identical states (same animation, only the panel or one number differs) still count, so also check by eye. Across lessons, a beat (e.g. the `(a·b + c)²` backward sweep) has one home lesson; later lessons link back instead of replaying it.
 - Widget labels in plain words (no "recorded update", "reduction group", "÷ size"). Defaults must match the lesson's claim at that step (e.g. gain 1 / shift 0 until the gain-and-shift step).
 - If the effect spans orders of magnitude, use a log axis; if it is small, tighten the domain. Never a tiny shape in a huge empty plane.
 - Temporary probe scripts go in the scratchpad or are deleted immediately: a `tests/unit/zz-*.test.ts` left behind runs in every `npm test`. Widget folders hold only `<Name>.svelte`, `sim.ts`, optional `worker.ts`.
@@ -198,7 +198,7 @@ Day 7 (2026-10-03, coordinator plus one sonnet agent per lesson, all in parallel
 
 ## 9. Open questions for the owner
 
-- The real domain name (the placeholder is `ailearner.dev`).
+- A custom domain. The site is named Inside the Model and runs on `inside-model.vercel.app` (`site` in `astro.config.mjs`) until one is chosen.
 - The owner hasn't browser-reviewed Days 1–3 yet.
 
 ---

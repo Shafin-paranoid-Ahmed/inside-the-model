@@ -27,7 +27,7 @@
   let s = $state(untrack(() => scale));
   let skip = $state(untrack(() => skipProp));
   const prof = $derived(profile(base, { act, scale: s, skip }));
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let vertical = $state(false);
   let narration = $state('');
   let phase = '';

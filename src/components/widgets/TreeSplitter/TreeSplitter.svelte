@@ -23,7 +23,7 @@
   let crit = $state<S.Criterion>(init.crit), md = $state(init.md), minLeaf = $state(1);
   let story = $state.raw<S.Story | null>(isTree ? S.buildStory(init.mode as S.Story['mode'], init.crit, init.md) : null);
   let study = $state.raw<S.Study | null>(init.mode === 'depth' ? S.depthStudy(1, init.crit) : null);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let ui = $state<{ vals: { k: string; v: string }[]; say: string; p: number; d: number }>({ vals: [], say: '', p: 0, d: 0 });
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;

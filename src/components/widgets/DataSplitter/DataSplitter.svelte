@@ -21,13 +21,19 @@
     lockSplit?: boolean;
     /** Timeline position to start (and loop back) from; T_SPLIT skips the dot flow. */
     startAt?: number;
+    /**
+     * Curves mode, one job per lesson figure. train: the training curve only. val: adds validation and the early stop.
+     * test: adds the test score, read once at the stopping epoch, next to the fresh-data score. all: everything.
+     */
+    show?: 'train' | 'val' | 'test' | 'all';
   }
-  let { title = 'One dataset, three bins', mode = 'curves', trainFrac: tf0 = 0.4, valFrac: vf0 = 0.2, lockSplit = false, startAt = 0 }: Props = $props();
-  const init = untrack(() => ({ tf: tf0, vf: vf0, lockSplit, t0: startAt, tune: mode === 'tune' }));
+  let { title = 'One dataset, three bins', mode = 'curves', trainFrac: tf0 = 0.4, valFrac: vf0 = 0.2, lockSplit = false, startAt = 0, show = 'all' }: Props = $props();
+  const init = untrack(() => ({ tf: tf0, vf: vf0, lockSplit, t0: startAt, tune: mode === 'tune', show }));
+  const SHOW = init.show, VAL = SHOW !== 'train', TEST = SHOW === 'test' || SHOW === 'all';
   const TEND = init.tune ? T_TUNE : T;
 
   let trainFrac = $state(init.tf), valFrac = $state(init.vf);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let t = 0, wake = () => {}, drag = 0, first = true;
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
 
@@ -41,8 +47,12 @@
   const chosen = $derived(R && sc ? epochAt(uiT) >= sc.epoch && uiT > T_SPLIT : uiT >= T_TUNE);
   const hon = $derived(U ? pick(U, false) : null);
   const cheat = $derived(U ? pick(U, true) : null);
+  const below = $derived(R ? R.train[ei] < NOISE_FLOOR : false);
   const narration = $derived(
-    phase === 'split' ? `Splitting: ${base.split.nTrain} points for training, ${base.split.nVal} for validation, ${base.split.nTest} for test.`
+    !VAL && phase !== 'split' ? (below ? 'The training loss is now below the noise floor. No model can truly predict that well; this one is fitting the noise in its own training points.'
+        : 'Training: the training loss falls at every step. Gradient descent is built to make exactly this number smaller.')
+      : SHOW === 'test' && chosen && sc ? `Validation chose epoch ${sc.epoch}. Only now is the sealed test set read, once: ${f2(sc.reported, 3)}. On 600 fresh points the same model scores ${f2(sc.real, 3)}.`
+      : phase === 'split' ? `Splitting: ${base.split.nTrain} points for training, ${base.split.nVal} for validation, ${base.split.nTest} for test.`
       : phase === 'train' ? 'Training: both losses fall while the model learns the pattern.'
       : phase === 'stop' ? 'Past the early-stopping point: training loss keeps falling while validation loss rises. The model is memorizing noise.'
       : phase === 'overfit' ? 'End of training: the training loss is far below the validation loss.'
@@ -83,7 +93,8 @@
         ctx.fillStyle = cols[b].hex; ctx.globalAlpha = 0.1; ctx.fillRect(x0, s.y, w, s.h); ctx.globalAlpha = 1;
         ctx.strokeStyle = cols[b].hex; ctx.lineWidth = 1.2; ctx.setLineDash(sealed ? [4, 3] : []); ctx.strokeRect(x0 + 0.5, s.y + 0.5, w - 1, s.h - 1); ctx.setLineDash([]);
         ctx.font = stage.mono(11.5, 600); ctx.fillStyle = c.text.hex;
-        const lab = W < 540 && w < 90 ? `${n}` : `${names[b]} ${n}${sealed ? ' · sealed' : ''}`;
+        const opened = sealed && SHOW === 'test' && R !== null && epochAt(t) >= R.bestVal;
+        const lab = W < 540 && w < 90 ? `${n}` : `${names[b]} ${n}${sealed ? (opened ? ' · read once' : ' · sealed') : ''}`;
         ctx.save(); ctx.beginPath(); ctx.rect(x0, 0, w, s.y); ctx.clip(); ctx.fillText(lab, x0 + 3, s.y - 6); ctx.restore();
         x0 += w;
       });
@@ -119,7 +130,7 @@
         const e = epochAt(t), uc = uOfEpoch(e), X = (u: number) => P.l + u * pw;
         const es = curveEpochs(e);
         ctx.lineJoin = 'round'; ctx.lineWidth = 2.2;
-        for (const [arr, col] of [[R.train, c.fwd], [R.val, c.accent]] as const) {
+        for (const [arr, col] of (VAL ? [[R.train, c.fwd], [R.val, c.accent]] : [[R.train, c.fwd]]) as [Float64Array, typeof c.fwd][]) {
           ctx.strokeStyle = col.hex; ctx.beginPath();
           es.forEach((ee, j) => {
             const i0 = Math.floor(ee), i1 = Math.min(EPOCHS, i0 + 1), v = arr[i0] + (arr[i1] - arr[i0]) * (ee - i0);
@@ -130,11 +141,20 @@
           ctx.fillStyle = col.hex; ctx.strokeStyle = c.raised.hex; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(uc), Y(arr[i]), 4.5, 0, 6.2832); ctx.fill(); ctx.stroke(); ctx.lineWidth = 2.2;
         }
         const sx = X(uOfEpoch(R.bestVal));
-        if (e >= R.bestVal) {
+        if (VAL && e >= R.bestVal) {
           ctx.strokeStyle = c.accent.hex; ctx.lineWidth = 1.6; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(sx, P.t); ctx.lineTo(sx, P.b); ctx.stroke(); ctx.setLineDash([]);
           ctx.fillStyle = c.accent.hex; ctx.font = stage.mono(11.5, 700); ctx.textBaseline = 'top';
           const left = sx > P.l + pw * 0.45; ctx.textAlign = left ? 'right' : 'left';
           ctx.fillText('early stop: validation lowest', sx + (left ? -6 : 6), P.t + 2);
+          if (SHOW === 'test') {
+            // the sealed test set is read once, at the chosen epoch; the fresh-data ring is what the world would see
+            const yt = Y(R.test[R.bestVal]), yf = Y(R.fresh[R.bestVal]);
+            ctx.fillStyle = c.neg.hex; ctx.fillRect(sx - 5, yt - 5, 10, 10);
+            ctx.strokeStyle = c.text.hex; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, yf, 5, 0, 6.2832); ctx.stroke();
+            ctx.font = stage.mono(11, 700); ctx.textBaseline = 'middle'; ctx.textAlign = left ? 'right' : 'left';
+            ctx.fillStyle = c.neg.hex; ctx.fillText(`test, read once: ${f2(R.test[R.bestVal], 2)}`, sx + (left ? -10 : 10), yt + (yt < yf ? -8 : 8));
+            ctx.fillStyle = c.text.hex; ctx.fillText(`fresh data: ${f2(R.fresh[R.bestVal], 2)}`, sx + (left ? -10 : 10), yf + (yt < yf ? 8 : -8));
+          }
         }
       }
       if (U) {
@@ -208,7 +228,7 @@
     : 'Top: 100 dots flow from a pool into three bins, training, validation and test, whose widths you can drag. Bottom: training and validation loss over training time; the validation curve bottoms out and rises while training loss keeps falling, and the early-stopping point is marked.'}
   legend={init.tune
     ? [{ label: 'validation', color: '--accent' }, { label: 'test (squares)', color: '--viz-neg' }, { label: 'fresh data (ring)', color: '--text' }]
-    : [{ label: 'train', color: '--viz-forward' }, { label: 'validation', color: '--accent' }, { label: 'test (sealed)', color: '--viz-neg' }]}>
+    : [{ label: 'train', color: '--viz-forward' }, { label: 'validation', color: '--accent' }, { label: SHOW === 'test' ? 'test (read once)' : 'test (sealed)', color: '--viz-neg' }, ...(SHOW === 'test' ? [{ label: 'fresh data (ring)', color: '--text' }] : [])]}>
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={TEND} markers={MK} label={init.tune ? 'Timeline: split, then try settings' : 'Timeline: split, then train'}
@@ -216,8 +236,8 @@
   {/snippet}
   {#snippet readout()}
     {#if R}
-      <p class="vals num">epoch {ei} · train loss {f2(R.train[ei], 3)} · validation loss {f2(R.val[ei], 3)}</p>
-      {#if chosen && sc}
+      <p class="vals num">epoch {ei} · train loss {f2(R.train[ei], 3)}{#if VAL} · validation loss {f2(R.val[ei], 3)}{:else} <span class="base">· noise floor {f2(NOISE_FLOOR, 2)}</span>{/if}</p>
+      {#if TEST && chosen && sc}
         <p class="vals num">stopped at epoch {sc.epoch} by validation loss · test score, read once: {f2(sc.reported, 3)} · fresh data: {f2(sc.real, 3)}</p>
       {/if}
     {:else if chosen && hon && cheat}

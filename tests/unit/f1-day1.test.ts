@@ -38,6 +38,17 @@ describe('ModelKnobs', () => {
 
 describe('DataTable', () => {
   it('one-hot encodes a category', () => expect(DT.oneHot('B')).toEqual([0, 1, 0]));
+  it('age grouping finds three groups that are exactly the neighborhoods', () => {
+    const g = DT.groups();
+    expect(new Set(g).size).toBe(3);
+    for (const h of DT.HOODS) expect(new Set(DT.ROWS.map((r, i) => (r.hood === h ? g[i] : -1)).filter((x) => x >= 0)).size).toBe(1);
+  });
+  it('at similar area, neighborhood C costs more than A (the one-hot columns carry signal)', () => {
+    const of = (h: string) => DT.ROWS.filter((r) => r.hood === h);
+    let pairs = 0;
+    for (const a of of('A')) for (const c of of('C')) if (Math.abs(a.area - c.area) <= 30) { pairs++; expect(c.price).toBeGreaterThan(a.price + 50); }
+    expect(pairs).toBeGreaterThanOrEqual(3);
+  });
   it('all rows arrive by the end and none at the start', () => {
     expect(DT.frameAt(0).arrive.every((a) => a === 0)).toBe(true);
     expect(DT.frameAt(DT.duration()).arrive.every((a) => a === 1)).toBe(true);
@@ -80,11 +91,18 @@ describe('LossPlayground', () => {
     expect(Number.isFinite(LP.logLoss1(1, 0))).toBe(true);
   });
   it('logistic loss at w=0,b=0 is ln 2 for any labels', () => expect(LP.logloss(0, 0)).toBeCloseTo(Math.LN2));
-  it('frameAt loops and starts on the best line with no outlier', () => {
-    const a = LP.frameAt('regression', 0), z = LP.frameAt('regression', LP.T_REG);
-    expect(a.amt).toBe(0);
-    expect(z.w).toBeCloseTo(a.w);
-    expect(z.amt).toBeCloseTo(a.amt);
+  it('every view loops and starts with no outlier', () => {
+    for (const v of ['residuals', 'squares', 'curve', 'outlier', 'classify'] as const) {
+      const a = LP.frameAt(v, 0), z = LP.frameAt(v, LP.duration(v));
+      expect(a.amt).toBe(0);
+      expect(z.w).toBeCloseTo(a.w);
+      expect(z.amt).toBeCloseTo(a.amt);
+    }
+  });
+  it('only the outlier view moves the outlier, and it holds the line still', () => {
+    for (const v of ['residuals', 'squares', 'curve'] as const) for (let t = 0; t < 6; t += 0.5) expect(LP.frameAt(v, t).amt).toBe(0);
+    expect(LP.frameAt('outlier', 5).amt).toBeCloseTo(1);
+    expect(LP.frameAt('outlier', 5).w).toBe(LP.frameAt('outlier', 0).w);
   });
 });
 
@@ -116,6 +134,22 @@ describe('LineFit', () => {
   it('the shipped path is near the solution and loss decreases monotonically', () => {
     for (let i = 1; i < LF.PATH.length; i++) expect(LF.PATH[i].loss).toBeLessThan(LF.PATH[i - 1].loss);
     expect(LF.PATH.at(-1)!.loss - LF.loss(LF.BEST.w, LF.BEST.b)).toBeLessThan(0.02);
+  });
+  it('every mode replays from a user-chosen start (path[0])', () => {
+    const s = { w: 2.5, b: -3 }, path = LF.gdPath(s);
+    for (const m of ['iterative', 'closed', 'tour'] as const) {
+      const f = LF.frameAt(0, m, m === 'iterative' ? path : [{ ...s, loss: LF.loss(s.w, s.b) }]);
+      expect(f.w).toBeCloseTo(s.w); expect(f.b).toBeCloseTo(s.b);
+    }
+    expect(LF.frameAt(LF.duration('iterative'), 'iterative', path).loss).toBeCloseTo(LF.loss(LF.BEST.w, LF.BEST.b), 2);
+  });
+  it('descent from any corner of the map reaches the minimum (the lesson says so)', () => {
+    const min = LF.loss(LF.BEST.w, LF.BEST.b);
+    for (const w of LF.W_DOM) for (const b of LF.B_DOM) expect(LF.gdPath({ w, b }).at(-1)!.loss - min).toBeLessThan(0.01);
+  });
+  it('the tour ends on the best line', () => {
+    const f = LF.frameAt(LF.duration('tour'), 'tour');
+    expect(f.w).toBeCloseTo(LF.BEST.w); expect(f.b).toBeCloseTo(LF.BEST.b);
   });
   it('frameAt endpoints', () => {
     expect(LF.frameAt(0, 'iterative').w).toBeCloseTo(LF.START.w);

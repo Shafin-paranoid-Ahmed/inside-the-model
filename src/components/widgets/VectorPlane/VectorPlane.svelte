@@ -16,12 +16,14 @@
   let { title = '', scene = 'add' }: Props = $props();
   const init = untrack(() => ({
     scene,
-    title: title || ({ add: 'Adding two vectors', scale: 'Scaling a vector', length: 'Length and distance', features: 'From a point to a row of features' } as const)[scene],
+    title: title || ({ add: 'Adding two vectors', scale: 'Scaling a vector', length: 'Length and distance', norm: 'Length of a vector', distance: 'Distance between two vectors', features: 'From a point to a row of features' } as const)[scene],
   }));
   const S = init.scene, T = duration(S), MK = markers(S);
-  const DRAG = S === 'add' || S === 'length' ? ['a', 'b'] : S === 'scale' ? ['a'] : [];
+  /** The length family: 'length' shows both ideas, 'norm' only |a|, 'distance' only |a − b|. */
+  const LEN = S === 'length' || S === 'norm' || S === 'distance', SHOW_B = S !== 'norm', SHOW_LEGS = S !== 'distance', SHOW_GAP = S !== 'norm';
+  const DRAG = S === 'norm' ? ['a'] : S === 'add' || LEN ? ['a', 'b'] : S === 'scale' ? ['a'] : [];
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let a = $state.raw<V>({ ...DEFAULT_A }), b = $state.raw<V>({ ...DEFAULT_B });
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
@@ -41,8 +43,9 @@
           : phase === 'shrink' ? 'A factor between 0 and 1 shrinks it; at 0 it collapses to the origin.'
           : phase === 'flip' ? 'A negative factor flips the arrow to the opposite direction.'
           : 'Back to c = 1.'
-      : S === 'length'
+      : LEN
         ? phase === 'a' ? 'An arrow a with two coordinates.'
+          : phase === 'a and b' ? 'Two points, a and b, drawn as arrows from the origin.'
           : phase === 'length' ? 'Walk along x, then along y: the arrow is the diagonal of a right triangle, so its length is the square root of the two squares added.'
           : phase === 'distance' ? 'The distance between two vectors is the length of the arrow from one tip to the other.'
           : 'Resetting.'
@@ -54,6 +57,8 @@
   const nums = $derived(
     S === 'add' ? `a = ${v2(a)} · b = ${v2(b)} · a + b = ${v2(add(a, b))}`
       : S === 'scale' ? `a = ${v2(a)} · c = ${f2(ui.c)} · c·a = ${v2(scaleBy(ui.c, a))} · |c·a| = ${f2(Math.abs(ui.c) * norm(a))}`
+      : S === 'norm' ? `|a| = ${f2(ui.lenA)} (final ${f2(norm(a))})`
+      : S === 'distance' ? `|a − b| = ${f2(ui.distAB)} (final ${f2(dist(a, b))})`
       : S === 'length' ? `|a| = ${f2(ui.lenA)} (final ${f2(norm(a))}) · |a − b| = ${f2(ui.distAB)} (final ${f2(dist(a, b))})`
       : `house = [${FEATURES.map((f) => f.value).join(', ')}]`,
   );
@@ -136,7 +141,12 @@
       const rows: [string, string, string][] = [];
       if (S === 'add') rows.push(['a', v2(a), c.fwd.hex], ['b', v2(b), c.accent.hex], ['a + b', v2(add(a, b)), c.text.hex]);
       if (S === 'scale') rows.push(['a', v2(a), c.fwd.hex], ['c', f2(f.c), f.c >= 0 ? c.pos.hex : c.neg.hex], ['c·a', v2(scaleBy(f.c, a)), f.c >= 0 ? c.pos.hex : c.neg.hex]);
-      if (S === 'length') rows.push(['a', v2(a), c.fwd.hex], ['b', v2(b), c.accent.hex], ['|a|', f2(f.lenA), c.fwd.hex], ['|a − b|', f2(f.distAB), c.text.hex]);
+      if (LEN) {
+        rows.push(['a', v2(a), c.fwd.hex]);
+        if (SHOW_B) rows.push(['b', v2(b), c.accent.hex]);
+        if (SHOW_LEGS) rows.push(['|a|', f2(f.lenA), c.fwd.hex]);
+        if (SHOW_GAP) rows.push(['|a − b|', f2(f.distAB), c.text.hex]);
+      }
       const gap = L.stacked ? 24 : 34;
       rows.forEach(([n, v, col], i) => {
         const y = sd.y + 32 + i * gap;
@@ -144,7 +154,7 @@
         ctx.font = stage.mono(L.stacked ? 13 : 15); ctx.fillStyle = c.text.hex; ctx.fillText(v, x0 + (L.stacked ? 56 : 74), y);
       });
       if (S === 'add') { ctx.font = stage.body(12); ctx.fillStyle = c.muted.hex; ctx.fillText('add matching entries', x0, sd.y + 32 + rows.length * gap + 4); }
-      if (S === 'length') { ctx.font = stage.body(12); ctx.fillStyle = c.muted.hex; ctx.fillText(L.stacked ? '|a| = √(x² + y²)' : '|a| = √(x² + y²),  |a − b| = |a| of the difference', x0, sd.y + 32 + rows.length * gap + 4); }
+      if (LEN) { ctx.font = stage.body(12); ctx.fillStyle = c.muted.hex; ctx.fillText(S === 'norm' || L.stacked && S !== 'distance' ? '|a| = √(x² + y²)' : S === 'distance' ? '|a − b| = length of the difference' : '|a| = √(x² + y²),  |a − b| = |a| of the difference', x0, sd.y + 32 + rows.length * gap + 4); }
       if (S === 'scale') { ctx.font = stage.body(12); ctx.fillStyle = c.muted.hex; ctx.fillText('multiply every entry by c', x0, sd.y + 32 + rows.length * gap + 4); }
     }
 
@@ -197,15 +207,15 @@
         arrow(L, O, ca, col, 3.5);
         tag(L, a, 'a', c.fwd.hex, 8, -8);
         if (norm(ca) > 0.6) tag(L, ca, 'c·a', col, 10, -6);
-      } else if (S === 'length') {
+      } else if (LEN) {
         const g = f.legs, leg1 = clamp(g * 2, 0, 1), leg2 = clamp(g * 2 - 1, 0, 1);
         ctx.lineWidth = 2; ctx.strokeStyle = c.muted.hex; ctx.setLineDash([5, 4]);
         ctx.beginPath(); ctx.moveTo(L.px(0), L.py(0)); ctx.lineTo(L.px(a.x * leg1), L.py(0)); if (leg2 > 0) ctx.lineTo(L.px(a.x), L.py(a.y * leg2)); ctx.stroke(); ctx.setLineDash([]);
         if (g > 0.5) { ctx.font = stage.mono(11); ctx.fillStyle = c.muted.hex; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(f2(a.x, 1), L.px(a.x / 2), L.py(0) + (a.y >= 0 ? 4 : -16)); }
         if (g > 0.98) { ctx.textAlign = a.x >= 0 ? 'left' : 'right'; ctx.textBaseline = 'middle'; ctx.fillText(f2(a.y, 1), L.px(a.x) + (a.x >= 0 ? 6 : -6), L.py(a.y / 2)); }
-        arrow(L, O, a, c.fwd.hex, 3.5); arrow(L, O, b, c.accent.hex, 3.5);
+        arrow(L, O, a, c.fwd.hex, 3.5); if (SHOW_B) arrow(L, O, b, c.accent.hex, 3.5);
         if (f.gap > 0) arrow(L, a, lerpV(a, b, f.gap), c.text.hex, 2.5, 1, true);
-        tag(L, a, 'a', c.fwd.hex); tag(L, b, 'b', c.accent.hex);
+        tag(L, a, 'a', c.fwd.hex); if (SHOW_B) tag(L, b, 'b', c.accent.hex);
       } else {
         const p = HOUSE_POINT, al = f.plane;
         ctx.globalAlpha = al; ctx.strokeStyle = c.muted.hex; ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
@@ -270,7 +280,7 @@
   label={S === 'features'
     ? 'Left: a plane with a point for a house at 120 square metres and 4 rooms. Right: the same house as a list of six features shown as bars.'
     : 'A 2D plane with arrows a and b from the origin, and a list of their coordinates on the right. Drag the arrow tips.'}
-  legend={S === 'features' ? [{ label: 'the house', color: '--viz-forward' }] : S === 'scale' ? [{ label: 'a', color: '--viz-forward', shape: 'line' }, { label: 'c·a, c ≥ 0', color: '--viz-pos', shape: 'line' }, { label: 'c·a, c < 0', color: '--viz-neg', shape: 'line' }] : [{ label: 'a', color: '--viz-forward', shape: 'line' }, { label: 'b', color: '--accent', shape: 'line' }]}>
+  legend={S === 'features' ? [{ label: 'the house', color: '--viz-forward' }] : S === 'scale' ? [{ label: 'a', color: '--viz-forward', shape: 'line' }, { label: 'c·a, c ≥ 0', color: '--viz-pos', shape: 'line' }, { label: 'c·a, c < 0', color: '--viz-neg', shape: 'line' }] : S === 'norm' ? [{ label: 'a', color: '--viz-forward', shape: 'line' }] : [{ label: 'a', color: '--viz-forward', shape: 'line' }, { label: 'b', color: '--accent', shape: 'line' }]}>
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MK} label="Timeline: vectors"

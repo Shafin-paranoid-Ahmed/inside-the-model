@@ -46,6 +46,8 @@ A tempting fix is to code A, B, C as 1, 2, 3. That quietly claims that C is "thr
 
 <DataTable client:visible encode labelToggle={false} title="A category becomes three 0/1 columns" />
 
+Why bother? Look at the plot: the dots are colored by neighborhood, and each dashed line joins the houses of one neighborhood. The three lines run roughly parallel, and at the same area a house in C costs about 100 thousand dollars more than a house in A. Area alone cannot explain that gap. With the one-hot columns, a model can learn it directly: a number for "is C" that adds to the price whenever that column holds a 1. Coded as 1, 2, 3, the model would be forced to assume B's premium is exactly halfway between A's and C's.
+
 The same trick, with more work, covers other kinds of data:
 
 - A **photo** is a grid of pixels; each pixel is a brightness number (or three, for red, green and blue). A small 28 by 28 grayscale image is a row of 784 numbers.
@@ -62,9 +64,11 @@ Our table has a label for every example. Learning from such data is called **sup
 
 Sometimes there is no label, only features. A shop might have records of what each customer bought and no notion of a "right answer". Learning from unlabeled data is **unsupervised learning**, and its goals are different: find groups, find structure, compress the data, or generate new examples like it.
 
-Tick "Hide the labels" under the figure. The price column turns into question marks and the dots collapse onto a strip: without labels there is no vertical coordinate telling us how to sort them. What remains is a set of positions along the feature axis, and the question changes from "what is the price?" to "what patterns do these positions have?".
+Tick "Hide the labels" under the figure. The price column turns into question marks, so there is nothing left to predict. The plot swaps price for a second feature, age, and shows the houses by area and age. Now the question is not "what is the price?" but "which houses are alike?".
 
-<DataTable client:visible title="Take the labels away" />
+Once the dots settle, three groups stand out: new houses, middle-aged houses and old houses. The figure shades them by putting houses whose ages are close into the same group. Now look at the Hood column, colored by group. Every group is exactly one neighborhood. Nobody told the grouping about neighborhoods. It found real structure in the data without a single label. That is what unsupervised learning is for, and Day 3 builds a proper clustering algorithm (k-means) that does this in any number of dimensions.
+
+<DataTable client:visible hood title="Take the labels away" />
 
 Real projects also have in-between cases: a few labeled examples among many unlabeled ones, or labels that are made up from the data itself, as when a language model predicts the next word of ordinary text. We meet those on Day 10.
 

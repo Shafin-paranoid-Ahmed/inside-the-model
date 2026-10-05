@@ -30,7 +30,7 @@
   const T = $derived(sc ? durationOf(sc) : EFF_T);
   const markers = $derived(sc ? markersOf(sc) : EFF_MARKERS);
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let vertical = $state(false);
   let ready = $state(!isEff);
   let say = $state(''), num = $state('');

@@ -29,7 +29,7 @@
   const init = untrack(() => ({ mode, dataset, n }));
   let smp = $state<Sampler>(untrack(() => sampler));
   let arrows = $state(untrack(() => showScore));
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let uiTau = $state(0), uiPhase = $state<Phase>('data');
   let cursorText = $state('');
   let narration = $state('Points from the data distribution are gradually buried in Gaussian noise.');

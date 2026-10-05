@@ -18,9 +18,7 @@ You have twelve points and a model, $y = wx + b$. Which line is best? The previo
 
 **Linear regression** is the name for fitting that line. "Regression" means the thing we predict is a number, and "linear" means the model is a straight line (or, with more inputs, a flat plane).
 
-The left panel shows the points, the current line in teal and a square for each residual. The right panel is new, and it is the picture of this whole lesson: a map of the loss for *every possible line*. Watch the timeline. The line starts as a poor guess, then improves, and as it does a dot slides across the map toward its centre. We will explain the map next.
-
-<LineFit client:visible title="A line and its place on the loss map" />
+This lesson answers that question in two ways: with a formula that jumps straight to the best line, and with a search that walks to it step by step. Both rely on one picture, a map of the loss for *every possible line*, so we start there.
 
 </Step>
 
@@ -28,9 +26,11 @@ The left panel shows the points, the current line in teal and a square for each 
 
 Every choice of slope $w$ and intercept $b$ is a line, and every line has a single MSE. So we can draw a map with $w$ on the horizontal axis, $b$ on the vertical axis, and the MSE as the height. The contour lines join points of equal MSE, like the height lines on a hiking map.
 
-The dot on the map and the line in the data panel are the same object seen two ways. Try it: click or drag anywhere on the contour map, or use the two sliders. The line jumps to match. Points near the diamond give lines that fit well; points far from it give lines that miss badly. Starting at $w = -1.4$, $b = -2.2$ the MSE is 28.7.
+In the figure, the left panel shows the twelve points, the current line in teal and a square for each residual. The right panel is the map. The dot on the map and the line on the left are the same thing seen two ways. Watch the timeline move the dot around the map: far from the diamond the line misses badly and the squares are big. Near the diamond they shrink. It starts at $w = -1.4$, $b = -2.2$, where the MSE is 28.7, and ends on the diamond, the best line.
 
-<LineFit client:visible squares title="Drag on the map: every point is a different line" />
+Then try it yourself: click or drag anywhere on the map, or use the two sliders, and the line jumps to match.
+
+<LineFit client:visible mode="tour" title="Every point on the map is a different line" />
 
 </Step>
 
@@ -91,7 +91,7 @@ Watch the magenta path on the map: dot by dot it walks down the bowl. The MSE is
 
 <LineFit client:visible title="Iterative search: gradient descent finds the same line" />
 
-Press "Descend from here" after placing the dot anywhere on the map, and it walks to the same bottom from your starting point.
+Now pick your own starting guess: click anywhere on the map (or move the sliders), then press Play or "Descend from here". The walk starts from your guess and still ends at the same bottom. Wherever you start in a bowl, downhill leads to the same place.
 
 </Step>
 

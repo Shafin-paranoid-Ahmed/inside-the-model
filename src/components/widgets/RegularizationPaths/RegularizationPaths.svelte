@@ -13,12 +13,19 @@
     penalty?: Penalty;
     /** Show the L1 / L2 switch. */
     toggle?: boolean;
+    /**
+     * One job per lesson figure. all: the three panels. region: the budget picture only. paths: the six coefficient
+     * paths only. error: training and validation error only. compare: L1 and L2 paths side by side.
+     */
+    view?: 'all' | 'region' | 'paths' | 'error' | 'compare';
   }
-  let { title = 'Regularization: the constraint region and the weight paths', penalty = 'l1', toggle = true }: Props = $props();
-  const init = untrack(() => ({ pen: penalty, toggle }));
+  let { title = 'Regularization: the constraint region and the weight paths', penalty = 'l1', toggle = true, view = 'all' }: Props = $props();
+  const init = untrack(() => ({ pen: penalty, toggle: toggle && view !== 'compare', view }));
+  const V = init.view;
+  let ui2 = $state(frameAt(0, 'l2'));
 
   let pen = $state<Penalty>(init.pen);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let ui = $state(frameAt(0, init.pen));
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
@@ -26,7 +33,14 @@
 
   const name = $derived(pen === 'l1' ? 'L1' : 'L2');
   const narration = $derived(
-    ui.phase === 'no penalty' ? 'No penalty yet: the optimum (filled dot) sits at the unpenalized fit (ringed diamond), and the region is just big enough to reach it. Every weight is free.'
+    V === 'compare' ? (ui.phase === 'no penalty' ? 'No penalty yet: both sides start from the same unpenalized weights.'
+        : `λ = ${f2(ui.lam)}. L1 has ${ui.zeros} of 6 weights at exactly zero; L2 has ${ui2.zeros}. L1 lines hit the axis and stay there; L2 lines only bend toward it.`)
+    : V === 'paths' ? (ui.phase === 'no penalty' ? 'No penalty yet: all six weights at their unpenalized values, including small non-zero weights on the three noise features.'
+        : pen === 'l1' ? `λ = ${f2(ui.lam)}. ${ui.zeros} of 6 weights are exactly zero. The dashed noise features go first; the three real ones last.`
+        : `λ = ${f2(ui.lam)}. All six lines curve toward zero together; none reaches it.`)
+    : V === 'error' ? (ui.phase === 'no penalty' ? 'No penalty: lowest training error, but the fit chases noise, so the error on new data is higher than it needs to be.'
+        : `λ = ${f2(ui.lam)}. Training error ${f2(ui.train)}, error on new data ${f2(ui.val)}. ${ui.lam < PATHS[pen].lam[PATHS[pen].best] ? 'New-data error is still falling.' : 'Past the diamond: the model is now too rigid and new-data error climbs.'}`)
+    : ui.phase === 'no penalty' ? 'No penalty yet: the optimum (filled dot) sits at the unpenalized fit (ringed diamond), and the region is just big enough to reach it. Every weight is free.'
       : ui.phase === 'strong penalty'
         ? pen === 'l1' ? 'Strong L1 penalty: every weight has been pushed to exactly zero.' : 'Strong L2 penalty: the weights are far smaller than at the start, but none is exactly zero.'
         : pen === 'l1'
@@ -41,6 +55,16 @@
     let lastUi = 0;
     const LEVELS = [0.12, 0.35, 0.7, 1.2, 1.9, 2.8].map((d) => ellipse(d));
     const lay = () => {
+      if (V !== 'all') {
+        const full = { x: 0, y: 0, w: stage.w, h: stage.h };
+        const narrow = stage.w < 540;
+        const left = narrow ? { x: 0, y: 0, w: stage.w, h: stage.h / 2 - 6 } : { x: 0, y: 0, w: stage.w / 2 - 8, h: stage.h };
+        const right = narrow ? { x: 0, y: stage.h / 2 + 6, w: stage.w, h: stage.h / 2 - 6 } : { x: stage.w / 2 + 8, y: 0, w: stage.w / 2 - 8, h: stage.h };
+        const a = { l: full.x + 30, r: full.x + full.w - 10, t: full.y + 30, b: full.y + full.h - 24 };
+        const ppu = Math.min(a.r - a.l, a.b - a.t) / 5.1, cx = (a.l + a.r) / 2, cy = (a.t + a.b) / 2;
+        const box = (b: typeof full) => ({ l: b.x + 42, r: b.x + b.w - 10, t: b.y + 30, b: b.y + b.h - 26 });
+        return { main: full, side: full, stacked: false, a, ppu, cx, cy, pa: box(V === 'compare' ? left : full), pa2: box(right), va: box(full), sy: (v: number) => cy - v * ppu, sx: (v: number) => cx + v * ppu };
+      }
       const { main, side, stacked } = splitPanels(stage.w, stage.h, stage.w < 540 ? 0.42 : 0.44);
       const a = { l: main.x + 30, r: main.x + main.w - 10, t: main.y + 30, b: main.y + main.h - 24 };
       // the largest region (L1 at lambda = 0) reaches 2.3 on each axis, so show -2.5..2.5 both ways
@@ -48,7 +72,7 @@
       const ph = Math.round(side.h * 0.62);
       const pa = { l: side.x + 42, r: side.x + side.w - 10, t: side.y + 30, b: side.y + ph - 26 };
       const va = { l: pa.l, r: pa.r, t: side.y + ph + 22, b: side.y + side.h - 22 };
-      return { main, side, stacked, a, ppu, cx, cy, pa, va, sy: (v: number) => cy - v * ppu, sx: (v: number) => cx + v * ppu };
+      return { main, side, stacked, a, ppu, cx, cy, pa, pa2: pa, va, sy: (v: number) => cy - v * ppu, sx: (v: number) => cx + v * ppu };
     };
     const feat = (j: number) => (TRUE_W[j] > 0 ? 'pos' : TRUE_W[j] < 0 ? 'neg' : 'muted') as 'pos' | 'neg' | 'muted';
     const val = (id: 'l1' | 'l2') => PATHS[id];
@@ -59,6 +83,12 @@
       ctx.clearRect(0, 0, W, H);
       const num = (v: number) => f2(v, v === Math.round(v) ? 0 : 1);
       ctx.lineWidth = 1; ctx.lineJoin = 'round';
+      if (V === 'all' || V === 'region') region();
+      if (V === 'all' || V === 'paths') paths(L.pa, pen, f, PATHS[pen]);
+      if (V === 'compare') { paths(L.pa, 'l1', frameAt(t, 'l1'), PATHS.l1); paths(L.pa2, 'l2', frameAt(t, 'l2'), PATHS.l2); }
+      if (V === 'all' || V === 'error') errors(L.va);
+
+      function region() {
       // ---- panel 1: contours + constraint region ----
       const { a } = L;
       ctx.font = stage.body(12.5); ctx.fillStyle = c.text.hex; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -97,11 +127,13 @@
       for (const v of [-2, -1, 1, 2]) ctx.fillText(String(v).replace('-', '−'), a.l - 5, L.sy(v));
       ctx.font = stage.body(12, true); ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('w₁', a.r, L.main.y + L.main.h - 1);
       ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('w₂', L.main.x + 2, a.t - 1);
+      }
 
+      function paths(pa: { l: number; r: number; t: number; b: number }, pn: Penalty, f: ReturnType<typeof frameAt>, p: (typeof PATHS)['l1']) {
       // ---- panel 2: coefficient paths ----
-      const { pa } = L, X = scale(0, LMAX, pa.l, pa.r), Y = scale(-2.4, 3.1, pa.b, pa.t), k = f.k;
+      const X = scale(0, LMAX, pa.l, pa.r), Y = scale(-2.4, 3.1, pa.b, pa.t), k = f.k;
       ctx.font = stage.body(12.5); ctx.fillStyle = c.text.hex; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText(`${name} coefficient paths, six features`, pa.l - 30, L.side.y + 2);
+      ctx.fillText(`${pn === 'l1' ? 'L1' : 'L2'} coefficient paths, six features${V === 'compare' ? ` · ${f.zeros} of 6 at zero` : ''}`, pa.l - 30, pa.t - 28);
       ctx.strokeStyle = c.rule.hex; ctx.lineWidth = 1; ctx.strokeRect(pa.l, pa.t, pa.r - pa.l, pa.b - pa.t);
       ctx.font = stage.mono(11); ctx.fillStyle = c.muted.hex; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
       for (const v of [-2, 0, 2]) { ctx.strokeStyle = v ? c.rule.hex : c.muted.hex; ctx.globalAlpha = v ? 0.6 : 0.8; ctx.beginPath(); ctx.moveTo(pa.l, Y(v)); ctx.lineTo(pa.r, Y(v)); ctx.stroke(); ctx.globalAlpha = 1; ctx.fillText(String(v).replace('-', '−'), pa.l - 5, Y(v)); }
@@ -123,12 +155,14 @@
       ctx.fillStyle = c.muted.hex; ctx.textAlign = 'right'; ctx.fillText('x4, x5, x6: no true effect', pa.r - 6, Y(0) - 9);
       ctx.textBaseline = 'top'; ctx.textAlign = 'left'; ctx.fillText('λ = 0', pa.l, pa.b + 4);
       ctx.textAlign = 'right'; ctx.fillText(`λ = ${num(LMAX)}  (penalty strength →)`, pa.r, pa.b + 4);
-      ctx.textAlign = 'left'; ctx.save(); ctx.translate(L.side.x + 8, (pa.t + pa.b) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('weight', 0, 0); ctx.restore();
+      ctx.textAlign = 'left'; ctx.save(); ctx.translate(pa.l - 34, (pa.t + pa.b) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('weight', 0, 0); ctx.restore();
+      }
 
+      function errors(va: { l: number; r: number; t: number; b: number }) {
       // ---- panel 3: error vs lambda ----
-      const { va } = L, XV = scale(0, LMAX, va.l, va.r), YV = scale(VY[0], VY[1], va.b, va.t);
+      const XV = scale(0, LMAX, va.l, va.r), YV = scale(VY[0], VY[1], va.b, va.t);
       ctx.font = stage.body(12); ctx.fillStyle = c.text.hex; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText('Error as λ grows', pa.l - 30, va.t - 20);
+      ctx.fillText('Error as λ grows', va.l - 30, va.t - 20);
       ctx.strokeStyle = c.rule.hex; ctx.lineWidth = 1; ctx.strokeRect(va.l, va.t, va.r - va.l, va.b - va.t);
       ctx.save(); ctx.beginPath(); ctx.rect(va.l, va.t, va.r - va.l, va.b - va.t); ctx.clip();
       for (const [arr, col, wd] of [[p.train, c.muted, 1.6], [p.val, c.text, 2.2]] as const) {
@@ -147,18 +181,19 @@
       ctx.textAlign = 'right'; ctx.fillText(`λ = ${num(LMAX)}`, va.r, va.b + 4);
       ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
       for (const v of [4, 8]) ctx.fillText(String(v), va.l - 5, YV(v));
-      ctx.save(); ctx.translate(L.side.x + 8, (va.t + va.b) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('error', 0, 0); ctx.restore();
+      ctx.save(); ctx.translate(va.l - 34, (va.t + va.b) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('error', 0, 0); ctx.restore();
       ctx.font = stage.body(11.5, true); ctx.textAlign = 'left';
       const iv = Math.round(N * 0.16), it = Math.round(N * 0.16);
       ctx.fillStyle = c.text.hex; ctx.textBaseline = 'bottom'; ctx.fillText('validation', XV(p.lam[iv]), YV(p.val[iv]) - 6);
       ctx.fillStyle = c.muted.hex; ctx.textBaseline = 'top'; ctx.fillText('training', XV(p.lam[it]), YV(p.train[it]) + 6);
       ctx.textAlign = 'center'; ctx.fillStyle = c.text.hex; ctx.fillText('◇ best λ on validation', (va.l + va.r) / 2, va.b + 4);
+      }
     }
 
     const loop = createLoop(cv, (dt, now) => {
       t = advance({ t, playing, speed }, dt, { duration: T }).t;
       render(); tl.paint(t);
-      if (now - lastUi > 100 || !playing) { lastUi = now; ui = frameAt(t, pen); uiT = t; }
+      if (now - lastUi > 100 || !playing) { lastUi = now; ui = frameAt(t, pen); ui2 = frameAt(t, 'l2'); uiT = t; }
       return playing;
     }, { onView: (_v, first) => { if (first && !reducedMotion()) playing = true; } });
     wake = loop.wake;
@@ -166,24 +201,37 @@
   });
 
   const choose = (p: Penalty) => { pen = p; ui = frameAt(t, p); };
+  const line = 'line' as const;
+  const LEGEND = {
+    all: [{ label: 'penalty region', color: '--accent', shape: line }, { label: 'constrained optimum', color: '--viz-forward' }, { label: 'weight > 0', color: '--viz-pos', shape: line }, { label: 'weight < 0', color: '--viz-neg', shape: line }, { label: 'x4–x6: no true effect', color: '--text-muted', shape: line }],
+    region: [{ label: 'penalty region', color: '--accent', shape: line }, { label: 'constrained optimum', color: '--viz-forward' }, { label: 'loss contours', color: '--viz-seq-4', shape: line }],
+    paths: [{ label: 'weight > 0', color: '--viz-pos', shape: line }, { label: 'weight < 0', color: '--viz-neg', shape: line }, { label: 'x4–x6: no true effect', color: '--text-muted', shape: line }],
+    compare: [{ label: 'weight > 0', color: '--viz-pos', shape: line }, { label: 'weight < 0', color: '--viz-neg', shape: line }, { label: 'x4–x6: no true effect', color: '--text-muted', shape: line }],
+    error: [{ label: 'error on new data', color: '--text', shape: line }, { label: 'training error', color: '--text-muted', shape: line }, { label: 'best λ', color: '--accent' }],
+  };
+  const LABEL = {
+    all: 'Left: contours of a two-weight loss with the penalty region drawn as a diamond for L1 or a circle for L2, and the constrained optimum on its edge. Top right: how six coefficients change as the penalty strength lambda grows. Bottom right: training and validation error against lambda.',
+    region: 'Contours of a two-weight loss with the penalty region, a diamond for L1 or a circle for L2, shrinking as lambda grows; the constrained optimum sits where a contour first touches it.',
+    paths: 'Six coefficient paths against the penalty strength lambda.',
+    compare: 'Six coefficient paths against lambda, for L1 on the left and L2 on the right, at the same lambda.',
+    error: 'Training error and error on new data against the penalty strength lambda; new-data error is U-shaped.',
+  };
 </script>
 
-<FigureCard {title} aspect="720 / 430" narrowAspect="360 / 720"
-  label="Left: contours of a two-weight loss with the penalty region drawn as a diamond for L1 or a circle for L2, and the constrained optimum on its edge. Top right: how six coefficients change as the penalty strength lambda grows. Bottom right: training and validation error against lambda."
-  legend={[
-    { label: 'penalty region', color: '--accent', shape: 'line' },
-    { label: 'constrained optimum', color: '--viz-forward' },
-    { label: 'weight > 0', color: '--viz-pos', shape: 'line' },
-    { label: 'weight < 0', color: '--viz-neg', shape: 'line' },
-    { label: 'x4–x6: no true effect', color: '--text-muted', shape: 'line' },
-  ]}>
+<FigureCard {title} aspect={V === 'all' ? '720 / 430' : V === 'region' ? '720 / 420' : V === 'compare' ? '720 / 360' : '720 / 340'}
+  narrowAspect={V === 'all' ? '360 / 720' : V === 'region' ? '360 / 380' : V === 'compare' ? '360 / 640' : '360 / 360'}
+  label={LABEL[V]} legend={LEGEND[V]}>
   <canvas bind:this={cv} aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MARKERS} label="Timeline: raising the penalty strength"
       onSeek={(to) => { t = to; wake(); }} onStep={(to) => { t = to >= T ? 0 : to; wake(); }} onReset={() => { t = 0; playing = true; wake(); }} />
   {/snippet}
   {#snippet readout()}
-    <p class="vals num">{name} · λ = <b>{f2(ui.lam)}</b> · zero weights = <b>{ui.zeros}</b> of {P} · error on new data = <b>{f2(ui.val)}</b> <span class="base">(training {f2(ui.train)})</span></p>
+    {#if V === 'compare'}
+      <p class="vals num">λ = <b>{f2(ui.lam)}</b> · zero weights: L1 <b>{ui.zeros}</b>, L2 <b>{ui2.zeros}</b> of {P}</p>
+    {:else}
+      <p class="vals num">{name} · λ = <b>{f2(ui.lam)}</b> · zero weights = <b>{ui.zeros}</b> of {P} · error on new data = <b>{f2(ui.val)}</b> <span class="base">(training {f2(ui.train)})</span></p>
+    {/if}
     <p class="say" role="status" aria-live="polite">{narration}</p>
   {/snippet}
   {#snippet footer()}

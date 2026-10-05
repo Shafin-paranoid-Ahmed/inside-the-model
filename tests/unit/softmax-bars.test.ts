@@ -35,3 +35,10 @@ describe('softmax bars', () => {
     expect(frameAt('softmax', 8.75, 0).tau).toBeGreaterThan(2);
   });
 });
+
+it('swing and temp are the two halves of softmax', () => {
+  expect(frameAt('swing', 1.3, 0)).toEqual(frameAt('softmax', 1.3, 0));
+  expect(frameAt('temp', 1.3, 0)).toEqual(frameAt('softmax', 6.3, 0));
+  expect(frameAt('swing', 3, 0).tau).toBe(1);
+  expect(frameAt('temp', 1.25, 0).z).toEqual(Z0);
+});

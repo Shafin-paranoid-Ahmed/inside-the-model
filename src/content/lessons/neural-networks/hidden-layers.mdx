@@ -43,9 +43,9 @@ The classifier predicts $p = \sigma(w_1x_1+w_2x_2+b)$. At the decision boundary 
 
 A hidden layer gives the output classifier different coordinates to work with. Start with a simpler tangled problem: **XOR**, where matching signs belong to class one and opposite signs belong to class zero. No single line can correctly separate all four ideal corners.
 
-The left panel keeps the original points. On the right, watch a trained two-unit layer move every point and every grid line. Scrub between **Input** and **Affine** first: multiplying by a matrix and adding a bias rotates, stretches, shears or shifts the plane. Straight grid lines remain straight during this stage.
+The left panel keeps the original points. On the right, watch a trained two-unit layer move every point and every grid line. This figure plays only the first stage, from **Input** to **Affine**: multiplying by a matrix and adding a bias rotates, stretches, shears or shifts the plane. Straight grid lines remain straight during this stage.
 
-<SpaceFolding client:visible mode="fold" title="The same points, viewed through a learned coordinate map" />
+<SpaceFolding client:visible mode="fold" part="affine" title="The same points, viewed through a learned coordinate map" />
 
 <details>
 <summary>Show the math</summary>
@@ -58,11 +58,11 @@ Before its activation, the layer computes $z=Wx+b$. Here $x$ and $z$ each have t
 
 <Step title="The activation bends the grid">
 
-Now scrub from **Tanh** to **Cut**. Each coordinate is squashed through tanh. The grid curves and compresses. The last panel state draws the output neuron's straight boundary in hidden coordinates; rings mark points on the wrong side.
+This figure picks up where the last one stopped, after the affine stage, and plays **Tanh** then **Cut**. Each coordinate is squashed through tanh. The grid curves and compresses. The last panel state draws the output neuron's straight boundary in hidden coordinates; rings mark points on the wrong side.
 
 The weights stay fixed throughout this animation. You are following one forward pass through a trained map, not watching the model train. The intermediate deformations smoothly connect its exact stages. The camera also refits the view: movement on screen includes both the coordinate transformation and the change of scale.
 
-<SpaceFolding client:visible mode="fold" title="Nonlinearity makes a straight hidden-space cut useful" />
+<SpaceFolding client:visible mode="fold" part="squash" title="Nonlinearity makes a straight hidden-space cut useful" />
 
 Calling this “folding” is a useful visual shorthand, not a claim that tanh literally folds the plane onto itself. Tanh is monotonic in each coordinate. Its nonlinear compression, combined with learned affine maps, changes how a straight hidden-space cut looks back in the input plane.
 

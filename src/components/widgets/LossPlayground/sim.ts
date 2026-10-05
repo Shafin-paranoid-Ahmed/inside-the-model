@@ -47,29 +47,42 @@ export function curve(kind: Loss, b: number, amt: number, n = 121): { w: number[
 /** Intercept that minimises squared error for a fixed slope (the mean residual). */
 export const bestB = (w: number, pts: Pt[]) => pts.reduce((s, p) => s + p.y - w * p.x, 0) / pts.length;
 
+/** Probability the model gives to the correct label of a classification point. */
+export const pCorrect = (label: number, p: number) => (label ? p : 1 - p);
+
+// ---- views: each figure in the lesson has one job, so no two figures repeat each other ----
+/**
+ * residuals: the gaps only. squares: squared vs absolute error drawn on the points. curve: adds the loss-vs-slope chart.
+ * outlier: the loss chart while one point slides away. classify: a probability curve and each point's log loss.
+ */
+export type View = 'residuals' | 'squares' | 'curve' | 'outlier' | 'classify';
+export const taskOf = (v: View): Task => (v === 'classify' ? 'classification' : 'regression');
+
 // ---- timeline ----
-export const T_REG = 14, T_CLS = 8;
-export const duration = (task: Task) => (task === 'regression' ? T_REG : T_CLS);
-export const markers = (task: Task) =>
-  task === 'regression'
-    ? [{ at: 0, label: 'tilt the line' }, { at: 6, label: 'add an outlier' }, { at: 11, label: 'remove it' }]
-    : [{ at: 0, label: 'sharpen the curve' }];
+export const T_TILT = 6, T_OUT = 9, T_CLS = 8;
+export const duration = (v: View) => (v === 'classify' ? T_CLS : v === 'outlier' ? T_OUT : T_TILT);
+export const markers = (v: View) =>
+  v === 'classify' ? [{ at: 0, label: 'sharpen the curve' }]
+    : v === 'outlier' ? [{ at: 0, label: 'add an outlier' }, { at: 6, label: 'remove it' }]
+    : [{ at: 0, label: 'tilt the line' }];
 const ease = (u: number) => { const c = Math.min(1, Math.max(0, u)); return c * c * (3 - 2 * c); };
+const wrap = (t: number, T: number) => ((t % T) + T) % T;
 
 export interface Frame { w: number; b: number; amt: number }
 /**
- * Auto demo. Regression: tilt the line to both sides of the best fit and back (the intercept follows its best value),
- * then slide an outlier away while the line stays put, then bring it back. Classification: sharpen the sigmoid.
+ * Auto demo. Tilt views: the line swings to both sides of the best fit and back (the intercept follows its best value).
+ * Outlier: the line stays on the best fit while one point slides away (1 s to 4 s), holds, then returns (6 s to 9 s).
+ * Classify: the sigmoid sharpens and relaxes.
  */
-export function frameAt(task: Task, t: number): Frame {
-  if (task === 'classification') {
-    const w = 0.3 + 3.2 * (0.5 - 0.5 * Math.cos((2 * Math.PI * (((t % T_CLS) + T_CLS) % T_CLS)) / T_CLS));
+export function frameAt(v: View, t: number): Frame {
+  if (v === 'classify') {
+    const w = 0.3 + 3.2 * (0.5 - 0.5 * Math.cos((2 * Math.PI * wrap(t, T_CLS)) / T_CLS));
     return { w, b: -0.2 * w, amt: 0 };
   }
-  const s = ((t % T_REG) + T_REG) % T_REG;
-  if (s < 6) {
-    const w = 0.6 + 0.6 * Math.sin((2 * Math.PI * s) / 6);
-    return { w, b: bestB(w, CLEAN), amt: 0 };
+  if (v === 'outlier') {
+    const s = wrap(t, T_OUT);
+    return { w: 0.6, b: bestB(0.6, CLEAN), amt: s < 6 ? ease((s - 1) / 3) : 1 - ease((s - 6) / 3) };
   }
-  return { w: 0.6, b: bestB(0.6, CLEAN), amt: s < 11 ? ease((s - 6) / 4) : 1 - ease((s - 11) / 3) };
+  const w = 0.6 + 0.6 * Math.sin((2 * Math.PI * wrap(t, T_TILT)) / T_TILT);
+  return { w, b: bestB(w, CLEAN), amt: 0 };
 }

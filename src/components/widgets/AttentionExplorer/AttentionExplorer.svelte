@@ -65,7 +65,7 @@
   let w = $state.raw<Weights | null>(null), failed = $state(false);
   let text = $state(untrack(() => init.text));
   let selLayer = $state(untrack(() => init.layer)), selHead = $state(untrack(() => init.head));
-  let playing = $state(false), speed = $state(1), uiT = $state(0), width = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0), width = $state(0);
   let status = $state(''), phase = $state(''), live = $state(''), hoverText = $state('');
   let clickPin = $state<number | null>(null), hoverPin = $state<number | null>(null);
   let toggles = $state([false, false, false, false]), custom = $state(false), offNow = $state([false, false, false, false]);

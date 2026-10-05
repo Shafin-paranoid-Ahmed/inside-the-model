@@ -22,17 +22,19 @@
     prevalence?: number;
     sensitivity?: number;
     fpr?: number;
+    /** Samples modes: false hides the running mean (line, bracket and side chart) so only the histogram shows. */
+    mean?: boolean;
   }
-  let { title = '', mode = 'bernoulli', p = 0.3, mu = 0.5, sigma = 1.2, prevalence = 0.01, sensitivity = 0.9, fpr = 0.09 }: Props = $props();
+  let { title = '', mode = 'bernoulli', p = 0.3, mu = 0.5, sigma = 1.2, prevalence = 0.01, sensitivity = 0.9, fpr = 0.09, mean: showMean = true }: Props = $props();
   const init = untrack(() => ({
     mode, title: title || (mode === 'bayes' ? 'A test says positive: how likely is it that you are sick?'
       : mode === 'bernoulli' ? 'Samples fall into a histogram and settle on the true probabilities'
       : 'Samples fall into a histogram and trace out the bell curve'),
   }));
-  const isBayes = init.mode === 'bayes', isCoin = init.mode === 'bernoulli';
+  const isBayes = init.mode === 'bayes', isCoin = init.mode === 'bernoulli', MEAN = untrack(() => showMean);
   const T = isBayes ? T_BAYES : T_SAMPLE, MK = isBayes ? bayesMarkers : sampleMarkers;
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let pV = $state(untrack(() => p)), muV = $state(untrack(() => mu)), sgV = $state(untrack(() => sigma));
   let prV = $state(untrack(() => prevalence)), seV = $state(untrack(() => sensitivity)), fpV = $state(untrack(() => fpr));
   let t = 0, wake = () => {};
@@ -56,6 +58,9 @@
       'filter': 'Only the people who tested positive stay.',
       'fraction': 'Among the positives, the indigo dots are the ones truly sick.',
     } as Record<string, string>)[phase] ?? ''
+      : !MEAN ? (phase === 'first samples' ? 'The first few samples land. The bars are far from the dashed lines.'
+        : phase === 'about 100' ? 'With a hundred samples the bars are close to the dashed lines.'
+          : 'All 400 samples: the bars sit on the true probabilities.')
       : phase === 'first samples' ? 'The first few samples land. The histogram is lumpy and the mean jumps around.'
         : phase === 'about 100' ? 'With a hundred samples the shape is clearer and the mean has stopped jumping.'
           : 'All 400 samples: the histogram matches the true distribution and the mean sits on the expectation.',
@@ -67,7 +72,7 @@
 
     function drawSamples() {
       const { ctx, w: W, h: H, c } = stage, d = data, cf = d.cfg, f = frameAt(d, t);
-      const { main, side } = splitPanels(W, H, 0.62);
+      const { main, side } = MEAN ? splitPanels(W, H, 0.62) : { main: { x: 0, y: 0, w: W, h: H }, side: null };
       const m = { l: main.x + 40, r: main.x + main.w - 10, t: main.y + 24, b: main.y + main.h - 30 };
       const [x0, x1] = isCoin ? [-0.6, 1.6] : [X_MIN, X_MAX];
       const sx = scale(x0, x1, m.l, m.r);
@@ -116,9 +121,11 @@
       }
       ctx.setLineDash([]);
       // true expectation (dashed) and the running mean (solid)
-      ctx.strokeStyle = c.text.hex; ctx.lineWidth = 1.2; ctx.setLineDash([2, 4]);
-      ctx.beginPath(); ctx.moveTo(sx(tm), m.t); ctx.lineTo(sx(tm), m.b); ctx.stroke(); ctx.setLineDash([]);
-      if (f.k > 0) { ctx.strokeStyle = c.accent.hex; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(sx(f.mean), m.t); ctx.lineTo(sx(f.mean), m.b); ctx.stroke(); }
+      if (MEAN) {
+        ctx.strokeStyle = c.text.hex; ctx.lineWidth = 1.2; ctx.setLineDash([2, 4]);
+        ctx.beginPath(); ctx.moveTo(sx(tm), m.t); ctx.lineTo(sx(tm), m.b); ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (MEAN && f.k > 0) { ctx.strokeStyle = c.accent.hex; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(sx(f.mean), m.t); ctx.lineTo(sx(f.mean), m.b); ctx.stroke(); }
       ctx.restore();
       // the sample in flight: starts above the chart and leaves a short trail
       if (f.fall >= 0) {
@@ -130,6 +137,7 @@
         ctx.fillStyle = c.accent.hex; ctx.strokeStyle = c.raised.hex; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.arc(fx, fy, 5, 0, 6.2832); ctx.fill(); ctx.stroke();
       }
+      if (!side) return;
       if (f.k > 1) { // mean +- one standard deviation, as a bracket on the axis
         const a = clamp(sx(f.mean - sd), m.l, m.r), b = clamp(sx(f.mean + sd), m.l, m.r), by = m.b - 9;
         ctx.strokeStyle = c.accent.hex; ctx.lineWidth = 2.5; ctx.lineCap = 'butt';
@@ -217,7 +225,7 @@
     : isCoin ? 'A bar chart of coin flips, heads and tails, filling as samples fall. A small chart shows the running mean settling on the true probability.'
       : 'A histogram filling as samples fall, converging on a bell curve. A small chart shows the running mean settling on the true mean.'}
   legend={isBayes ? [{ label: 'healthy', color: '--text-muted' }, { label: 'sick', color: '--accent' }, { label: 'tested positive (ring)', color: '--viz-forward' }]
-    : [{ label: 'samples', color: '--viz-forward' }, { label: 'true distribution', color: '--text', shape: 'line' }, { label: 'running mean, ±1σ bracket', color: '--accent', shape: 'line' }]}>
+    : [{ label: 'samples', color: '--viz-forward' }, { label: 'true distribution', color: '--text', shape: 'line' }, ...(MEAN ? [{ label: 'running mean, ±1σ bracket', color: '--accent', shape: 'line' as const }] : [])]}>
   <canvas bind:this={cv} aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MK} label="Timeline: samples arrive automatically"
@@ -227,6 +235,8 @@
     <p class="vals num">
       {#if isBayes}
         {bc.sick} sick of {POP} · positives: {bc.tp} sick + {bc.fp} healthy · P(sick | positive) = {bc.tp} / {bc.tp + bc.fp} = <b class="on">{pct(bc.posterior)}</b>
+      {:else if !MEAN}
+        n = {k} samples
       {:else}
         n = {k} · mean <b class="on">{f2(mean, 3)}</b> <span class="base">(true {f2(trueMean(cfg), 3)})</span> · variance <b>{f2(vari, 3)}</b> <span class="base">(true {f2(trueVar(cfg), 3)})</span>
       {/if}

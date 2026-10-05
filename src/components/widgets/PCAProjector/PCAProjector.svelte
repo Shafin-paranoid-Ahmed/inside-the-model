@@ -28,7 +28,7 @@
   let comp = $state<0 | 1>(0);
   let over = $state<number | null>(null); // rotate: angle set by hand
   let keepK = $state<number | null>(null); // scree: k set by hand
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let t = 0, wake = () => {}, dragging = false;
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
 

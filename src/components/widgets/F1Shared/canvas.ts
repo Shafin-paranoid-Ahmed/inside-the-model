@@ -3,6 +3,7 @@ import { readColors, readVar, onThemeChange, type Color } from '../_shared';
 export const NAMES = {
   text: '--text', muted: '--text-muted', rule: '--rule', raised: '--bg-raised', sunken: '--bg-sunken',
   accent: '--accent', soft: '--accent-soft', fwd: '--viz-forward', grad: '--viz-gradient', pos: '--viz-pos', neg: '--viz-neg',
+  cat1: '--viz-cat-1', cat2: '--viz-cat-2', cat3: '--viz-cat-3',
   s1: '--viz-seq-1', s2: '--viz-seq-2', s3: '--viz-seq-3', s4: '--viz-seq-4', s5: '--viz-seq-5',
 };
 export type Palette = Record<keyof typeof NAMES, Color>;

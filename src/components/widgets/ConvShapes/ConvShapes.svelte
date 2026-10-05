@@ -18,7 +18,7 @@
   const narrow = $derived(boxW > 0 && boxW < 540);
 
   let size = $state({ ...DEFAULT_SIZE });
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let frame = $state.raw(frameAt(0, init, DEFAULT_SIZE));
   let t = 0, wake = $state<() => void>(() => {});
   let stage: HTMLDivElement, tl: ReturnType<typeof Timeline>;

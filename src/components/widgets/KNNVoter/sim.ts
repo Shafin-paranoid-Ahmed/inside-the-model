@@ -95,6 +95,24 @@ export function field(pts: readonly Pt[], n: number, k: number, p: number, wy: n
   }
 }
 
+/** field() for every k in `ks` at once (Euclidean, unscaled): one sorted neighbour list per cell instead of one search per k. */
+export function fieldsByK(pts: readonly Pt[], n: number, ks: readonly number[]): Float32Array[] {
+  const out = ks.map(() => new Float32Array(n * n)), kmax = Math.max(...ks);
+  for (let j = 0; j < n; j++) {
+    const y = -DOM + ((j + 0.5) / n) * 2 * DOM;
+    for (let i = 0; i < n; i++) {
+      const { idx } = nearest(pts, -DOM + ((i + 0.5) / n) * 2 * DOM, y, kmax);
+      let ones = 0, r = 0;
+      ks.forEach((k, a) => {
+        const m = Math.min(k, idx.length);
+        for (; r < m; r++) ones += pts[idx[r]].c;
+        out[a][j * n + i] = ones / m;
+      });
+    }
+  }
+  return out;
+}
+
 /** Train and validation accuracy for every k in `ks`, from one sorted neighbour list per evaluated point. */
 export function accByK(train: readonly Pt[], val: readonly Pt[], ks: readonly number[]) {
   const run = (test: readonly Pt[]) => {
@@ -192,7 +210,7 @@ export function makeScene(mode: Mode, k = 5): Scene {
   if (mode === 'vote') { scene.q0 = VOTE_A; scene.field = new Float32Array(GRID * GRID); field(scene.train, GRID, scene.k, 2, 1, scene.field); }
   if (mode === 'metric') scene.q0 = METRIC_Q;
   if (mode === 'k') {
-    scene.fields = KS.map((k) => { const f = new Float32Array(GRID * GRID); field(scene.train, GRID, k, 2, 1, f); return f; });
+    scene.fields = fieldsByK(scene.train, GRID, KS);
     scene.accK = accByK(scene.train, scene.val, ODD_KS);
   }
   return scene;

@@ -21,7 +21,7 @@
   const S = untrack(() => SCENARIOS[scenario]);
   const T = duration(S), MARKERS = markersOf(S);
   let xv = $state(untrack(() => xProp ?? S.x0));
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let narration = $state(S.say[0]);
   const eq = $derived(summary(S, xv, dx));
   const rows = Math.max(...S.nodes.map((n) => n.row)) + 1;

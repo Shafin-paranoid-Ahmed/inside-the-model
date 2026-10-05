@@ -5,7 +5,8 @@ export const N = CLASSES.length;
 export const Z0 = [1.5, 0.8, -0.4, 0.3];
 export const Z_RANGE: [number, number] = [-4, 5];
 export const TAU_RANGE: [number, number] = [0.2, 4];
-export type Mode = 'softmax' | 'loss' | 'grad';
+/** 'swing' and 'temp' are the two halves of 'softmax', for steps that teach one idea each. */
+export type Mode = 'softmax' | 'swing' | 'temp' | 'loss' | 'grad';
 
 /** softmax(z / tau), computed stably. */
 export function softmax(z: ArrayLike<number>, tau = 1): number[] {
@@ -42,9 +43,12 @@ export function trajectory(k: number): number[][] {
   return tr;
 }
 
-export const duration = (mode: Mode) => (mode === 'softmax' ? 10 : 8);
+export const duration = (mode: Mode) => (mode === 'softmax' ? 10 : mode === 'swing' || mode === 'temp' ? 5 : 8);
 export const markers = (mode: Mode) =>
-  mode === 'softmax' ? [{ at: 0, label: 'swing one score' }, { at: 5, label: 'temperature' }] : [{ at: 0, label: 'train logits' }, { at: 6.5, label: 'replay reset' }];
+  mode === 'softmax' ? [{ at: 0, label: 'swing one score' }, { at: 5, label: 'temperature' }]
+  : mode === 'swing' ? [{ at: 0, label: 'swing one score' }]
+  : mode === 'temp' ? [{ at: 0, label: 'temperature' }]
+  :[{ at: 0, label: 'train logits' }, { at: 6.5, label: 'replay reset' }];
 
 export interface Frame { z: number[]; tau: number; p: number[]; loss: number; grad: number[] }
 export function derive(z: number[], tau: number, truth: number): Frame {
@@ -55,6 +59,7 @@ export function derive(z: number[], tau: number, truth: number): Frame {
 /** Everything to draw at time t (loops with the duration). Scrubbing is free. */
 export function frameAt(mode: Mode, t: number, truth: number): Frame {
   const T = duration(mode), s = ((t % T) + T) % T;
+  if (mode === 'swing' || mode === 'temp') return frameAt('softmax', mode === 'swing' ? s : s + 5, truth);
   if (mode === 'softmax') {
     if (s < 5) { const z = Z0.slice(); z[0] = Z0[0] + 2.5 * Math.sin((2 * Math.PI * s) / 5); return derive(z, 1, truth); }
     return derive(Z0.slice(), Math.exp(-1.2 * Math.sin((2 * Math.PI * (s - 5)) / 5)), truth);

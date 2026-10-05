@@ -15,7 +15,7 @@
   let noise = $state(DEFAULTS.noise);
   let update = $state(untrack(() => mode === 'momentum' || mode === 'scaling' ? 8 : 1));
   const initialTime = 0;
-  let playing = $state(false), speed = $state(1), uiT = $state(initialTime);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(initialTime);
   let t = initialTime, lastUi = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
   const markers = $derived(optimizer === 'Race'

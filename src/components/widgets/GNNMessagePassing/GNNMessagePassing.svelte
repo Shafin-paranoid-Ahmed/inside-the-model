@@ -41,7 +41,7 @@
   let sel = $state(init.select);
   let tool = $state<'move' | 'edge'>('move');
   let pending = $state(-1);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let uiPhase = $state<Phase>('send'), uiLayer = $state(0), uiK = $state(0);
   let narration = $state('Watch messages travel along the edges, get combined at each node, and update its features.');
 

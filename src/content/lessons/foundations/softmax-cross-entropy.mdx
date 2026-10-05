@@ -18,7 +18,7 @@ A classifier with four possible answers ends in four raw numbers, one per class,
 
 The function that does this is **softmax**. In the figure, the left bars are the logits and the right bars are the probabilities softmax makes from them. Watch the timeline swing the score of class A down and up. Its probability follows, and the other probabilities take up the slack, because the four bars must always sum to 1. You can also drag any score bar (or use the sliders) and see the probabilities respond at once.
 
-<SoftmaxBars client:visible title="Scores in, probabilities out" />
+<SoftmaxBars client:visible mode="swing" title="Scores in, probabilities out" />
 
 </Step>
 
@@ -50,11 +50,11 @@ def softmax(z, tau=1.0):
 
 <Step title="Temperature: sharpen or flatten">
 
-Sometimes we divide the logits by a **temperature** $\tau$ before softmax: $p_i = \mathrm{softmax}(z/\tau)_i$. The second half of the timeline sweeps $\tau$ with the scores held fixed. At $\tau = 1$ you get the ordinary softmax. At low temperature (the sweep reaches about 0.3) the top class takes almost everything: A goes from 0.51 to 0.90. At high temperature (about 3) the bars flatten toward equal shares, and A falls to 0.33. As $\tau \to 0$ softmax becomes "pick the largest" and as $\tau \to \infty$ it becomes uniform.
+Sometimes we divide the logits by a **temperature** $\tau$ before softmax: $p_i = \mathrm{softmax}(z/\tau)_i$. The figure below sweeps $\tau$ with the scores held fixed. At $\tau = 1$ you get the ordinary softmax. At low temperature (the sweep reaches about 0.3) the top class takes almost everything: A goes from 0.51 to 0.90. At high temperature (about 3) the bars flatten toward equal shares, and A falls to 0.33. As $\tau \to 0$ softmax becomes "pick the largest" and as $\tau \to \infty$ it becomes uniform.
 
 Drag the temperature slider yourself. Text-generating models use exactly this knob: a low temperature makes the model repeat its favorite word, a high one makes it wander.
 
-<SoftmaxBars client:visible title="Temperature reshapes the same scores" />
+<SoftmaxBars client:visible mode="temp" title="Temperature reshapes the same scores" />
 
 </Step>
 

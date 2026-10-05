@@ -183,11 +183,11 @@ In a network, $X$ is often a batch of inputs, one per row (batch size $\times$ f
 
 The **transpose** $A^\top$ turns rows into columns: entry $(i, j)$ of $A$ becomes entry $(j, i)$ of $A^\top$. An $m\times n$ matrix becomes $n\times m$. It is the tool for fixing shapes: if two shapes almost fit, a transpose often makes the inner numbers meet.
 
-Try it in the figure below: press **Transpose left**. The left matrix is turned on its side, its shape flips from $2\times 3$ to $3\times 2$, and the two sizes it shows swap. Press it again to go back. You can then use the sliders to make the shapes match again and see the new product.
+The figure below starts with shapes that do not fit: a $3\times 2$ matrix on the left and a $3\times 4$ on the right, so the inner numbers are 2 and 3. Press **Transpose left**. The left matrix is turned on its side, its shape flips to $2\times 3$, the inner numbers meet, and the $2\times 4$ product appears. Press it again to go back.
 
 Two useful facts. First, transposing a product reverses the order: $(AB)^\top = B^\top A^\top$. Second, the dot product of the previous lesson is itself a matrix product: for two vectors written as columns, $\mathbf{a}\cdot\mathbf{b} = \mathbf{a}^\top\mathbf{b}$, a ($1\times n$) times an ($n\times 1$), giving a $1\times 1$ result: a single number.
 
-<MatrixTransform client:visible mode="shapes" title="Transpose swaps rows and columns, and the shape with them" />
+<MatrixTransform client:visible mode="shapes" dims={[3, 2, 3, 4]} title="Transpose swaps rows and columns, and the shape with them" />
 
 </Step>
 

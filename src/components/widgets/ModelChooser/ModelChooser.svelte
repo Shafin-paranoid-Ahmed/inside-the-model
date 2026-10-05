@@ -50,7 +50,7 @@
 
   let ds = $state<DatasetId>(untrack(() => dataset));
   let choice = $state<Choice>({ ...CHOICE_DEFAULT });
-  let playing = $state(false), speed = $state(1), uiT = $state(0), ready = $state(false);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0), ready = $state(false);
   let ui = $state.raw({ a: '', b: '', c: '' });
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;

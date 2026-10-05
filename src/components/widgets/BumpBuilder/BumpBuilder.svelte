@@ -19,7 +19,7 @@
   const M = init.mode, T = durationOf(M), MARKERS = markersOf(M);
   const uid = $props.id();
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let act = $state<Act>(init.act);
   let ui = $state.raw(frameAt(M, 0, init.act));
   let t = 0;

@@ -20,14 +20,16 @@
     mode?: Mode;
     /** Kernel mode only: the starting data. */
     dataset?: KData;
+    /** Margin mode only: start with every point except the support vectors deleted. */
+    pruned?: boolean;
   }
-  let { title = 'A linear SVM finding the widest street', mode = 'margin', dataset = 'rings' }: Props = $props();
-  const cfg = untrack(() => ({ mode, dataset }));
+  let { title = 'A linear SVM finding the widest street', mode = 'margin', dataset = 'rings', pruned = false }: Props = $props();
+  const cfg = untrack(() => ({ mode, dataset, pruned }));
   const m = cfg.mode;
 
   const CS = [0.1, 0.3, 1, 3, 10, 100];
-  let svOnly = $state(false), ci = $state(2), gi = $state(2), kd = $state<KData>(cfg.dataset);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let svOnly = $state(cfg.pruned), ci = $state(2), gi = $state(2), kd = $state<KData>(cfg.dataset);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let lf = $state.raw<LinFrame | null>(null), kf = $state.raw<KernelFrame | null>(null), xf = $state.raw<IdFrame | null>(null), ff = $state.raw<LiftFrame | null>(null);
   let t = 0, wake = () => {}, dragged = false;
   let zo: [number, number] | null = null;

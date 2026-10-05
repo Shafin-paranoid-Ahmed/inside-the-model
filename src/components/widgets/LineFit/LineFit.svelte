@@ -10,44 +10,47 @@
 
   interface Props {
     title?: string;
-    /** 'iterative': gradient descent walks to the answer. 'closed': the formula jumps straight there. */
+    /** 'iterative': gradient descent walks to the answer. 'closed': the formula jumps straight there. 'tour': the dot visits many lines. */
     mode?: Mode;
     /** Show the residual squares on the data. */
     squares?: boolean;
   }
   let { title = '', mode = 'iterative', squares = true }: Props = $props();
-  const init = untrack(() => ({ mode, squares, title: title || (mode === 'iterative' ? 'Fitting a line by walking downhill' : 'Fitting a line with a formula') }));
+  const init = untrack(() => ({ mode, squares, title: title || (mode === 'iterative' ? 'Fitting a line by walking downhill' : mode === 'tour' ? 'Every point on the map is a line' : 'Fitting a line with a formula') }));
   const T = duration(init.mode), MK = markers(init.mode);
   const LOSS_MIN = loss(BEST.w, BEST.b);
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
-  let over = $state<{ w: number; b: number } | null>(null);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
+  /** True after the user placed a guess, until the timeline plays again. */
+  let manual = $state(false);
+  /** path[0] is the start: the default guess, or wherever the user put the dot. Every mode replays from it. */
   let path = $state.raw<PathPt[]>(PATH);
   let ui = $state({ w: START.w, b: START.b, loss: loss(START.w, START.b), k: 0 });
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;
 
-  const phase = $derived(over ? 'manual' : (markerAt(uiT, MK)?.label ?? ''));
+  const phase = $derived(manual ? 'manual' : (markerAt(uiT, MK)?.label ?? ''));
   const narration = $derived(
-    phase === 'manual' ? 'You placed the line. Press the button below to start the fit from this spot.'
+    phase === 'manual' ? (init.mode === 'tour' ? 'You placed the dot: this is the line it stands for. Press Play to tour from here.' : 'You placed a new guess. Press Play and the fit starts from here.')
+      : phase === 'a bad line' ? 'The dot starts far from the diamond, so its line misses the points badly. Then it heads to other corners of the map.'
+      : phase === 'other lines' ? 'The dot visits other corners of the map. Each spot is a different line, with its own MSE.'
+      : phase === 'the best line' ? 'At the diamond: the line with the smallest MSE of all.'
       : phase === 'a guess' ? 'A first guess: the line misses the points, so the loss is high.'
       : phase === 'descend' ? 'Each step moves (w, b) a little downhill on the loss surface. The line rotates and slides toward the points.'
       : phase === 'solve' ? 'The formula gives the bottom of the bowl directly. No steps needed.'
       : 'Settled at the minimum of the bowl: the least-squares line.',
   );
-  $effect(() => { if (playing) over = null; speed; wake(); });
+  $effect(() => { if (playing) manual = false; speed; wake(); });
 
-  const frame = () => {
-    if (over) return { w: over.w, b: over.b, loss: loss(over.w, over.b), k: 0 };
-    return frameAt(t, init.mode, path);
+  const frame = () => frameAt(t, init.mode, path);
+  /** A new guess becomes the start of every replay: recompute the descent from it and rewind to the guess. */
+  const place = (w: number, b: number) => {
+    const s = { w: clamp(w, W_DOM[0], W_DOM[1]), b: clamp(b, B_DOM[0], B_DOM[1]) };
+    path = init.mode === 'iterative' ? gdPath(s, LR, STEPS) : [{ ...s, loss: loss(s.w, s.b) }];
+    t = 0; manual = true; playing = false; ui = { ...frame() }; uiT = 0; wake();
   };
-  const place = (w: number, b: number) => { over = { w: clamp(w, W_DOM[0], W_DOM[1]), b: clamp(b, B_DOM[0], B_DOM[1]) }; playing = false; ui = { ...frame() }; wake(); };
-  function launch() {
-    const s = over ?? { w: ui.w, b: ui.b };
-    path = init.mode === 'closed' ? [{ ...s, loss: loss(s.w, s.b) }] : gdPath(s, LR, STEPS);
-    over = null; t = T_GUESS; playing = true; wake();
-  }
-  function reset() { path = PATH; over = null; t = 0; playing = true; wake(); }
+  function launch() { manual = false; t = init.mode === 'tour' ? 0 : T_GUESS; playing = true; wake(); }
+  function reset() { path = PATH; manual = false; t = 0; playing = true; wake(); }
 
   onMount(() => {
     const stage = setupStage(cv, () => render());
@@ -117,7 +120,7 @@
       ctx.save(); ctx.beginPath(); ctx.rect(s.l, s.t, s.r - s.l, s.b - s.t); ctx.clip();
       contours(L).forEach((p, i) => { ctx.strokeStyle = c.s4.hex; ctx.globalAlpha = 0.35 + 0.07 * i; ctx.lineWidth = 1.3; ctx.stroke(p); });
       ctx.globalAlpha = 1;
-      if (!over) {
+      if (init.mode !== 'tour' && t >= T_GUESS) {
         const k = init.mode === 'iterative' ? f.k : 0;
         ctx.strokeStyle = c.grad.hex; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(L.cw(path[0].w), L.cb(path[0].b));
         if (init.mode === 'iterative') { for (let i = 1; i <= Math.floor(k); i++) ctx.lineTo(L.cw(path[i].w), L.cb(path[i].b)); }
@@ -132,7 +135,7 @@
     }
 
     const loop = createLoop(cv, (dt, now) => {
-      if (!over) t = advance({ t, playing, speed }, dt, { duration: T }).t;
+      t = advance({ t, playing, speed }, dt, { duration: T }).t;
       render(); tl.paint(t);
       if (now - lastUi > 100 || !playing) { lastUi = now; ui = { ...frame() }; uiT = t; }
       return playing || dragging;
@@ -155,7 +158,7 @@
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MK} label="Timeline: fitting the line"
-      onSeek={(to) => { over = null; t = to; wake(); }} onStep={(to) => { over = null; t = to >= T ? 0 : to; wake(); }} onReset={reset} />
+      onSeek={(to) => { manual = false; t = to; wake(); }} onStep={(to) => { manual = false; t = to >= T ? 0 : to; wake(); }} onReset={reset} />
   {/snippet}
   {#snippet readout()}
     <p class="vals num">w = <b>{f2(ui.w)}</b> · b = <b>{f2(ui.b)}</b> · MSE = <b>{f2(ui.loss, 3)}</b>
@@ -166,8 +169,8 @@
     <div class="ctl">
       <F1Slider label="w" value={ui.w} min={W_DOM[0]} max={W_DOM[1]} step={0.01} oninput={(v) => place(v, ui.b)} />
       <F1Slider label="b" value={ui.b} min={B_DOM[0]} max={B_DOM[1]} step={0.01} oninput={(v) => place(ui.w, v)} />
-      <button type="button" class="btn" onclick={launch}>{init.mode === 'iterative' ? 'Descend from here' : 'Solve from here'}</button>
-      <span class="hint">You can also click or drag on the contour map.</span>
+      {#if init.mode !== 'tour'}<button type="button" class="btn" onclick={launch}>{init.mode === 'iterative' ? 'Descend from here' : 'Solve from here'}</button>{/if}
+      <span class="hint">Click or drag on the contour map to place your own guess.</span>
     </div>
   {/snippet}
 </FigureCard>

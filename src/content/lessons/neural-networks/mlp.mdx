@@ -46,9 +46,9 @@ Here $W$ is $3\times2$: three outputs, two inputs. The activation acts separatel
 
 A **hidden layer** sits between the raw input and the prediction. It is hidden only in the sense that the dataset supplies no target value for each of its units. A **fully connected**, or dense, layer gives every unit a connection to every unit in the preceding layer.
 
-Follow the pulses through this $2\to2\to2\to1$ MLP. The first hidden layer transforms the inputs into two activations; the next layer combines those activations rather than returning to the raw inputs. Scrub backward and notice that later layers cannot finish until the earlier ones have produced their values.
+Follow the pulses through this $2\to2\to2\to1$ MLP. The first hidden layer transforms the inputs into two activations; the next layer combines those activations rather than returning to the raw inputs. Scrub backward and notice that later layers cannot finish until the earlier ones have produced their values. The numbers are hidden here so the order stands out; the next step fills them in.
 
-<MLPForward client:visible mode="forward" title="Composition: outputs feed the next layer" />
+<MLPForward client:visible mode="forward" numbers={false} title="Composition: outputs feed the next layer" />
 
 <details>
 <summary>Show the math</summary>

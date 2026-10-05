@@ -40,7 +40,7 @@
   let failed = $state(''), stated = $state.raw<Answer[] | null>(null), typed = $state.raw<Panel | null>(null);
   let typedText = $state(''), typedError = $state('');
   let unseenOnly = $state(false), k = $state(10), person = $state(-1), picked = $state(1), monthChoice = $state(-1);
-  let width = $state(0), playing = $state(false), speed = $state(1), uiT = $state(0);
+  let width = $state(0), playing = $state(false), speed = $state(0.5), uiT = $state(0);
   const narrow = $derived(width > 0 && width < 540);
   const W = $derived(narrow ? 288 : 720);
   const duration = DURATION[init], markers = MARKERS[init];

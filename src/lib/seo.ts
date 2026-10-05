@@ -22,7 +22,7 @@ export const courseLd = (days: { day: number; title: string; lessons: { id: stri
   ...ctx, ...courseRef, inLanguage: 'en', isAccessibleForFree: true,
   description: 'A free 15-day curriculum from "what is a model?" to the frontier, taught with interactive visualizations.',
   educationalLevel: 'Beginner',
-  hasCourseInstance: { '@type': 'CourseInstance', courseMode: 'online', courseWorkload: 'P14D' },
+  hasCourseInstance: { '@type': 'CourseInstance', courseMode: 'online', courseWorkload: 'P15D' },
   hasPart: days.map((d) => ({
     '@type': 'CreativeWork', name: `Day ${d.day}: ${d.title}`, position: d.day,
     hasPart: d.lessons.map((l) => ({ '@type': 'LearningResource', name: l.title, url: absUrl(`/learn/${l.id}`) })),

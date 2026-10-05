@@ -79,7 +79,7 @@
   });
 
   let narrow = $state(false);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let narration = $state('');
   const Wd = $derived(narrow ? 400 : 720);
   const Hh = { encdec: 286, bottleneck: 320, attention: 312, alignment: 372 }[untrack(() => init.mode)];

@@ -21,7 +21,7 @@ A chain of functions is that machine. Take $u = x^2$, then $v = \sin u$, then $L
 
 Watch the figure. The point on each curve is the current value, and it shakes because $x$ is being wiggled by a small amount. Look at how the shaking grows or shrinks from one panel to the next. The bars at the bottom show it directly.
 
-<ChainRuleLinks client:visible x={1} title="Three links, three slopes" />
+<ChainRuleLinks client:visible x={1} view="wiggle" title="A wiggle in x, followed through three links" />
 
 The sections below take this apart. First, what a slope actually measures.
 
@@ -31,11 +31,11 @@ The sections below take this apart. First, what a slope actually measures.
 
 Wiggle the input of a function by a tiny amount $\Delta x$ and its output moves by a tiny amount $\Delta y$. The **derivative** is the ratio $\Delta y / \Delta x$ in the limit where the wiggle is small. Geometrically it is the slope of the **tangent line**, the straight line that hugs the curve at that point. The magenta line in each panel is that tangent.
 
-A function can be a very different amplifier at different points. Look at the first panel at $x = 1$: the curve $u = x^2$ has slope $2x = 2$, so a wiggle of 0.1 in $x$ becomes a wiggle of about 0.2 in $u$. Drag $x$ toward 0 in the slider below the figure and watch the tangent flatten: at $x = 0$ the slope is 0 and the wiggle in $x$ produces almost none in $u$.
+A function can be a very different amplifier at different points. At $x = 1$ the curve $u = x^2$ has slope $2x = 2$, so a wiggle of 0.1 in $x$ becomes a wiggle of about 0.2 in $u$. In this figure the timeline slides $x$ from 1 down through 0 to $-1$ and back. Watch the first tangent flatten as $x$ nears 0: at $x = 0$ the slope is 0, the wiggle in $x$ produces almost none in $u$, and the bars for $u$, $v$ and $L$ shrink to nothing. Past 0 the slope turns negative. The slider under the figure sets how far the sweep goes.
 
 The wiggle picture is the reason gradients can be computed at all. Around one point, every smooth function looks like its tangent line, a plain multiplication. So a chain of smooth functions, zoomed in close enough, looks like a chain of multiplications.
 
-<ChainRuleLinks client:visible x={1} title="Drag x and watch the tangent lines tilt" />
+<ChainRuleLinks client:visible x={1} view="tangent" title="x sweeps through 0: every tangent tilts" />
 
 </Step>
 
@@ -52,7 +52,7 @@ One detail matters: the second slope is evaluated at the value the first link pr
 
 Follow the timeline through the first two panels: each local slope scales the wiggle that arrived from the previous link. The third panel continues the same product into $L$.
 
-<ChainRuleLinks client:visible x={1} title="Follow the local slopes in order" />
+<ChainRuleLinks client:visible x={1} view="links" title="Follow the local slopes in order" />
 
 <details>
 <summary>Show the math</summary>
@@ -160,9 +160,7 @@ Take a chain with $n$ links and its product of slopes $s_1 s_2 \cdots s_n$. Mult
 
 Training has one loss and millions of parameters, so the second way is the right one: one sweep, all the gradients. That second way is backpropagation. It is the same chain rule, grouped from the output end. The lesson on [automatic differentiation](/learn/neural-networks/autodiff/) shows both directions side by side and compares their cost.
 
-Watch the backward phase: one sweep carries gradients from the loss through the graph to its inputs and parameters.
-
-<BackpropViz client:visible mode="expr" loopPhase="backward" title="One backward sweep reaches every node" />
+The backward sweep in the figure two steps up is exactly this: one sweep from the loss carries gradients to every input and parameter.
 
 </Step>
 

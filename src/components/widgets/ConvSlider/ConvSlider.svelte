@@ -18,7 +18,7 @@
 
   let seed = $state(3);
   let tr = $state.raw<S.Training | null>(M === 'learn' ? S.train(3) : null);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let ui = $state<{ vals: { k: string; v: string }[]; say: string; fi: number }>({ vals: [], say: '', fi: 0 });
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;

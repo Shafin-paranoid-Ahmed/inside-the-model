@@ -65,7 +65,7 @@
   // Controls.
   let typedText = $state(''), typedPairs = $state.raw<string[] | null>(null), typedError = $state('');
   let useRandom = $state(false), head = $state(3), headOff = $state(false), metric = $state<Metric>('exact');
-  let playing = $state(false), speed = $state(1), uiT = $state(0), width = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0), width = $state(0);
   const narrow = $derived(width > 0 && width < 540);
   const W = $derived(narrow ? 288 : 720);
 

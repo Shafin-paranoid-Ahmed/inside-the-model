@@ -11,6 +11,7 @@ status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
 import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+import SeqChart from '../../../components/widgets/SeqChart/SeqChart.svelte';
 
 <Step title="The loss is at the end, the blame is everywhere">
 
@@ -73,9 +74,9 @@ $$\frac{\partial L}{\partial W_{hh}} = \sum_{t=1}^{T} \boldsymbol\delta_t\,\math
 
 This is the one thing that is new in BPTT compared with an MLP: because the weights are **tied**, their gradient is the sum of one contribution per time step. The single update then changes the shared weight once.
 
-For "hello" with the loss at the last step, the contributions to $\partial L/\partial W_{hh}$ have norms $0.000,\ 0.085,\ 0.148,\ 0.197,\ 0.198$ for steps 1 to 5. Step 1 contributes exactly zero because $\mathbf h_0 = \mathbf 0$, so $\boldsymbol\delta_1\mathbf h_0^\top = 0$. The norm of the sum is $0.400$, less than the sum of the norms ($0.629$), because the contributions point in different directions and partly cancel. Pin any step in the panel to see its contribution.
+For "hello" with the loss at the last step, the contributions to $\partial L/\partial W_{hh}$ have norms $0.000,\ 0.085,\ 0.148,\ 0.197,\ 0.198$ for steps 1 to 5. Step 1 contributes exactly zero because $\mathbf h_0 = \mathbf 0$, so $\boldsymbol\delta_1\mathbf h_0^\top = 0$. The norm of the sum is $0.400$, less than the sum of the norms ($0.629$), because the contributions point in different directions and partly cancel. The chart below shows the pieces arriving in backward order, step 5 first, and then the two totals side by side.
 
-<RNNUnroller client:visible mode="bptt" sequence="hello" scale={1} folded={false} loopPhase="backward" select={3} title="Each step adds its own piece to the gradient of the shared weight" />
+<SeqChart client:visible kind="contrib" title="Each step adds its own piece to the gradient of the shared weight" />
 
 <details>
 <summary>Show the code</summary>

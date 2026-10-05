@@ -17,10 +17,12 @@
     /** params mode: starting number of hidden layers (1-4) and units per layer (1-8). */
     hidden?: number;
     width?: number;
+    /** forward mode: false hides weights, biases and values so only the layer-by-layer flow shows. */
+    numbers?: boolean;
   }
-  let { mode = 'forward', title = '', hidden: hidden0 = 2, width: width0 = 4 }: Props = $props();
+  let { mode = 'forward', title = '', hidden: hidden0 = 2, width: width0 = 4, numbers = true }: Props = $props();
 
-  const M = untrack(() => mode);
+  const M = untrack(() => mode), NUM = untrack(() => numbers);
   const TITLES: Record<Mode, string> = {
     matmul: 'One layer, two views: neurons and a matrix',
     forward: 'A forward pass through a 2-2-2-1 network',
@@ -48,7 +50,7 @@
   const markers = $derived(markersOf(plan));
 
   let playing = $state(false);
-  let speed = $state(1);
+  let speed = $state(0.5);
   let uiT = $state(0);
   let narration = $state('');
   let t = 0; // truth for the canvas: a plain variable
@@ -69,6 +71,13 @@
     }
     if (P.mode === 'forward') {
       const l = (fr as ForwardFrame).layer, h = (k: number) => P.tr.h[k].map(f2).join(', ');
+      if (!NUM) {
+        if (l === 0) return 'The two inputs wait on the left. Nothing has been computed yet.';
+        if (l === 1) return 'Layer 1 reads the raw inputs and produces two activations.';
+        if (l === 2) return "Layer 2 starts only now: its inputs are layer 1's activations, not the raw inputs.";
+        if (l === 3) return "The output reads layer 2's activations, never the raw inputs.";
+        return "Done. Every layer ran once, in order, and each one's outputs were the next one's inputs.";
+      }
       if (l === 0) return `The inputs are x = (${h(0)}). Nothing has been computed yet.`;
       if (l === 1 || l === 2) return `Layer ${l}: input signals arrive along the weights, the sums z settle, then tanh produces the activations h. Each card shows the calculation as it completes.`;
       if (l === 3) return `Output layer: combine the second hidden layer's activations with the output weights and bias. This output is linear, so the completed sum z is also ŷ.`;
@@ -230,7 +239,7 @@
           const a = end(l - 1, i, true), b = end(l, j, false), lw = 0.8 + 4.6 * Math.abs(w) / P.maxW;
           line(a, b, signCol(w), lw, running ? 0.95 : 0.4);
           pulse(a, b, fr.pulse[l - 1][j][i], lw);
-          if (fr.labelA[l - 1] > 0.01) { const m = lerp(a, b, i ? 0.7 : 0.3); halo(f2(w), m.x, m.y, signCol(w), mono(12.5, 600), fr.labelA[l - 1]); }
+          if (NUM && fr.labelA[l - 1] > 0.01) { const m = lerp(a, b, i ? 0.7 : 0.3); halo(f2(w), m.x, m.y, signCol(w), mono(12.5, 600), fr.labelA[l - 1]); }
         }));
       }
       G.pos.forEach((col, l) => col.forEach((p, n) => {
@@ -245,6 +254,7 @@
           ctx.beginPath(); ctx.roundRect(p.x - hw - 5, p.y - hh - 5, 2 * hw + 10, 2 * hh + 10, 9); ctx.stroke(); ctx.setLineDash([]);
         }
         const nm = l === 0 ? `x${sub(n + 1)}` : l === L ? 'ŷ' : `${NAME[l]}${sub(n + 1)}`;
+        if (!NUM) { tx(nm, p.x, p.y + 5, shown || l === 0 ? c.fwd.hex : c.muted.hex, ital(15)); return; }
         if (l === 0) { tx(nm, p.x - hw + 8, p.y + 4.5, c.muted.hex, ital(13), 'left'); tx(f2(nd.h), p.x + hw - 8, p.y + 4.5, c.text.hex, mono(13.5, 600), 'right'); return; }
         tx(`${nm} · b = ${f2(P.net.b[l - 1][n])}`, p.x, p.y - hh - 8, c.muted.hex, ital(12.5));
         ctx.globalAlpha = 1; ctx.strokeStyle = c.rule.hex; ctx.lineWidth = 1;

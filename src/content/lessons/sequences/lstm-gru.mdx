@@ -11,6 +11,7 @@ status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
 import RNNUnroller from '../../../components/widgets/RNNUnroller/RNNUnroller.svelte';
+import SeqChart from '../../../components/widgets/SeqChart/SeqChart.svelte';
 
 <Step title="A second state that is not squashed">
 
@@ -100,9 +101,9 @@ Now the reason LSTMs fixed the training problem. Look at the belt update again: 
 
 $$\frac{\partial \mathbf c_T}{\partial \mathbf c_t} \;\approx\; \operatorname{diag}\Bigl(\prod_{k=t+1}^{T} \mathbf f_k\Bigr).$$
 
-Compare this with the plain RNN, whose factor per step depended on the singular values of $W_{hh}$ and on the $\tanh$ slopes. The figure runs an LSTM backward over "abcdefghijkl" with the same recurrent-weight slider as in the last lesson. On letters the forget gate here is about $0.81$, and the gradient shrinks by $\times 0.81$ per step. Now drag the slider from $0.5$ to $2$: the LSTM's factor barely moves, from $0.81$ to $0.82$. The plain RNN on the same twelve letters swings from $0.42$ to $0.98$ over the same range. The belt's gradient is set by the gates, not by $W_{hh}$.
+Compare this with the plain RNN, whose factor per step depended on the singular values of $W_{hh}$ and on the $\tanh$ slopes. The chart below runs both networks backward over "abcdefghijkl" and plots how much the gradient changes per step as the recurrent-weight scale $s$ from the last lesson sweeps from $0.5$ to $2$. On letters the LSTM's forget gate is about $0.81$, and its cell-state gradient shrinks by $\times 0.81$ per step whatever $s$ is: the line barely moves, from $0.81$ to $0.82$. The plain RNN on the same twelve letters climbs from $\times 0.42$ to $\times 0.98$ over the same range, with a dip near $s = 1.5$ where some of its units saturate. The belt's gradient is set by the gates, not by $W_{hh}$.
 
-<RNNUnroller client:visible cell="lstm" mode="bptt" sequence="abcdefghijkl" folded={false} maxLen={12} loopPhase="backward" showScale showPanel={false} title="The gradient along the cell state ignores the recurrent weight scale" />
+<SeqChart client:visible kind="factor" title="The gradient along the cell state ignores the recurrent weight scale" />
 
 <details>
 <summary>Show the math</summary>

@@ -65,9 +65,9 @@ Now divide out the lengths and keep only the angle part:
 
 $$\cos\theta = \frac{\mathbf{a}\cdot\mathbf{b}}{|\mathbf{a}|\,|\mathbf{b}|}.$$
 
-This is **cosine similarity**. It is $1$ when the vectors point the same way, $0$ when they are perpendicular, and $-1$ when they are opposite, however long they are. Stretching $\mathbf{b}$ to twice its length doubles the dot product but leaves the cosine unchanged. That is why it is a standard way to compare embeddings, the lists of numbers that models use to represent words and images: you care about direction, not size. Watch the $\cos\theta$ readout under the figure as the arrows turn, and try dragging the tip of $\mathbf{b}$ closer to and farther from the centre without changing its direction.
+This is **cosine similarity**. It is $1$ when the vectors point the same way, $0$ when they are perpendicular, and $-1$ when they are opposite, however long they are. Stretching $\mathbf{b}$ to twice its length doubles the dot product but leaves the cosine unchanged. That is why it is a standard way to compare embeddings, the lists of numbers that models use to represent words and images: you care about direction, not size. In the figure below, $\mathbf{b}$ stays at $60°$ from $\mathbf{a}$ while its length runs from $0.6$ up to $3$ and back. The dot product grows and shrinks with it, from $0.72$ to $3.6$, but $\cos\theta$ stays at $0.50$ the whole time.
 
-<DotProduct client:visible mode="geometry" title="Cosine similarity ignores length: only the angle matters" />
+<DotProduct client:visible mode="stretch" title="Cosine similarity ignores length: only the angle matters" />
 
 <details>
 <summary>Show the math</summary>

@@ -42,11 +42,13 @@ Our model is $P(y = 1 \mid x) = \sigma(wx + b)$. In the figure a probe slides al
 
 The two knobs have simple jobs. The **offset** $b$ slides the curve left or right: the curve crosses 0.5 exactly where $wx + b = 0$, at $x = -b/w$. This is the **decision boundary**, the dashed vertical line. With the fitted values it is at $x = -0.35$. Points to its right are predicted class 1.
 
-The **steepness** $w$ sets how quickly confidence grows as you move away from the boundary. Small $w$ gives a lazy ramp; large $w$ gives a sharp step. Drag the sliders, or click anywhere on the contour map, and watch the curve and the ring above each point respond.
+The **steepness** $w$ sets how quickly confidence grows as you move away from the boundary. Small $w$ gives a lazy ramp; large $w$ gives a sharp step.
+
+The timeline turns one knob at a time. First only $b$ moves: the curve slides left and right without changing shape, and the dashed boundary slides with it. Then only $w$ moves: the curve flattens and sharpens. On the map, the dot travels straight up and down, then straight left and right. Afterwards, drag the sliders or click anywhere on the contour map to try your own settings.
 
 The ring on the curve above each point is that point's predicted $P(y = 1)$. The pink stem joins it to the point's true label (1 at the top, 0 at the bottom). A long stem means the model is confidently wrong there, and it is the raw material for the loss.
 
-<LogisticFit client:visible title="Drag the map: every position is a different curve" />
+<LogisticFit client:visible mode="knobs" title="b slides the curve, w sharpens it" />
 
 </Step>
 
@@ -79,9 +81,11 @@ $$\frac{\partial L}{\partial w} = \frac{1}{n}\sum_i (p_i - y_i)\,x_i, \qquad \fr
 
 Each point pushes with a force equal to its error $p_i - y_i$, the same stem you see in the figure. A class 1 point with a low $p$ pulls the curve up towards it; a class 0 point with a high $p$ pushes it down.
 
-Start at $w = 0.1$, $b = -2.2$, where the log-loss is 1.173. The gradient is $(-0.304, -0.403)$. With a step size of $0.5$ the first update gives $w = 0.252$, $b = -2.00$, and the loss falls to 1.050. After 10 steps it is 0.558 and after 40 it is 0.453, within 0.001 of the minimum $0.452$ at $w = 1.26$, $b = 0.44$. Because log-loss is convex, every start ends at the same place. Try "Descend from here" after placing the dot somewhere else. See [gradient descent](/learn/foundations/gradient-descent/) for the update rule.
+Start at $w = 0.1$, $b = -2.2$, where the log-loss is 1.173. The gradient is $(-0.304, -0.403)$. With a step size of $0.5$ the first update gives $w = 0.252$, $b = -2.00$, and the loss falls to 1.050. After 10 steps it is 0.558 and after 40 it is 0.453, within 0.001 of the minimum $0.452$ at $w = 1.26$, $b = 0.44$. Because log-loss is convex, every start ends at the same place. See [gradient descent](/learn/foundations/gradient-descent/) for the update rule.
 
-<LogisticFit client:visible title="Gradient descent on log-loss" />
+This figure shows the gradient itself. The magenta arrow on the map is the next step, $-0.5\,\nabla L$, drawn from the dot. The readout writes out both partial derivatives and where the step lands. Watch the arrow shrink as the dot nears the diamond: near the minimum the errors $p_i - y_i$ mostly cancel, so the gradient fades. Then click anywhere on the map to place your own starting guess and press Play. Training runs from your guess and heads for the same diamond, because there is only one bottom. From a far corner, such as large $w$ and large $b$, 40 steps are not enough: the valley floor there is nearly flat, so the arrow is tiny and progress is slow. That is a real weakness of plain gradient descent, and Day 6's optimizers are built to fix it.
+
+<LogisticFit client:visible showGrad title="Gradient descent on log-loss: the arrow is the next step" />
 
 <details>
 <summary>Show the code</summary>

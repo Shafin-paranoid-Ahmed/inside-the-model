@@ -30,7 +30,7 @@ $$z = b + w_1 x + w_2 y, \qquad P(\text{class 1}) = \sigma(z) = \frac{1}{1 + e^{
 
 The sigmoid equals one half exactly when $z = 0$. So the decision boundary is the set of points where the score is zero. That is a single equation, $b + w_1 x + w_2 y = 0$, and it describes a straight line.
 
-The chart on the right shows the loss, the number training pushes down. It starts at $\ln 2 \approx 0.693$: with all weights at zero every point gets probability one half, and the loss is the same whatever the labels are. Drag the timeline back and forth to see the line and the loss move together.
+This figure draws the score itself. The thin lines join points with the same score, $z = -2, -1, +1, +2$, and the thick line is $z = 0$. They are parallel and evenly spaced because $z$ is linear: every equal step away from the line adds the same amount to $z$. The chart on the right shows the loss, the number training pushes down. It starts at $\ln 2 \approx 0.693$: with all weights at zero every point gets probability one half, and the loss is the same whatever the labels are. Drag the timeline back and forth to see the line and the loss move together.
 
 <details>
 <summary>Show the math</summary>
@@ -56,7 +56,7 @@ def train(X, c, steps=200, lr=0.8):
 
 </details>
 
-<BoundaryExplorer client:visible title="The line is the set of points where the score is zero" editable={false} />
+<BoundaryExplorer client:visible title="The line is the set of points where the score is zero" editable={false} scores />
 
 </Step>
 
@@ -81,7 +81,7 @@ The distance from $(x, y)$ to the line $b + w_1 x + w_2 y = 0$ is $z / \lVert w 
 
 <Step title="When a line is not enough">
 
-Change **Data** to XOR in the figure below. The classes sit in opposite corners: class 1 is upper right and lower left, class 0 is the other two. Try to place a line so that blue is on one side and orange on the other. You cannot: any line leaves about half the points on the wrong side. Points on the wrong side get a heavy black outline.
+The figure below uses the XOR data. The classes sit in opposite corners: class 1 is upper right and lower left, class 0 is the other two. Try to place a line so that blue is on one side and orange on the other. You cannot: any line leaves about half the points on the wrong side. Points on the wrong side get a heavy black outline.
 
 The model is not badly trained. It is too simple. A line is the only boundary shape it can draw, so training just finds the least bad line and the loss stalls near $\ln 2$. Nothing in more training time can fix that.
 

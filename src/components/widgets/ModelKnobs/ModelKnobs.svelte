@@ -19,7 +19,7 @@
   const init = untrack(() => ({ K: knobs, data: showData }));
   const T = duration(init.K), MK = markers(init.K);
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   /** Knob values the user set by hand; null while the timeline is driving them. */
   let over = $state<{ w: number; b: number } | null>(null);
   let phase = $state<Phase>('slope');

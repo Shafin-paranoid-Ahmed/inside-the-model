@@ -22,7 +22,7 @@
   let scale = $state(presetScale(initialPreset(init.mode)));
   let symmetryCase = $state<SymmetryCase>('matched');
   let playing = $state(false);
-  let speed = $state(1);
+  let speed = $state(0.5);
   let uiT = $state(0);
   let phase = $state('');
   let narration = $state('The displayed statistics come from a completed seeded forward and backward pass.');

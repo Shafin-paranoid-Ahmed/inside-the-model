@@ -1,6 +1,8 @@
 ---
 import Base from './Base.astro';
 import { lessonLd } from '../lib/seo';
+import { REFRESHER } from '../lib/refresher';
+import katex from 'katex';
 
 interface Ref { id: string; title: string }
 interface Props {
@@ -20,6 +22,8 @@ interface Props {
 }
 const { id, title, summary, day, track, trackTitle, level, duration, prereqs = [], status, lastReviewed, prev, next } = Astro.props;
 const crumb = `${day ? `Day ${day}` : 'Math primer'} · ${trackTitle ?? track}`;
+const card = REFRESHER[id];
+const eqHtml = (tex: string) => katex.renderToString(tex, { displayMode: true, throwOnError: false });
 ---
 <Base title={title} description={summary} type="article" jsonLd={lessonLd({ id, title, summary, level, duration })}>
   <article class="lesson wrap">
@@ -34,7 +38,8 @@ const crumb = `${day ? `Day ${day}` : 'Math primer'} · ${trackTitle ?? track}`;
     <details class="refresher">
       <summary>Refresher</summary>
       <div class="refresher-body">
-        <p>{summary}</p>
+        <p>{card?.tldr ?? summary}</p>
+        {card?.eq && <Fragment set:html={eqHtml(card.eq)} />}
         {prereqs.length > 0 && (
           <p class="ui">You need to know first: {prereqs.map((p, i) => <><a href={`/learn/${p}`}>{p.split('/').pop()?.replaceAll('-', ' ')}</a>{i < prereqs.length - 1 && ', '}</>)}</p>
         )}

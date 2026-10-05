@@ -12,7 +12,7 @@ import { objective } from '../OptimizerLab/sim';
   let comparison = $state<BatchComparison>('equal-updates');
   let batchScaling = $state(untrack(() => scaled));
   let includeUnstable = $state(untrack(() => unstable)), selectedRun = $state(0);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let announcedStep = $state(0);
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, timeline: ReturnType<typeof Timeline>;

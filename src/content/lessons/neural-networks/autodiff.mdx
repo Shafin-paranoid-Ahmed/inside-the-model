@@ -49,9 +49,9 @@ Here is what the tape holds for our neuron. Every row is one primitive operation
 
 The leaf rows are the inputs and parameters: $w_1 = 0.5$, $x_1 = 1$, $w_2 = -0.6$, $x_2 = 0.5$, $b = 0.1$ and the target $t = -0.5$. Then the operations follow: $m_1 = w_1 x_1 = 0.5$, $m_2 = w_2 x_2 = -0.3$, $s_1 = m_1 + m_2 = 0.2$, $s_2 = s_1 + b = 0.3$, $y = \tanh(s_2) = 0.2913$, $d = y - t = 0.7913$ and $L = d^2 = 0.6262$.
 
-Scrub the timeline through the recording phase. Each new row is appended as its operation runs; nothing is computed ahead of time, and nothing is looked up afterwards except the numbers already on the tape.
+This figure plays only the recording. Each new row is appended as its operation runs; nothing is computed ahead of time, and nothing is looked up afterwards except the numbers already on the tape.
 
-<AutodiffTape client:visible showCost={false} title="The forward pass writes the tape" />
+<AutodiffTape client:visible showCost={false} recordOnly title="The forward pass writes the tape" />
 
 </Step>
 

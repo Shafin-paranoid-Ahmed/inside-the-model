@@ -18,7 +18,7 @@
   const MK = markers(init.mode), T = duration(init.mode);
   const isAct = init.mode === 'activation';
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let over = $state<Params | null>(null);
   let userAct = $state<Act>('sigmoid');
   let t = 0, wake = () => {};

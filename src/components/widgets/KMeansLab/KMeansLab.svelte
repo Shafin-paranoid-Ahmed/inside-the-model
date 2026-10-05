@@ -32,7 +32,7 @@
   /** Cluster colours, in order (semantic tokens only; the shape also changes every four clusters). */
   const PAL = ['pos', 'neg', 'fwd', 'accent', 'grad', 'text', 's3', 's5'] as const;
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let dur = $state(1), mk = $state<{ at: number; label: string }[]>([]);
   let seed = $state(init.seed), kSel = $state(4);
   let ui = $state({ phase: 'start', iter: 0, inertia: NaN, moved: 0, inA: NaN, inB: NaN, nA: 0, nB: 0, hov: null as null | { i: number; d: number[]; best: number } });

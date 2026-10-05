@@ -20,7 +20,7 @@ That is **gradient descent**, and it is how nearly every neural network is train
 
 Watch the ball roll. The magenta arrow is the step it is about to take, pointing downhill.
 
-<GradientDescent2D client:visible lockSurface title="A ball rolling down a loss surface" />
+<GradientDescent2D client:visible lockSurface view="roll" title="A ball rolling down a loss surface" />
 
 </Step>
 
@@ -30,9 +30,9 @@ Two knobs give a landscape you can draw. Each position $(\theta_1, \theta_2)$ is
 
 This surface is a bowl, $L = \tfrac12(\theta_1^2 + 8\theta_2^2)$. It curves eight times more sharply across the map (the vertical direction) than along it (the horizontal direction), so its contours are long thin ellipses. The minimum, where the loss is zero, is at the centre. Real networks have millions of knobs rather than two, and their landscape cannot be drawn, but the same picture applies.
 
-The dashed ring marks where the ball started. Drag it, or use the start sliders under the figure, and watch the ball roll from the new place.
+This figure adds four faint dashed paths: the routes the ball would take from four other starting points. They begin in different corners and all end at the same place, the bottom of the bowl. The dashed ring marks where the solid ball started. Drag it, or use the start sliders under the figure, and the ball rolls from the new place to that same bottom.
 
-<GradientDescent2D client:visible lockSurface title="Move the start: the ball always rolls to the bottom of the bowl" />
+<GradientDescent2D client:visible lockSurface view="starts" title="Five starts, one bottom" />
 
 </Step>
 
@@ -46,7 +46,7 @@ Each partial derivative says how fast the loss rises when only that knob is nudg
 
 The small chart on the right shows this from the ball's point of view. It plots the loss along the line through the ball in the downhill direction. The ball is the filled dot at distance zero, and the curve slopes down to its right. The dashed magenta line is the tangent, whose slope is minus the length of the gradient. The steeper the ground, the steeper the tangent and the bigger the step.
 
-<GradientDescent2D client:visible lockSurface title="The gradient at the ball, seen from the side" />
+<GradientDescent2D client:visible lockSurface view="slice" title="The gradient at the ball, seen from the side" />
 
 <details>
 <summary>Show the math</summary>
@@ -67,9 +67,9 @@ The number $\eta$ (eta) is the **learning rate**: how much of the gradient to st
 
 For our bowl the update is easy to write out. With $\eta = 0.1$: $\theta_1 \leftarrow \theta_1 - 0.1\,\theta_1 = 0.9\,\theta_1$ and $\theta_2 \leftarrow \theta_2 - 0.1\cdot 8\theta_2 = 0.2\,\theta_2$. So the vertical coordinate shrinks fast (it is multiplied by 0.2 every step) and the horizontal one shrinks slowly (0.9 per step). The ball first dives toward the valley floor and then crawls along it. That is exactly the path in the figure.
 
-The numbers: the loss starts at 11.26, falls to 0.547 after 10 steps, and to 0.00018 after 48. Drag the timeline through the steps and read the loss in the readout.
+The readout under this figure writes the rule out for the current step: the position $\theta$, the gradient $\nabla L$ there, and where the step lands, $\theta - \eta\nabla L$. The chart on the right tracks the loss after each step on a log scale, where every gridline is 100 times smaller than the one above. The loss starts at 11.26, falls to 0.547 after 10 steps, and to 0.00018 after 48. Drag the timeline through the steps and watch the arithmetic change.
 
-<GradientDescent2D client:visible lockSurface lr={0.1} title="Updating: theta is minus eta times the gradient, over and over" />
+<GradientDescent2D client:visible lockSurface view="update" lr={0.1} title="Updating: theta is minus eta times the gradient, over and over" />
 
 <details>
 <summary>Show the code</summary>

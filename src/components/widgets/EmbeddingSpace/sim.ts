@@ -308,24 +308,43 @@ export interface ContextFrame extends BaseFrame {
   mode: 'contextual'; stage: number; cloud: Pt[]; sheep: Pt[]; cosThisThese: number;
 }
 
+const stagesOf = (tr: ReturnType<typeof forward>) => [tr.x0, tr.layers[0].resid2, tr.layers[1].resid2];
+interface Cloud { vecs: number[][][]; plural: boolean[] }
+const clouds = new WeakMap<Data, Cloud>();
+function addSentence(data: Data, ids: readonly number[], c: Cloud) {
+  const st = stagesOf(forward(data.w, ids));
+  let number: string | undefined = 'either';
+  ids.forEach((tok, pos) => {
+    const k = WORD_CLASS[tok];
+    if (k.kind === 'det') number = k.number;
+    if (k.kind !== 'noun') return;
+    const n = k.number !== 'either' ? k.number : number;
+    if (n === 'either') return; // "the sheep" / "the fish": the number is not fixed by the words before it
+    c.vecs.push(st.map((a) => Array.from(a.slice(pos * D, pos * D + D))));
+    c.plural.push(n === 'pl');
+  });
+}
+/** Noun vectors of the 200 sample sentences at each stage, computed once per page. */
+function cloudOf(data: Data): Cloud {
+  let c = clouds.get(data);
+  if (!c) { c = { vecs: [], plural: [] }; for (const ids of SAMPLE_200) addSentence(data, ids, c); clouds.set(data, c); }
+  return c;
+}
+/** Same as cloudOf, but yields to the browser between small batches so no task blocks input for long. */
+export async function prepareContext(data: Data, batch = 20): Promise<void> {
+  if (clouds.has(data)) return;
+  const c: Cloud = { vecs: [], plural: [] };
+  for (let i = 0; i < SAMPLE_200.length; i += batch) {
+    for (const ids of SAMPLE_200.slice(i, i + batch)) addSentence(data, ids, c);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  if (!clouds.has(data)) clouds.set(data, c);
+}
+
 export function contextScene(data: Data, third: string | null = null): ContextScene {
   const dets = ['this', 'these', ...(third ? [third] : [])];
-  const stages = (tr: ReturnType<typeof forward>) => [tr.x0, tr.layers[0].resid2, tr.layers[1].resid2];
-  const vecs: number[][][] = [], plural: boolean[] = [];
-  for (const ids of SAMPLE_200) {
-    const st = stages(forward(data.w, ids));
-    let number: string | undefined = 'either';
-    ids.forEach((tok, pos) => {
-      const c = WORD_CLASS[tok];
-      if (c.kind === 'det') number = c.number;
-      if (c.kind !== 'noun') return;
-      const n = c.number !== 'either' ? c.number : number;
-      if (n === 'either') return; // "the sheep" / "the fish": the number is not fixed by the words before it
-      vecs.push(st.map((a) => Array.from(a.slice(pos * D, pos * D + D))));
-      plural.push(n === 'pl');
-    });
-  }
-  const vec = dets.map((d) => stages(forward(data.w, sentenceFor(d))).map((a) => Array.from(a.slice(3 * D, 3 * D + D))));
+  const { vecs, plural } = cloudOf(data);
+  const vec = dets.map((d) => stagesOf(forward(data.w, sentenceFor(d))).map((a) => Array.from(a.slice(3 * D, 3 * D + D))));
   const cloud: Pt[][] = [], sheep: Pt[][] = [];
   let prev: Pt[] | null = null;
   for (let st = 0; st < 3; st++) {

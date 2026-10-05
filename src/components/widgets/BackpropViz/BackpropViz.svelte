@@ -17,8 +17,12 @@
     showPanel?: boolean;
     /** Node or weight id to open in the chain-rule panel (e.g. 'h2', 'w11', 'v3', 'a'). */
     select?: string;
+    /** Expr mode: starting leaf values [a, b, c] (default [2, −3, 10]). */
+    values?: number[];
+    /** MLP mode: starting hidden activation. */
+    act?: 'tanh' | 'relu';
   }
-  let { mode = 'mlp', title = '', initialPhase, loopPhase, showPanel = true, select = '' }: Props = $props();
+  let { mode = 'mlp', title = '', initialPhase, loopPhase, showPanel = true, select = '', values, act }: Props = $props();
 
   const MAX_CYCLES = 40, HOLD = 0.7;
   const LEGEND = [
@@ -27,19 +31,19 @@
   ];
   const uid = $props.id();
   const init = untrack(() => ({
-    mode, loop: loopPhase, select,
+    mode, loop: loopPhase, select, values, act,
     title: title || (mode === 'mlp' ? 'Training a 2-3-1 network' : 'The graph of L = (a·b + c)²'),
     start: PH[initialPhase ?? loopPhase ?? 'forward'][0],
   }));
   const [a0, b0] = init.loop ? PH[init.loop] : [0, T];
   const hi0 = init.loop ? b0 + HOLD : T;
 
-  let cfg = $state<Cfg>(defaultCfg(init.mode));
+  let cfg = $state<Cfg>({ ...defaultCfg(init.mode), ...(init.mode === 'expr' && init.values ? { init: [...init.values] } : {}), ...(init.act ? { act: init.act } : {}) });
   const snap = (): Cfg => $state.snapshot(cfg) as Cfg;
   const valid = () => [...cfg.x, cfg.target, ...cfg.init, cfg.lr].every((n) => Number.isFinite(n));
   let plan = $state.raw<Plan>(makePlan(snap(), cfg.init));
   let playing = $state(false);
-  let speed = $state(1);
+  let speed = $state(0.5);
   let uiT = $state(init.start);
   let sel = $state(init.select);
   let vertical = $state(false);

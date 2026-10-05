@@ -16,7 +16,7 @@ import SVMMargin from '../../../components/widgets/SVMMargin/SVMMargin.svelte';
 
 Twenty points, two classes, and a gap between them. Any number of straight lines put class 1 on one side and class 0 on the other, so a plain classifier such as [logistic regression](/learn/foundations/logistic-regression/) has no reason to prefer one over another. A **support vector machine** (SVM) does have a preference: pick the line with the widest safety margin, the one that stays as far as possible from the nearest points on both sides.
 
-Watch the first three seconds. Nine separating lines appear one after another, and the readout gives each line's **margin**, the width of the empty street you can fit around it before touching a point. They run from 0.06, where the line almost grazes the data, to 0.57. Then the narrowest line starts to move: training pushes it away from its nearest points and the street widens to 0.58, the widest possible. The plot on the right tracks the width over time.
+Watch the start of the timeline. Nine separating lines appear one after another, and the readout gives each line's **margin**, the width of the empty street you can fit around it before touching a point. They run from 0.06, where the line almost grazes the data, to 0.57. Then the narrowest line starts to move: training pushes it away from its nearest points and the street widens to 0.58, the widest possible. The plot on the right tracks the width over time.
 
 <SVMMargin client:visible title="Nine lines that separate, and the one that leaves the most room" />
 
@@ -26,9 +26,9 @@ Watch the first three seconds. Nine separating lines appear one after another, a
 
 The solid line is the decision boundary $\mathbf{w}\cdot\mathbf{x} + b = 0$. The dashed lines are $\mathbf{w}\cdot\mathbf{x} + b = \pm 1$. Fixing the "1" is only a choice of scale, and it makes the street between them exactly $2/\lVert\mathbf{w}\rVert$ wide. So **maximizing the margin means minimizing $\lVert\mathbf{w}\rVert$**, subject to every point staying outside the street.
 
-At the end, three points sit exactly on the dashed lines. They are the **support vectors**, ringed in the figure. Every other point is farther out, and the solution would not change if you moved it a little, or deleted it. Press the button under the figure: it retrains on only those three points, starting again from the narrow line, and arrives at the same margin of 0.58. This is why the model is called a support vector machine: the boundary is held up by a handful of points, not by the whole dataset.
+At the end, three points sit exactly on the dashed lines. They are the **support vectors**, ringed in the figure. Every other point is farther out, and the solution would not change if you moved it a little, or deleted it. The figure below deletes every other point (they stay as faint marks) and retrains on only those three, starting again from the narrow line. It arrives at the same margin of 0.58. The button under it brings the other points back, so you can compare. This is why the model is called a support vector machine: the boundary is held up by a handful of points, not by the whole dataset.
 
-<SVMMargin client:visible title="Delete every point except the support vectors: nothing changes" />
+<SVMMargin client:visible pruned title="Delete every point except the support vectors: nothing changes" />
 
 <details>
 <summary>Show the math</summary>

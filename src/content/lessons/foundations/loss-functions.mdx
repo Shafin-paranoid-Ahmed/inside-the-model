@@ -18,9 +18,9 @@ You can look at a line through a cloud of points and say "that is a bad fit". A 
 
 That number is called the **loss**. Start with a single prediction. Each vertical segment in the figure is the gap between what a point really is and what the line predicted for it. Blue segments are points above the line, orange are points below.
 
-Watch the timeline tilt the line away from the best fit and back. Long segments mean a bad fit, and they shrink as the line settles. You can also grab either round handle and drag the line yourself.
+Watch the timeline tilt the line away from the best fit and back. Long segments mean a bad fit, and they shrink as the line settles. The readout lists every gap with its sign. You can also grab either round handle and drag the line yourself. There is no score yet. Turning these eight gaps into one number is the next step.
 
-<LossPlayground client:visible loss="mae" title="Residuals: the gap between each point and the line" />
+<LossPlayground client:visible view="residuals" title="Residuals: the gap between each point and the line" />
 
 </Step>
 
@@ -40,9 +40,9 @@ The first is the **absolute error**, $|r|$. The second is the **squared error**,
 
 To score a whole dataset, average the per-example losses. Averaging the squared errors gives the **mean squared error** (MSE); averaging the absolute errors gives the **mean absolute error** (MAE).
 
-The figure now draws each squared error as a real square, with side length equal to the residual. Its area is $r^2$. The MSE is the average area of these squares, so a line is a good fit when the squares are small. The figure's readout shows the MSE and MAE for the current line. For the best line here (slope 0.6, intercept 1.0) the MSE is 0.135 and the MAE is 0.35.
+The figure draws each squared error as a real square, with side length equal to the residual. Its area is $r^2$. The MSE is the average area of these squares, so a line is a good fit when the squares are small. Switch to "Absolute (MAE)" under the figure and the squares disappear, leaving bars whose *length* is the error. The readout shows both scores for the current line. As the line tilts, watch the big misses: their squares grow much faster than their bars. For the best line here (slope 0.6, intercept 1.0) the MSE is 0.135 and the MAE is 0.35.
 
-<LossPlayground client:visible loss="mse" title="MSE: the average area of the squares" />
+<LossPlayground client:visible view="squares" title="MSE: the average area of the squares" />
 
 <details>
 <summary>Show the math</summary>
@@ -71,9 +71,9 @@ def mae(y, y_hat): return np.mean(np.abs(y - y_hat))
 
 Here is the idea that the whole rest of the course is built on. The data is fixed. So the loss depends only on the model's knobs: change $w$ and $b$ and the loss changes. The loss is a *function of the parameters*, written $L(w, b)$.
 
-The small chart on the right of the figure shows this for one knob. It plots the loss as $w$ sweeps from left to right while $b$ is held fixed. The accent dot is where the current line sits on that curve. The green diamond marks the lowest point, the best $w$ for this $b$. Drag the line's handles and watch the dot slide along the curve; the bottom of the bowl is where the line fits best.
+This figure adds what the previous ones lacked: a second chart, on the right. It does not show the data. It shows the MSE for *every* slope $w$ at once, with $b$ held fixed. Each point on that curve is one whole line on the left, scored. The accent dot is the current line. The diamond marks the lowest point, the best $w$ for this $b$. As the timeline tilts the line, the dot rides up and down the bowl. Drag the line's handles yourself and the dot follows. The bottom of the bowl is where the line fits best.
 
-<LossPlayground client:visible loss="mse" title="The loss as a function of the slope" />
+<LossPlayground client:visible view="curve" title="The loss as a function of the slope" />
 
 Training will mean exactly this: find the knob values at the bottom of the curve. The next two lessons show how to find them without looking at a plot.
 
@@ -85,27 +85,52 @@ Why square rather than take absolute values? Squared error is smooth, so it has 
 
 The price is sensitivity to **outliers**, points that do not follow the pattern. Watch the timeline slide one point far below the trend while the line stays exactly where it was. The MSE jumps from 0.135 to 3.48, about 26 times larger. The MAE goes from 0.35 to 0.92, about 2.6 times larger. Because the squares of big misses are huge, one bad point can dominate the whole MSE.
 
-That also changes where the bottom of the curve is. With the intercept held at 1.0, the MSE curve's best slope moves from 0.58 to 0.24 when the outlier appears: the line is dragged toward the outlier. The MAE curve's best slope stays at 0.51. Try switching between the two losses under the figure.
+That also changes where the bottom of the curve is. With the intercept held at 1.0, the MSE curve's best slope moves from 0.58 to 0.24 when the outlier appears: the line is dragged toward the outlier. The MAE curve's best slope stays at 0.51. Switch the loss to "Absolute (MAE)" and replay: the bowl on the right barely moves.
 
-<LossPlayground client:visible loss="mse" title="One outlier: MSE panics, MAE barely notices" />
+<LossPlayground client:visible view="outlier" title="One outlier: MSE panics, MAE barely notices" />
 
 Neither is "right". If big misses really are much worse than small ones, use squared error. If a few wild points are noise you would rather ignore, use absolute error. (A popular compromise, the Huber loss, is squared for small misses and absolute for large ones.)
 
 </Step>
 
-<Step title="A loss for classification">
+<Step title="Classification: the model answers with a probability">
 
-When the label is a category rather than a number, residuals make little sense: the "gap" between class 0 and class 1 is not a distance. The standard loss instead asks how much probability the model gave to the right answer.
+So far the label was a number, like a price. Often it is a yes-or-no answer instead: spam or not spam, tumor or no tumor. We write the two answers as label 1 and label 0.
 
-Here the model outputs $p = \sigma(wx + b)$, an S-shaped curve between 0 and 1 that we read as "the probability the label is 1". Filled dots are points labelled 1, open dots are labelled 0. The **log loss** (or cross-entropy) of one example is
+Residuals stop making sense here. The labels 0 and 1 are names, not amounts, so "the prediction was 0.3 away" means nothing. A classifier does something more useful than guess a label. It says **how sure** it is: "I think there is a 90% chance this is label 1." The loss then asks one question: *how much probability did you give to the right answer?*
 
-$$\ell = -\ln p_{\text{correct}},$$
+In the figure below, each dot is one example with one feature $x$. Filled dots sit on the top line (label 1); open dots sit on the bottom line (label 0). The teal S-shaped curve is the model. Its height above any $x$ is the probability it gives to label 1 there. (The S-shape comes from the **sigmoid** function $\sigma$, which squashes any number into the range 0 to 1. You only need the picture for now. Logistic regression on Day 2 builds it properly.)
 
-where $p_{\text{correct}}$ is $p$ for a label-1 point and $1 - p$ for a label-0 point. Give the right answer probability 1 and the loss is 0. Give it probability 0.5 and the loss is $\ln 2 = 0.693$. Give it probability 0.01 and the loss is $4.6$: a confident mistake is punished severely. The thickness of each red bar shows its point's loss.
+So for every dot you can read off how much probability it got:
 
-Watch the timeline sharpen the curve. Confident correct points get cheap and confident mistakes get expensive. The readout shows the average, and the value 0.693 is what a model that guesses 0.5 for everything would score.
+- a **label-1** dot gets $p$, the height of the curve above it;
+- a **label-0** dot gets $1 - p$, the space *above* the curve.
 
-<LossPlayground client:visible task="classification" title="Log loss: confident mistakes cost the most" />
+The red bar on each dot runs from the dot to the curve. Its length is the probability the model *withheld* from the right answer. A short bar means the model was nearly sure and right.
+
+</Step>
+
+<Step title="Log loss: pay for the probability you withheld">
+
+Now turn "probability given to the right answer", call it $p$, into a cost. The rule is
+
+$$\ell = -\ln p.$$
+
+That is all the **log loss** (also called cross-entropy) is. Some values:
+
+| Probability given to the right answer | 0.99 | 0.9 | 0.5 | 0.1 | 0.01 |
+|---|---|---|---|---|---|
+| Loss $-\ln p$ | 0.01 | 0.11 | 0.69 | 2.30 | 4.61 |
+
+Read the table from left to right. Being sure and right costs almost nothing. A shrug (0.5) costs 0.69. Being sure and **wrong** is very expensive: the cost keeps climbing toward infinity as $p$ heads to 0. A model trained on this loss learns never to be confidently wrong.
+
+The chart on the right of the figure is this rule as a curve. Every dot from the left panel sits on it, at the probability it was given. Dots on the right of that chart are cheap. Dots near the left wall are expensive. The dashed line marks a shrug: probability 0.5, cost 0.693.
+
+Watch the timeline sharpen the S-curve. Eight dots slide to the cheap right-hand end. Two dots are on the wrong side of the curve (ringed in red): the label-1 dot at $x = -0.5$ and the label-0 dot at $x = 0.3$. As the model grows more confident, those two climb the wall. When the curve is sharpest, the average log loss is 0.36, and those two points account for 95% of it. You can drag the round handle to shift the curve sideways, or use the sliders.
+
+<LossPlayground client:visible view="classify" title="Log loss: confident mistakes cost the most" />
+
+The training loss is the average of $-\ln p$ over all examples. Guessing 0.5 for everything scores exactly $\ln 2 = 0.693$, so any useful classifier must beat that.
 
 </Step>
 

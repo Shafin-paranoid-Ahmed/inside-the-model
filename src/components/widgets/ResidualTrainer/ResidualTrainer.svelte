@@ -45,7 +45,7 @@
   const MK = init.mode === 'history' ? HIST_MARKERS : init.mode === 'block' ? BLOCK_MARKERS : DEG_MARKERS;
   const SEEDS = [DEFAULT_SEED, 1, 3];
 
-  let playing = $state(false), speed = $state(1), uiT = $state(0), ready = $state(init.mode !== 'degradation');
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0), ready = $state(init.mode !== 'degradation');
   let seedIx = $state(0), done = $state(0);
   let t = 0, wake = () => {};
   let cv: HTMLCanvasElement, tl: ReturnType<typeof Timeline>;

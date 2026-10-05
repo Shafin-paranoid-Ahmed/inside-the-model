@@ -3,7 +3,7 @@
   import FigureCard from '../_shared/FigureCard.svelte';
   import Timeline from '../_shared/Timeline.svelte';
   import { createLoop, readColors, readVar, onThemeChange, prefersReducedMotion, advance } from '../_shared';
-  import { CHAINS, T, MARKERS, WIGGLE, frameAt, linkView, type ChainId } from './sim';
+  import { CHAINS, WIGGLE, duration, markers, frameAt, linkView, type ChainId, type View } from './sim';
 
   interface Props {
     /** 'wave': u = x², v = sin u, L = v². 'saturate': u = 2x, v = tanh u, L = 3v². */
@@ -13,16 +13,19 @@
     x?: number;
     /** Hide the x slider and chain switch. */
     controls?: boolean;
+    /** One job per figure: 'wiggle' | 'tangent' | 'links' | 'full' (see sim.ts). */
+    view?: View;
   }
-  let { chain = 'wave', title = 'The chain rule as linked slopes', x: xProp, controls: showControls = true }: Props = $props();
+  let { chain = 'wave', title = 'The chain rule as linked slopes', x: xProp, controls: showControls = true, view = 'full' }: Props = $props();
+  const V = untrack(() => view), T = duration(V), MARKERS = markers(V);
 
   const uid = $props.id();
   const start = untrack(() => ({ chain, x: xProp ?? CHAINS[chain].x0 }));
   let cid = $state<ChainId>(start.chain);
   let xv = $state(start.x);
-  let playing = $state(false), speed = $state(1), uiT = $state(0);
+  let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   let vertical = $state(false);
-  let narration = $state('Wiggle x a little and watch each link scale the wiggle by its slope.');
+  let narration = $state(untrack(() => view) === 'wiggle' ? 'x is wiggled by a small amount. Each point shakes, and the bars show how big the shake is at x, u, v and L.' : 'Wiggle x a little and watch each link scale the wiggle by its slope.');
   let numbers = $state('');
   const C = $derived(CHAINS[cid]);
 
@@ -41,6 +44,9 @@
     'link 2': 'Link 2: the wiggle in u is scaled again by the slope of the second function.',
     'link 3': 'Link 3: and once more into L.',
     product: 'Multiply the three slopes: that is dL/dx, matching the numerical derivative.',
+    'shrinking x': 'x slides toward 0. Watch the first tangent flatten: the slope of x² is 2x.',
+    'at x = 0': 'At x = 0 the first tangent is flat, so the wiggle in x makes almost no wiggle in u, and nothing downstream moves.',
+    'growing x again': 'x goes negative and back. The first slope changes sign; the wiggle sizes grow again.',
   };
 
   onMount(() => {
@@ -69,7 +75,7 @@
       const L = lay(), k = cv.width / L.w;
       ctx.setTransform(k, 0, 0, k, 0, 0);
       ctx.clearRect(0, 0, L.w, L.h);
-      const fr = frameAt(t, C, xv);
+      const fr = frameAt(t, C, xv, V);
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 
       L.plots.forEach((p, i) => {
@@ -121,7 +127,7 @@
       const half = L.barW / 2, cx = L.barX + half;
       text('size of the wiggle', L.barX - (vertical ? 30 : 50), L.barY - 12, c.muted.hex, 13, 'left', false);
       for (let i = 0; i < 4; i++) {
-        const y = L.barY + i * 24, rv = i === 0 ? 1 : fr.reveal[i - 1];
+        const y = L.barY + i * 24, rv = fr.bars[i];
         text(C.names[i], L.barX - 12, y + 12, c.text.hex, 13.5, 'right');
         ctx.globalAlpha = 1; ctx.fillStyle = c.rule.hex; ctx.fillRect(L.barX, y + 5, L.barW, 1);
         const a = (fr.amp[i] / maxP) * half * rv;
@@ -130,13 +136,14 @@
           const d = ((fr.pts[i] - fr.base[i]) / maxP) * half * rv;
           ctx.globalAlpha = 1; ctx.fillStyle = c.fwd.hex; ctx.beginPath(); ctx.arc(cx + d, y + 8, 4.2, 0, 6.2832); ctx.fill();
         }
-        text(`×${f2(Math.abs(fr.prods[i]))}`, L.barX + L.barW + 10, y + 13, c.grad.hex, 12.5, 'left', true, rv);
+        if (V === 'wiggle') text(f2(fr.amp[i]), L.barX + L.barW + 10, y + 13, c.fwd.hex, 12.5, 'left', true, 1);
+        else text(`×${f2(Math.abs(fr.prods[i]))}`, L.barX + L.barW + 10, y + 13, c.grad.hex, 12.5, 'left', true, rv);
       }
       // equation
       const ex = L.eqX, ey = L.eqY, r3 = fr.reveal[3];
-      if (!vertical) text('multiply the slopes', ex, ey - 14, c.muted.hex, 13, 'left', false, 1);
+      if (!vertical) text('multiply the slopes', ex, ey - 14, c.muted.hex, 13, 'left', false, fr.eq > 0 ? 1 : 0);
       const line = vertical ? [ey, ey + 26, ey + 52] : [ey + 14, ey + 44, ey + 74];
-      text(`dL/dx = ${fr.slopes.map(f2).join(' × ')}`, ex, line[0], c.grad.hex, 13, 'left', true, Math.max(r3, fr.reveal[2] * 0.6));
+      text(`dL/dx = ${fr.slopes.map(f2).join(' × ')}`, ex, line[0], c.grad.hex, 13, 'left', true, fr.eq);
       text(`      = ${f2(fr.dLdx)}`, ex, line[1], c.grad.hex, 15, 'left', true, r3);
       text(`numerical: ${f2(fr.numeric)}`, ex, line[2], c.muted.hex, 13, 'left', true, r3);
       ctx.globalAlpha = 1;
@@ -144,8 +151,10 @@
       tl.paint(t);
       if (now - lastUi > 100 || !playing) {
         lastUi = now; uiT = t;
-        if (fr.phase !== phase) { phase = fr.phase; narration = SAY[phase] ?? ''; }
-        numbers = `x = ${f2(xv)} · dL/dx = ${f2(fr.dLdx)} (product of slopes) · ${f2(fr.numeric)} (numerical)`;
+        if (fr.phase !== phase) { phase = fr.phase; narration = SAY[phase] ?? narration; }
+        numbers = V === 'wiggle' ? `wiggle of ${f2(WIGGLE)} in x → ${f2(fr.amp[1])} in u → ${f2(fr.amp[2])} in v → ${f2(fr.amp[3])} in L`
+          : V === 'tangent' ? `x = ${f2(fr.x)} · slopes ${fr.slopes.map(f2).join(', ')}`
+          : `x = ${f2(xv)} · dL/dx = ${f2(fr.dLdx)} (product of slopes) · ${f2(fr.numeric)} (numerical)`;
       }
     }
 

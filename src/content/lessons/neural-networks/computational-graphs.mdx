@@ -53,11 +53,13 @@ Notice that the graph has no cycles. A value can only depend on values computed 
 
 The graph is not a diagram of one calculation; it is a recipe. Feed different numbers in and the same nodes give different values.
 
-Try it: in the figure below, set $c = 0$. Now $m = -6$ is unchanged, but $s = m + 0 = -6$, and $L = (-6)^2 = 36$. Only the nodes downstream of $c$ changed. The node $m$ did not, because nothing on its path to the leaves ($a$ and $b$) was touched.
+The figure below runs the same graph with $c = 0$ instead of $10$. Now $m = -6$ is unchanged, but $s = m + 0 = -6$, and $L = (-6)^2 = 36$. Only the nodes downstream of $c$ changed. The node $m$ did not, because nothing on its path to the leaves ($a$ and $b$) was touched.
 
 That observation, that a change to a leaf only reaches the nodes downstream of it, is the seed of the whole idea of gradients. Later in the day you will ask how much the output moves for a tiny change in $c$, and the answer will come from following exactly these edges.
 
-<BackpropViz client:visible mode="expr" loopPhase="forward" title="Edit a, b or c below the figure" />
+<BackpropViz client:visible mode="expr" loopPhase="forward" values={[2, -3, 0]} title="The same recipe with c = 0" />
+
+Edit $a$, $b$ or $c$ under the figure and check which nodes change.
 
 </Step>
 
@@ -95,11 +97,7 @@ The two edges are different routes by which $a$ influences $f$. The multiply rou
 
 $$\frac{\partial f}{\partial a} = b + 1.$$
 
-With $a = 2$ and $b = -3$ we get $f = -4$ and $\partial f/\partial a = -3 + 1 = -2$. You can check it without any calculus: set $a = 2.001$ and get $f = 2.001 \cdot (-3) + 2.001 = -4.002$, a drop of $0.002$ for a step of $0.001$, so a slope of $-2$. When one value feeds several nodes, the gradients coming back along the separate edges **add up**. The lesson after next shows this in the network, where every input feeds three hidden units.
-
-<BackpropViz client:visible loopPhase="backward" initialPhase="update" select="x1" title="A network input fans out along three routes; its gradients add" />
-
-The network below demonstrates the same reuse rule with three consumers of $x_1$, rather than the two consumers in the scalar example above. Select $x_1$ to inspect each path's contribution.
+With $a = 2$ and $b = -3$ we get $f = -4$ and $\partial f/\partial a = -3 + 1 = -2$. You can check it without any calculus: set $a = 2.001$ and get $f = 2.001 \cdot (-3) + 2.001 = -4.002$, a drop of $0.002$ for a step of $0.001$, so a slope of $-2$. When one value feeds several nodes, the gradients coming back along the separate edges **add up**. The next lesson, [the chain rule, visually](/learn/neural-networks/chain-rule-visually/), shows the same rule in a network where every input feeds three hidden units.
 
 </Step>
 
@@ -119,9 +117,7 @@ Now take the network from [Backpropagation Through an MLP](/learn/neural-network
 - The output has three multiplies and two adds: 5 nodes.
 - The loss has a subtraction and a square: 2 nodes.
 
-That is 19 operation nodes fed by 12 leaves (two inputs, the target, and nine weights). The figure groups the operations inside each hidden unit and the output sum into larger nodes; its weighted connections are shown as edges. Underneath, it is one graph like the small one. The forward pass evaluates it in an order where every node comes after its inputs.
-
-<BackpropViz client:visible loopPhase="forward" title="The 2-3-1 network is a graph of 31 nodes" />
+That is 19 operation nodes fed by 12 leaves (two inputs, the target, and nine weights). [Backpropagation Through an MLP](/learn/neural-networks/backprop-mlp/) draws this network with the operations inside each hidden unit and the output sum grouped into larger nodes, and the weights as edges. Underneath, it is one graph like the small one. The forward pass evaluates it in an order where every node comes after its inputs.
 
 The method did not change; only the size did. A large model is the same construction repeated, with one difference in practice: nodes hold whole arrays (a matrix multiply is one node) instead of single numbers, so a network with billions of numbers still has a graph of only some thousands of nodes.
 

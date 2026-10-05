@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CHAINS, evalChain, numericDeriv, frameAt, linkView, T, REVEAL_AT } from '../../src/components/widgets/ChainRuleLinks/sim';
+import { CHAINS, evalChain, numericDeriv, frameAt, linkView, T, REVEAL_AT, duration } from '../../src/components/widgets/ChainRuleLinks/sim';
 
 describe('ChainRuleLinks sim', () => {
   for (const id of ['wave', 'saturate'] as const) {
@@ -39,5 +39,27 @@ describe('ChainRuleLinks sim', () => {
     const v = linkView(c, 1);
     expect(v.d0).toBeLessThan(Math.tanh(0.3 * 2) * 0 + 2 * c.xRange[0] + 1e-9);
     expect(v.d1).toBeGreaterThan(2 * c.xRange[1] - 1e-9);
+  });
+});
+
+describe('ChainRuleLinks views', () => {
+  const C = CHAINS.wave;
+  it('wiggle shows every wiggle bar but no slopes or product', () => {
+    for (let t = 0; t < duration('wiggle'); t += 0.25) {
+      const f = frameAt(t, C, 1, 'wiggle');
+      expect(f.reveal.every((r) => r === 0)).toBe(true);
+      expect(f.bars).toEqual([1, 1, 1, 1]);
+      expect(f.eq).toBe(0);
+    }
+  });
+  it('tangent sweeps x through 0, where the first slope vanishes', () => {
+    const mid = frameAt(duration('tangent') / 4, C, 1, 'tangent');
+    expect(mid.x).toBeCloseTo(0, 6);
+    expect(mid.slopes[0]).toBeCloseTo(0, 6);
+    expect(frameAt(0, C, 1, 'tangent').x).toBeCloseTo(1);
+  });
+  it('links never reveals the product; full does', () => {
+    expect(frameAt(duration('links'), C, 1, 'links').reveal[3]).toBe(0);
+    expect(frameAt(T - 0.01, C, 1, 'full').reveal[3]).toBeGreaterThan(0.9);
   });
 });

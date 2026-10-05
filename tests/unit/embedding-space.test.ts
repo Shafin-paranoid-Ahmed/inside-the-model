@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { parseModel, type Manifest } from '../../src/lib/transformer';
 import { cosine } from '../../src/lib/transformer/math';
 import {
-  makeData, buildScene, frameAt, idOf, pca2, neighbours, stagePos, PRESETS,
+  makeData, buildScene, frameAt, idOf, pca2, neighbours, stagePos, prepareContext, PRESETS,
   type Data, type LookupFrame, type TrainingFrame, type SimilarityFrame, type ProjectionFrame, type ArithmeticFrame, type ContextFrame,
   type TrainingScene, type SimilarityScene, type ProjectionScene, type ArithmeticScene, type ContextScene,
 } from '../../src/components/widgets/EmbeddingSpace/sim';
@@ -87,6 +87,11 @@ describe('EmbeddingSpace sim', () => {
     near(withThe.cos[2][2], 0.735, 1e-3); near(withThe.cosThese[2], 0.774, 1e-3);
     // deterministic
     expect(JSON.stringify(frameAt(5, s))).toBe(JSON.stringify(frameAt(5, buildScene('contextual', data))));
+  });
+  test('contextual: the batched page-load path gives the same scene as the direct one', async () => {
+    const fresh = makeData(w, JSON.parse(read('tiny-lm-snapshots.json').toString('utf8')), new Uint8Array(read('tiny-lm-snapshots.bin')));
+    await prepareContext(fresh, 7);
+    expect(JSON.stringify(buildScene('contextual', fresh))).toBe(JSON.stringify(buildScene('contextual', data)));
   });
   test('stagePos switches the stage exactly at the marker', () => {
     expect(stagePos(3.19, 3, 3.2, 1).idx).toBe(0); expect(stagePos(3.2, 3, 3.2, 1).idx).toBe(1);
