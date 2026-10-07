@@ -1,6 +1,6 @@
 ---
 title: "Linear Regression"
-summary: "Fit a line to data by adjusting slope and intercept until the loss is smallest."
+summary: "Calculate a line's predictions and mean squared error, then improve the same line with gradient descent."
 day: 1
 track: foundations
 order: 4
@@ -12,131 +12,212 @@ status: draft
 import Step from '../../../components/ui/Step.astro';
 import LineFit from '../../../components/widgets/LineFit/LineFit.svelte';
 
-<Step title="Find the best line">
+<Step title="Start with one prediction">
 
-You have twelve points and a model, $y = wx + b$. Which line is best? The previous lesson gave us a way to say: the best line is the one with the smallest mean squared error.
+**Linear regression** fits a straight line to examples so that we can predict a number. Each example gives us an input $x$ and an observed answer $y$. The line produces a prediction, written $\hat y$ ("y hat"):
 
-**Linear regression** is the name for fitting that line. "Regression" means the thing we predict is a number, and "linear" means the model is a straight line (or, with more inputs, a flat plane).
+$$\hat y = wx + b.$$
 
-This lesson answers that question in two ways: with a formula that jumps straight to the best line, and with a search that walks to it step by step. Both rely on one picture, a map of the loss for *every possible line*, so we start there.
+The **slope** $w$ tells us how much the prediction changes when $x$ increases by 1. The **intercept** $b$ is the prediction at $x = 0$. These are the two **parameters** we can adjust. The observed data stays fixed.
 
-</Step>
+Start with the guess $w = -1.4$, $b = -2.2$. Example 8 in the figure has $x \approx 0.931516$ and observed $y \approx 1.720559$. Multiply its input by the slope, then add the intercept:
 
-<Step title="One line is one point on the map">
+$$\hat y \approx (-1.4)(0.931516) + (-2.2) \approx -3.504.$$
 
-Every choice of slope $w$ and intercept $b$ is a line, and every line has a single MSE. So we can draw a map with $w$ on the horizontal axis, $b$ on the vertical axis, and the MSE as the height. The contour lines join points of equal MSE, like the height lines on a hiking map.
+The model predicts a negative answer even though the observed answer is positive: this line needs improving. The symbol $\approx$ means "approximately equal"; we round the displayed numbers to keep them readable.
 
-In the figure, the left panel shows the twelve points, the current line in teal and a square for each residual. The right panel is the map. The dot on the map and the line on the left are the same thing seen two ways. Watch the timeline move the dot around the map: far from the diamond the line misses badly and the squares are big. Near the diamond they shrink. It starts at $w = -1.4$, $b = -2.2$, where the MSE is 28.7, and ends on the diamond, the best line.
+The outlined point is the observed answer; the point on the line directly below it is the prediction. Watch $b$ rise from $-2.2$ to $-1.2$ while $w$ stays fixed. Every prediction rises by 1, including this one, from $-3.504$ to $-2.504$.
 
-Then try it yourself: click or drag anywhere on the map, or use the two sliders, and the line jumps to match.
-
-<LineFit client:visible mode="tour" title="Every point on the map is a different line" />
+<LineFit client:visible mode="prediction" squares={false} title="Multiply x by w, then add b" />
 
 </Step>
 
-<Step title="The loss is a bowl">
+<Step title="Turn the predictions into one MSE">
 
-Notice that the contours are nested ellipses around a single lowest point. For linear regression with squared error the loss surface over $(w, b)$ is a smooth bowl: it has exactly one bottom and no other dips. That is a special property of this model, and it is what makes the problem easy. Whatever line you start from, going downhill leads to the same place.
+How can we tell whether a new line is better? Keep the **mean squared error (MSE)** from the [loss-functions lesson](/learn/foundations/loss-functions/). Calculate every prediction, square each miss, then average. We will use this same loss throughout the lesson.
 
-The dashed line in the data panel and the diamond on the map mark the answer: $w = 0.97$, $b = 0.56$, with an MSE of 0.200. (The twelve points were generated around the line $y = 0.9x + 0.6$ with random noise added, so the fit lands near, but not exactly on, those numbers.) The MSE cannot reach zero because the points do not lie on any line.
+For the starting line, example 8 gives:
+
+1. **Prediction:** $\hat y \approx -3.504122$.
+2. **Signed error:** prediction minus observed answer, $e = \hat y - y \approx -3.504122 - 1.720559 = -5.224681$. Negative means the prediction is too low.
+3. **Squared error:** $e^2 \approx (-5.224681)^2 \approx 27.297$. Squaring makes misses in either direction positive.
+
+The previous lesson called $y - \hat y$ the **residual**. Here we use the opposite sign, $e = \hat y - y$, to make the update formulas easier to read. Their squares are identical: $(-e)^2 = e^2$. The loss has not changed.
+
+Do that for all twelve examples. Their squared errors add to about $343.973$. Divide by twelve:
+
+$$L(w,b) = \text{MSE} = \frac{e_1^2 + e_2^2 + \cdots + e_{12}^2}{12} \approx \frac{343.973}{12} \approx 28.664.$$
+
+Here $L$ is just a short name for the loss. In compact notation, $L(w,b)=\frac{1}{n}\sum_{i=1}^{n}(wx_i+b-y_i)^2$: $n$ is the number of examples, $i$ picks one example, and $\sum$ means "add these values".
+
+Each bar below is one squared error, and the dashed line is their average. At the start, compare example 8's bar, $27.297$, with the MSE, $28.664$. One point's error is only one part of the score; fitting the line means improving the average across all points.
+
+<LineFit client:visible mode="errors" title="Twelve squared errors become one mean squared error" />
 
 </Step>
 
-<Step title="Closed form: jump straight to the bottom">
+<Step title="Changing the line changes the loss">
 
-Because the bowl has such a simple shape, the bottom can be written as a formula. This is the **least-squares** solution, first published by Legendre in 1805 and justified by Gauss. For one input:
+We now have a chain we can calculate: **choose $w$ and $b$ → predict every $y$ → calculate MSE**. Training means finding values of $w$ and $b$ that make that final number small.
 
-$$w = \frac{\operatorname{cov}(x, y)}{\operatorname{var}(x)}, \qquad b = \bar y - w\,\bar x.$$
+The two plots below show the same choice in two ways. On the left, the axes are input $x$ and answer $y$: one choice of parameters draws a whole line. On the right, the axes are slope $w$ and intercept $b$: that same choice is just one dot. The curves on the right join parameter choices with equal MSE. This is a **contour map of the loss**, like a hiking map whose height is prediction error.
 
-Take the average $x$ and average $y$; the slope is how much $x$ and $y$ vary *together* divided by how much $x$ varies alone; and the intercept makes the line pass through the point of averages. No searching is needed.
+Watch the dot move around the map. The starting line has MSE $28.664$. At the diamond, $w \approx 0.972$ and $b \approx 0.557$, the MSE is about $0.200$. Moving the dot changes the line and its errors together. The map is a picture of the MSE we just calculated, not a new loss function.
 
-Watch the timeline: the line starts at the same poor guess and then glides straight to the answer in one motion. There are no small steps.
+<LineFit client:visible mode="tour" title="A line in the data plot is a dot on the MSE map" />
 
-<LineFit client:visible mode="closed" title="Closed form: straight to the bottom of the bowl" />
+</Step>
+
+<Step title="Use the MSE slopes to improve the line">
+
+Trying every line would be slow. Instead, ask two smaller questions: **if we increase $w$ a little, does MSE rise or fall? What if we increase $b$?** A derivative answers each question by measuring how quickly the loss changes when that parameter changes and the other stays fixed.
+
+Write these two slopes as $g_w = \partial L/\partial w$ and $g_b = \partial L/\partial b$. Together they are called the **gradient**. Notice the distinction: $w$ is the slope of the prediction line; $g_w$ measures how changing that slope affects the MSE.
+
+We can calculate them from the errors we already have. A squared error $e^2$ changes at a rate of $2e$ with respect to $e$. Increasing $b$ changes every prediction, and therefore every error, at a rate of 1. Increasing $w$ changes example $i$'s prediction at a rate of $x_i$. Average those contributions:
+
+$$g_b = \frac{2}{n}\sum_{i=1}^{n} e_i, \qquad g_w = \frac{2}{n}\sum_{i=1}^{n} e_i x_i.$$
+
+For our starting line, $w = -1.4$ and $b = -2.2$, the twelve errors sum to about $-33.549$. Multiplying each error by its input and adding gives about $-105.016$. So:
+
+$$g_b \approx \frac{2}{12}(-33.549) \approx -5.592,$$
+$$g_w \approx \frac{2}{12}(-105.016) \approx -17.503.$$
+
+Both are negative: a small increase in either parameter lowers the MSE at this starting point. To move downhill, **subtract** a small multiple of each loss slope. That multiplier is the **learning rate**, written $\eta$ ("eta"). Here we choose $\eta = 0.08$:
+
+$$w_{\text{new}} = w - \eta g_w \approx -1.4 - 0.08(-17.503) \approx 0.000,$$
+$$b_{\text{new}} = b - \eta g_b \approx -2.2 - 0.08(-5.592) \approx -1.753.$$
+
+Subtracting a negative value increases the parameter. Both gradients are calculated at the **old** line, then both parameters are updated together. Finally, make all twelve predictions again using the new line and recompute the same MSE. It falls from **28.664 to 9.073**.
+
+Watch this single update slowly. The calculation below the figure gives its destination; the dot and line move there together. We have not changed the data or the loss. We changed the parameters because the MSE slopes told us which direction would help.
+
+<LineFit client:visible mode="update" title="One gradient-descent update: MSE 28.664 to 9.073" />
 
 <details>
-<summary>Show the math</summary>
+<summary>Show the derivative one multiplication at a time</summary>
 
-The MSE is $L(w, b) = \frac{1}{n}\sum_i (w x_i + b - y_i)^2$. At the minimum both partial derivatives are zero:
+For one example, $e_i = wx_i+b-y_i$. Its squared error is $e_i^2$. The chain rule multiplies the rate at which the square changes by the rate at which the error changes:
 
-$$\frac{\partial L}{\partial b} = \frac{2}{n}\sum_i (w x_i + b - y_i) = 0, \qquad \frac{\partial L}{\partial w} = \frac{2}{n}\sum_i (w x_i + b - y_i)\,x_i = 0.$$
+$$\frac{\partial(e_i^2)}{\partial b} = \frac{\partial(e_i^2)}{\partial e_i}\frac{\partial e_i}{\partial b} = 2e_i\cdot 1,$$
 
-The first equation says $b = \bar y - w \bar x$. Substituting it into the second and simplifying gives $w = \sum_i (x_i - \bar x)(y_i - \bar y) \big/ \sum_i (x_i - \bar x)^2$, which is the covariance over the variance. For many inputs the same steps give the **normal equations** $X^\top X\,\mathbf{w} = X^\top \mathbf{y}$.
+$$\frac{\partial(e_i^2)}{\partial w} = \frac{\partial(e_i^2)}{\partial e_i}\frac{\partial e_i}{\partial w} = 2e_i\cdot x_i.$$
+
+Add those per-example derivatives and divide by $n$, exactly as we did for the loss. That gives the two MSE-gradient formulas above. If derivatives are unfamiliar, the [derivatives lesson](/learn/math/derivatives/) explains them through small changes on a curve.
 
 </details>
 
-<details>
-<summary>Show the code</summary>
+</Step>
 
-```python
+<Step title="Repeat the same calculation: gradient descent">
+
+One update improved the line, but it has not finished fitting it. Recalculate the errors at the new line, recalculate the two gradients, and update again. **Gradient descent** is the name for this repeated procedure. Linear regression tells us what model we are fitting; MSE tells us how wrong it is; gradient descent tells us how to adjust it.
+
+The figure below repeats the update forty times. The MSE falls from $28.664$ to $9.073$ after one update, to $0.430$ after ten, and to $0.200$ after forty. As the fit improves, the gradient approaches zero, so the updates get smaller. Scrub near the end and compare the line with the dashed best-fit line.
+
+<LineFit client:visible title="Repeat: predictions, MSE gradients, new w and b" />
+
+For these data, MSE over $(w,b)$ forms a smooth bowl with one minimum. With a suitable learning rate, descent approaches that minimum. The lowest MSE is above zero because these twelve points do not all lie on a single straight line. A rate that is too large can increase the error instead; choosing the step size is one of the questions for the [gradient-descent lesson](/learn/foundations/gradient-descent/).
+
+<details>
+<summary>Show the code for the same MSE updates</summary>
+
+~~~python
 import numpy as np
 
-def fit(x, y):
-    w = np.cov(x, y, bias=True)[0, 1] / np.var(x)
-    b = y.mean() - w * x.mean()
-    return w, b
-```
+w, b = -1.4, -2.2
+learning_rate = 0.08
+
+for update in range(40):
+    prediction = w * x + b
+    error = prediction - y
+    mse = np.mean(error ** 2)
+
+    # Compute both slopes BEFORE changing either parameter.
+    gradient_w = 2 * np.mean(error * x)
+    gradient_b = 2 * np.mean(error)
+
+    w = w - learning_rate * gradient_w
+    b = b - learning_rate * gradient_b
+
+final_mse = np.mean((w * x + b - y) ** 2)
+~~~
 
 </details>
 
 </Step>
 
-<Step title="Iterative search: walk downhill">
+<Step title="A shortcut for this model: least squares">
 
-The formula works for a line. For a neural network there is no formula; the loss surface is not a clean bowl and has millions of dimensions. What still works is the patient method: from where you stand, work out which direction goes downhill, take a small step that way, and repeat.
+There is also a direct way to find the best line. For this model and squared-error loss, we can solve for the parameters where both loss slopes are zero. This is the **least-squares solution**: "least" because we minimize the sum of squared errors. Dividing that sum by twelve does not change which line is best.
 
-The direction comes from the slope of the loss with respect to each knob. At the starting line, $\partial L/\partial w = -17.5$ and $\partial L/\partial b = -5.59$. Both are negative: increasing either knob would lower the loss. With a step size of $0.08$ the first update is $w \leftarrow -1.4 - 0.08(-17.5) = 0.0002$ and $b \leftarrow -2.2 - 0.08(-5.59) = -1.753$, and the MSE drops from 28.7 to 9.1 in one step.
+The **closed-form** method means evaluating a formula instead of repeating updates. It gives $w \approx 0.972$, $b \approx 0.557$ and MSE $\approx 0.200$, the same destination that gradient descent approaches. The figure shows the line move directly to that answer.
 
-Watch the magenta path on the map: dot by dot it walks down the bowl. The MSE is 0.43 after 10 steps and 0.200 after 40, where it agrees with the closed-form answer to three decimals. Meanwhile the line in the left panel rotates and slides into place. This procedure is called **gradient descent**, and the next lesson is entirely about it.
+<LineFit client:visible mode="closed" title="A direct formula finds the same minimum MSE" />
 
-<LineFit client:visible title="Iterative search: gradient descent finds the same line" />
+The shortcut is useful for linear regression. Gradient descent matters because we can also apply it to models for which no such direct formula is available, including neural networks. Both are ways to fit parameters; neither changes what the model predicts or how MSE scores it.
 
-Now pick your own starting guess: click anywhere on the map (or move the sliders), then press Play or "Descend from here". The walk starts from your guess and still ends at the same bottom. Wherever you start in a bowl, downhill leads to the same place.
+<details>
+<summary>Show the least-squares formula and where it comes from</summary>
 
-</Step>
+Let $\bar x$ be the average input and $\bar y$ the average observed answer. At the minimum, the intercept gradient is zero, so:
 
-<Step title="Which one to use?">
+$$0 = \frac{1}{n}\sum_i(wx_i+b-y_i) = w\bar x+b-\bar y.$$
 
-For linear regression with a modest number of inputs, use the formula. It is exact and instant. Iterative search matters when the formula does not exist (nearly every interesting model) or is too expensive (the normal equations need a matrix inverse that grows painfully with the number of features). Linear regression is therefore the rare case where both methods work, which makes it the ideal place to see that iterating really does arrive at the right answer.
+Rearrange to get $b = \bar y-w\bar x$: the fitted line passes through the point of averages. Put this expression for $b$ into the slope-gradient equation:
+
+$$0 = \sum_i [w(x_i-\bar x)-(y_i-\bar y)]x_i.$$
+
+The bracketed terms sum to zero, so replacing the last $x_i$ by $x_i-\bar x$ does not change the sum. Expand and move one term to the other side:
+
+$$w\sum_i(x_i-\bar x)^2 = \sum_i(x_i-\bar x)(y_i-\bar y).$$
+
+Therefore, when the inputs are not all identical:
+
+$$w = \frac{\sum_i(x_i-\bar x)(y_i-\bar y)}{\sum_i(x_i-\bar x)^2}, \qquad b = \bar y-w\bar x.$$
+
+The numerator measures how inputs and answers vary together. The denominator measures how much the inputs vary. Dividing both sums by $n$ gives the shorter name "covariance divided by variance"; it is the same calculation.
+
+</details>
 
 </Step>
 
 <Step title="Common misconceptions">
 
-- **You might think** "linear" means the data has to be in a straight line. **Actually** it means the *model* is a line. Real data is noisy and the line is only the best summary; the MSE at the minimum here is 0.200, not zero.
-- **You might think** the best line passes through as many points as possible. **Actually** it minimizes the average squared miss, which usually passes through none of them.
-- **You might think** gradient descent finds an approximation and the formula finds the truth. **Actually** for this bowl both reach the same minimum; descent simply gets there in many steps instead of one.
-- **You might think** linear models are too simple to matter. **Actually** they are widely used, and the final layer of a neural network is itself a linear model.
+- **You might think** linear regression and gradient descent are two different prediction models. **Actually**, the line is the model; gradient descent is one method for fitting its parameters.
+- **You might think** the loss map introduces a new loss. **Actually**, each height is the same MSE, evaluated for another choice of $w$ and $b$.
+- **You might think** the slope $w$ and the gradient $g_w$ are the same thing. **Actually**, $w$ relates input to prediction; $g_w$ relates a change in $w$ to a change in MSE.
+- **You might think** the best line must pass through every point. **Actually**, it minimizes the average squared miss. Here its MSE is about $0.200$, not zero.
 
 </Step>
 
 <Step title="Check yourself">
 
 <details>
-<summary>What do the two axes of the contour map represent?</summary>
+<summary>For x = 2, y = 5, w = 1 and b = 1, what are the prediction, signed error and squared error?</summary>
 
-The slope $w$ and the intercept $b$. Each point on the map is one line, and the height is that line's MSE.
-
-</details>
-
-<details>
-<summary>Why is there only one minimum for linear regression with squared error?</summary>
-
-The MSE is a sum of squares of quantities that are linear in $(w, b)$, which makes the loss surface a smooth bowl with a single bottom.
+Prediction: $1\cdot 2+1=3$. Signed error: $3-5=-2$. Squared error: $(-2)^2=4$. This is one example's contribution; MSE averages the squared errors over all examples.
 
 </details>
 
 <details>
-<summary>If the gradient with respect to $w$ is negative, should $w$ go up or down?</summary>
+<summary>Three squared errors are 1, 4 and 9. What is the MSE?</summary>
 
-Up. A negative gradient means the loss falls as $w$ increases, and gradient descent moves opposite the gradient.
+$(1+4+9)/3=14/3\approx 4.667$. Add the squared errors, then divide by the number of examples.
 
 </details>
 
 <details>
-<summary>The points lie exactly on the line $y = 2x + 1$. What are the closed-form $w$ and $b$, and what is the minimum MSE?</summary>
+<summary>If w = 1, the MSE gradient with respect to w is −3, and the learning rate is 0.1, what is the new w?</summary>
 
-$w = 2$, $b = 1$, MSE $= 0$.
+$w_{\text{new}}=1-0.1(-3)=1.3$. The negative gradient says a small increase in $w$ lowers the loss here.
+
+</details>
+
+<details>
+<summary>After updating w and b, do we change the labels or choose another loss?</summary>
+
+Neither. Keep the observed labels and MSE. Use the new parameters to make fresh predictions, calculate fresh errors and gradients, then take the next update.
 
 </details>
 
@@ -144,9 +225,9 @@ $w = 2$, $b = 1$, MSE $= 0$.
 
 <Step title="Going deeper">
 
-- Legendre (1805), *Nouvelles méthodes pour la détermination des orbites des comètes*, appendix: the first publication of least squares. Gauss (1809), *Theoria motus corporum coelestium*, gives the probabilistic justification. Stigler, ["Gauss and the Invention of Least Squares"](https://doi.org/10.1214/aos/1176345451), Annals of Statistics 1981.
 - Goodfellow, Bengio and Courville, [*Deep Learning*](https://www.deeplearningbook.org/), section 5.1.4 (linear regression).
 - Google's [Machine Learning Crash Course: Linear regression](https://developers.google.com/machine-learning/crash-course/linear-regression).
+- Review: [Loss functions](/learn/foundations/loss-functions/) and [Derivatives](/learn/math/derivatives/).
 - Next: [Gradient descent](/learn/foundations/gradient-descent/).
 
 </Step>

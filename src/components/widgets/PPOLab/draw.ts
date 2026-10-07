@@ -1,5 +1,5 @@
 /** PPO drawing helpers (no DOM). */
-import { clippedSurrogate } from '../../../lib/rl/ppo';
+import { clippedSurrogate } from '../../../lib/rl/surrogate';
 import { ACCENT, BG, MUTED, axes, circle, line, mix, path, rect, text, type Box, type Env } from '../_rl/svg';
 
 /**

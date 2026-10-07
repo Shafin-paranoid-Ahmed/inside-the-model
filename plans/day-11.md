@@ -169,3 +169,95 @@ Measured 2026-10-05 by the Day 11 core agent from `src/lib/rl` (Node, vitest pro
 Anything over about 30 ms goes through `kit.job`.
 
 **Shell status (core agent).** `src/components/widgets/_rl/` (Shell.svelte, kit.ts, svg.ts, worker.ts) holds the generic figure. GridWorldLab, BanditLab and PPOLab are thin wrappers that use it, and the mode contract is at the top of `GridWorldLab/sim.ts`. See the core agent's report for which reference modes were finished.
+
+## 7. Day 12 core results (measured)
+
+Measured 2026-10-06 by the Day 12 core agent from `src/lib/align` (Node, probes in the scratchpad, deleted). **These numbers override the MDX briefs.** Re-probe before quoting anything not listed here, and re-probe at your exact props. Tests: `tests/unit/align-core.test.ts` (27, including assertions on every tuned headline effect) and `tests/unit/align-shells.test.ts` (16, the four reference modes).
+
+**The bank (as built).** 10 prompts (8 train, 2 held-out), 8 candidates in this fixed order (colour `--viz-cat-1..8`): continues the list, terse correct, clear correct, padded correct, rambling wrong, terse wrong, refusal, hedged correct. phi = answers, correct, length (words / 10, read off the text), flattery, refuses, hedges. Gold `W_GOLD = [1, 2, -0.3, -1, -1, -0.5]`. Human labelers: Bradley-Terry (temperature 1) on gold plus `0.9 * min(length, 2.5)` (a saturating length bias; no flattery bias). Base model `THETA_BASE = [-2.5, 0, 0, 0, -1.5, 0]`; base offsets c(x, y) are N(0, 0.5) per candidate plus a mean of -10 for the rambling answer. Demonstrators, when right: clear 0.75, terse 0.15, hedged 0.1 (they never pad); when wrong: terse wrong.
+
+**Designed exploit, honestly stated.** The rambling answer is 48 words, overconfident and wrong (not flattering: see deviations). The SFT model almost never writes it (log-odds 11.7 below clear correct; P < 1e-4), so it never appears in the 200 preference pairs (lengths seen in pairs: 1 to 28 words). The linear reward model learns +0.76 per 10 words and extrapolates to 48 words, so it scores rambling highest (4.72 on prompt 0, gold -0.44). Everything else is computed.
+
+**sft.**
+- `base`: P(continues the list) averaged over the 8 train prompts 0.575; P(a correct answer) 0.185; "continues the list" is the most likely response on all 8 prompts (refusal, 0.18 on average, is second). Prompt 0: P(continue) 0.71.
+- `data` (demos 24, demoAccuracy 0.8, seed 2): exactly 19 of 24 correct (0.792; `makeDemos` uses exact counts), mean length 5.4 words, flattery 0.
+- `train` (150 steps, lr 0.05): NLL 2.973 -> 1.431; P(continue) 0.575 -> 0.057. Theta (answers, correct, length, flattery, refuses, hedges) goes from [-2.5, 0, 0, 0, -1.5, 0] to [0.50, 0.85, -0.24, -3.27, -3.48, 0.03]. All six coordinates move at the same speed for the first ~25 steps (Adam); "correct" peaks at 1.30 (step 50) and settles back, "answers" keeps climbing. SFT policy averaged: continue 0.06, terse 0.30, clear 0.28, terse wrong 0.14, hedged 0.21; correctness 0.801, gold 2.273.
+- `mask` (word bigram, 41-word vocabulary, 16 train + 4 held-out transcripts, Adam lr 0.1): counted tokens per example 12.6 (all) vs 5.9 (response only). Held-out response-token loss: start 3.714; step 100: 2.146 (all) vs 2.150 (response only); step 300: 2.256 vs 2.317; best over training 2.064 vs 2.000. **The gap is negligible and changes sign** (the plan anticipated this): show the mask and the counted-token numbers; do not claim response-only training is better here. 96–130 ms per run: `kit.job('trainBigram', 'all' | 'response')`.
+- `heldout`: P(a correct answer) on "How many sides does a hexagon have?" 0.224 -> 0.811; on "What is 15 − 8?" 0.159 -> 0.679.
+- `cap`: **recommend demos=40** (brief: unspecified): the demo sets are then exactly 0.600 / 0.800 / 0.950 correct and SFT correctness after 300 steps is 0.602 / 0.804 / 0.955. With 24 demos the sets are 0.583 / 0.792 / 0.958 and SFT ends at 0.586 / 0.797 / 0.962. Moment matching holds to within 0.02–0.04 on every feature at 300 steps (exactly at the optimum: tested to 1e-4 on an interior demo set).
+
+**rlhf** (pairs seed 4, PPO seed 6, beta 0.1, 200 iterations, batch 64, 4 epochs, mini-batch 16, eps 0.2, Adam lr 0.04).
+- `pairs` (200): human labels agree with gold 0.685 (69%), the longer response is chosen 0.485 (49%), 58 choices are longer-and-worse. Most pairs are terse vs clear (43), clear vs hedged (34), terse vs hedged (32), terse vs terse wrong (28).
+- `reward-model` (200 steps, Adam 0.05): loss 0.693 -> 0.487; weights RM vs gold: answers 1.09 vs 1, correct 2.64 vs 2, length 0.76 vs -0.3, flattery -2.93 vs -1, refuses -3.22 vs -1, hedges -0.75 vs -0.5. Held-out pairwise accuracy (1000 pairs, seed 99) 0.680 (train 0.720; gold itself as a scorer gets 0.649 on the same labels).
+- `rm-bias`: Spearman rank correlation RM vs gold 0.871 on the 68 candidates within the seen length range, 0.478 over all 80. Top RM candidate: rambling wrong (prompt 0), RM 4.72, gold -0.44.
+- `ppo` beta 0.1: proxy / gold / KL 3.345 / 2.273 / 0 at iteration 0 and 4.076 / 2.808 / 0.802 at 200 (gold +0.535 over SFT). End probabilities: terse 0.14, clear 0.82, hedged 0.04. Gold rises 2.27 -> 2.63 (iteration 5) -> 2.75 (10), then wobbles between 2.66 and 2.83.
+- `ppo-clip`: **recommend iter=0 or 1, not 20** (by iteration 20 the policy has settled: no ratio leaves the band). Per epoch 1..4, out-of-band fraction / favourable-side plateau fraction: iteration 0: 0.078/0.078, 0.391/0.359, 0.422/0.359, 0.359/0.328 (ratios 0.43–1.29 at epoch 4; 45 of 64 advantages positive); iteration 1: 0/0, 0.125/0.125, 0.375/0.344, 0.375/0.344 (ratios 0.56–1.34). Out-of-band always exceeds plateau: the extra samples sit outside the band on the penalised side and still get gradient. `record: [it]` keeps per-epoch ratios.
+- `kl-sweep` final KL / proxy / gold: beta 0.5: 0.290 / 3.971 / 2.762; beta 0.1: 0.802 / 4.076 / 2.808 (best gold); beta 0.02: 13.01 / 4.719 / -0.440; beta 0: 13.01 / 4.719 / -0.439. beta 0.02 and 0 both end hacked.
+- `ppo` beta 0 (reward hacking): gold peaks at **iteration 19, 2.819** (proxy 3.994, KL 0.426; policy there: terse 0.30, clear 0.63, hedged 0.07). P(rambling) is 0.00 at 20, 0.15 at 25, 0.99 at 30. Final: proxy 4.719, gold -0.439, KL 13.01, P(rambling) 1.000. Gold by iteration: 0: 2.27, 10: 2.76, 18: 2.81, 20: 2.81, 25: 2.31, 30: -0.42, then flat at -0.44; the proxy rises until 30 (4.00 at 20, 4.12 at 25, 4.71 at 30) and is flat after. The collapse takes about 10 of the 200 iterations.
+- `overopt` beta 0, 400 iterations: gold peaks at sqrt(KL) 0.652 (iteration 19, gold 2.819); final sqrt(KL) 3.608, final proxy minus gold 5.159.
+- Robustness: the beta 0 collapse plus a beta 0.1 gold above SFT holds for 8 of 8 PPO seeds; across preference-pair seeds it holds for 4 of 8 (the hack needs the RM's length weight to be large enough). Keep seed 4.
+
+**dpo** (same 200 pairs; `trainDPO`'s lr defaults to 0.05 / beta, which makes the DPO path in v = beta (theta - theta_ref) the reward model's Adam path, step for step: tested).
+- `optimal` beta 0.1: pi* gold 2.812, KL 0.994; prompt 0 pi* = terse 0.07, clear 0.91, hedged 0.02; max |PPO end - pi*| = 0.126 (terse 0.14 vs 0.04, clear 0.82 vs 0.92). Z(x0) = 2.1e17 (r / beta reaches about 47; Z depends on the reward's arbitrary offset, so quote it only with that caveat, or quote log Z). pi* gold / KL by beta: 1: 2.69 / 0.18; 0.5: 2.74 / 0.27; 0.2: 2.78 / 0.52; 0.1: 2.81 / 0.99; 0.05: 1.09 / 6.89 (rambling 0.53); 0.02: -0.44 / 13.0 (rambling 1.00). Dragging beta to 0.02 hands the policy to rambling wrong.
+- `dpo-pair` (pair 0: "What is half of 30?", chosen terse correct (gold 2.97) over clear correct (2.85), beta 0.1, 40 steps, default lr 0.5): loss 0.693 -> 0.383, margin 0 -> 0.762, gradient weight sigma(-margin) 0.500 -> 0.318.
+- `dpo-train` beta 0.1, 300 steps: loss 0.693 -> 0.487, gold 2.819, KL 0.968, held-out preference accuracy 0.680, max |DPO - pi*| 0.005. Gold by step 0 / 25 / 50 / 100 / 200 / 300: 2.27 / 2.19 / 2.70 / 1.97 / 2.81 / 2.82 (KL at step 100: 3.55): mid-run the length weight is temporarily large relative to "correct", so the policy visits the rambling answer and comes back. Show it; it is the RM fit's own path.
+- `implicit`: beta (theta - theta_ref) = [1.05, 2.66, 0.74, -2.88, -3.78, -0.73] vs RM [1.09, 2.64, 0.76, -2.93, -3.22, -0.75]; Pearson correlation of implicit reward vs RM score over the 80 candidates 0.999. Largest weight difference: refuses (0.56; refusals are almost never in the pairs, so this weight is barely identified).
+- `compare`: beta 0.1: PPO gold / KL 2.808 / 0.802, DPO 2.819 / 0.968; beta 0.02: PPO -0.440 / 13.01, DPO -0.440 / 13.02 (both hacked). **Chosen log-probability falls in DPO**: mean log pi(chosen) -1.402 -> -3.862 at beta 0.1 and -> -31.17 at beta 0.02 (never above -1.398); rejected -1.762 -> -15.30 / -86.92. The brief's "chosen likelihood falls" claim holds.
+
+**constitutional-ai** (default principles answer, accurate, no-flattery, no-refuse; cautious off).
+- `rules` prompt 0: violations per candidate 1 0 0 1 1 1 2 0; only terse correct, clear correct and hedged correct have none.
+- `revise` (4 rounds, seed 3): starting from SFT samples only 12 of 64 starts violate anything (0.188 -> 0.109 violations; 248 of 256 rounds find nothing to fix). **Recommend sampling the starts from the base model** (`slCAI(sft, { from: THETA_BASE })`): 1.156 -> 0.766 violations, 206 of 256 rounds find nothing to fix. A chain from "continues the list" on prompt 0: no-flattery (nothing) -> answer (-> terse wrong) -> accurate (-> terse correct) -> answer (nothing).
+- `sl` (SFT on 64 revisions of SFT samples, 150 steps): expected violations 0.207 -> 0.110; gold 2.273 -> 2.508; terse wrong 0.14 -> 0.09. **P(padded) is 0.005 -> 0.000**, so the brief's padded comparison is moot: compare terse wrong instead.
+- `pairs` labels ai (same 200 pairs): AI agrees with human 0.71, AI with gold 0.705 (71%), human with gold 0.685 (69%). Ties (equal violations) go to a seeded coin; many hedged-vs-clear pairs are coin flips.
+- `ppo` labels ai, beta 0.1: proxy / gold / KL 4.775 / 2.611 / 0.403 vs human labels 4.076 / 2.808 / 0.802. **AI labels end lower in gold at beta 0.1**: no principle penalises hedging, so the policy hedges (hedged 0.36). But **AI labels avoid the length exploit even at beta 0**: final gold 2.173 and P(rambling) 0.000, vs -0.439 and 1.000 for human labels. Recommend the CAI ppo step show beta 0 (or both) if its point is the exploit.
+- `edit` (single toggles; 6 runs of about 45 ms, 250–330 ms total): P(refuse) + P(hedge) / gold: default 0.358 / 2.611; without answer 0.127 / 2.866; without accurate 0.225 / 2.602; without no-flattery 0.000 / 1.153 (the policy goes all-in on padded correct); without no-refuse 0.016 / 2.858; with cautious 0.999 / 2.169 (all hedged; refusal stays 0 because refusing breaks two other principles). SFT is 0.217.
+
+**rlvr** (worked lines now read "7 + 5 = 12, write 2, carry 1").
+- `verify`: six fixed examples (47+85 worked, 47+85 unworked = 22, 36+21 unworked, 58+67 worked with a guess list, 365+278 one column = 533, 9+4 worked): strict 3 of 6 pass, lenient 4 of 6 (the guess list passes).
+- `sample` (G 8, problems 6, seed 2, start policy): problems 7+3, 80+28, 923+155, 5211+4134, 1+9, 95+16; pass@1 0.250, pass@8 0.833 over the 6 problems; one zero-signal row (923+155, all fail; 5211+4134 has 6 of 8 pass). Largest advantage 2.646 (one pass among 8). No 3-digit row has a pass at seed 2: pick another seed if the brief's TRY is kept.
+- `grpo`: advantages (r - mean) / std per group; uniform rows give exactly 0.
+- `train` strict (150 iterations, G 8, seed 5, Adam 0.1): strict accuracy per digit count 1 / 2 / 3 / 4 at iterations 0 -> 50 -> 150: 0.54 -> 0.99 -> 1.00, 0.34 -> 0.99 -> 1.00, 0.20 -> 0.98 -> 1.00, 0.09 -> 0.95 -> 1.00.
+- `length`: mean words 5.7 -> 10.0, 7.3 -> 18.8, 8.1 -> 27.7, 8.4 -> 37.2 (lines 1.33 -> 2.00, 1.51 -> 3.00, 1.60 -> 3.99, 1.63 -> 4.99). Length grows more for more digits.
+- `train` lenient: lenient reward ends at 1.00 for every size; **the guess-list hack wins only for 1- and 2-digit problems** (list share 0.56 and 0.71 at the end; strict accuracy 0.54 -> 0.44 and 0.34 -> 0.29). For 3 and 4 digits four guesses rarely cover the slips, so working out wins (list 0.02 / 0.01, strict 0.98 / 0.99). Show a 2-digit sample response.
+- `domains`: pass@8 at the start (mean over digit counts) 0.653 vs pass@1 at the end 0.997; the unverifiable rows change by exactly 0.
+
+**Setup times (Node) and where they run:**
+
+| Run | Time | Where |
+|---|---|---|
+| sftTheta / trainSFT 150 steps | 10 ms | kit.memo (SFTLab `sftRun`) |
+| three 300-step cap runs | 13 ms | kit.memo |
+| trainBigram 300 steps | 96–130 ms per mask | kit.job |
+| pairs + fitRM | 4–9 ms | kit.memo (PreferenceLab `prefData`) |
+| trainAlignPPO 200 iterations | 43–72 ms | kit.job (`ppoRun`) |
+| trainAlignPPO 400 iterations (overopt) | 75–95 ms | kit.job |
+| trainDPO 300 steps | 43–54 ms | kit.job |
+| slCAI | 5 ms | kit.memo |
+| edit: 6 RLAIF runs | 250–330 ms | one kit.job per toggle set |
+| trainGRPO 150 iterations | 44–87 ms | kit.job |
+| evalTable (first call) | about 15 ms | cached in the module |
+
+**Honest deviations from §1 and the briefs.**
+- The rambling candidate is not flattering. With flattery, the RM's flattery weight (identified from about 3 pairs that contain the padded answer) decided whether the exploit existed and flipped with tiny changes; without it the exploit rides on the length weight.
+- The exploit needs the rambling answer to be very rare under SFT (base offset -10) so that beta 0.1 cannot reach it while beta 0 still finds it through the growing length weight. pi* at beta 0.05 is already half rambling: the beta scale is sensitive. The 0.5 / 0.1 / 0.02 / 0 ordering holds at pair seed 4 (4 of 8 pair seeds).
+- PPO uses Adam lr 0.04 (Day 11 used 0.03); it gives the latest visible gold peak while beta 0.1 still ends near pi*. A per-prompt running mean (rate 0.2, initialised with the prompt's first batch mean) stands in for the value head, as planned.
+- Mask gap negligible; AI labels hedge more at beta 0.1; the lenient hack is limited to small problems; revise from SFT samples rarely has anything to fix; ppo-clip needs an early iteration; padded is almost never written by SFT.
+- Align's PPO surrogate helpers are `alignSurrogate` / `alignSurrogateGrad` (no name clash with `src/lib/rl` in the shared worker).
+
+**Shared code.** `src/lib/align/` (bank, policy, sft, bigram, constitution, reward, ppo, dpo, optimal, verifier, index). `src/components/widgets/_align/draw.ts`: candidateBars (ghost reference bars, ticks, real-state `values` while bars tween), featureBars, rewardChart (proxy, gold, faint comparison gold, peak mark), responseCard, wrap / clip / charsFor, candColor. The only `_rl/` change: `worker.ts` now exposes `src/lib/rl` and `src/lib/align` (plus one doc line in `kit.ts`). Shells: SFTLab, PreferenceLab, CritiqueRevise, VerifierRL, each a 13-line `.svelte` plus `sim.ts` (contract, align exports, costs, data helpers `sftRun`, `prefData` / `ppoRun`, `principlesOf`, `tick` / `cross`). Finished reference modes: `SFTLab/m-base`, `PreferenceLab/m-pairs` (labels human | ai, clickable squares), `CritiqueRevise/m-rules`, `VerifierRL/m-verify` (verifier strict | lenient).
+
+**Mode-file ownership (each = `m-<mode>.ts` + `m-<mode>.meta.ts`; test file in brackets):**
+- sft: `SFTLab/m-data`, `m-train`, `m-mask`, `m-heldout`, `m-cap` [`tests/unit/sft-lab.test.ts`]. `m-base` exists (core).
+- rlhf: `PreferenceLab/m-reward-model`, `m-rm-bias`, **`m-ppo`** (must accept `labels` and `compare="human"`, drawing that run's gold with rewardChart `goldCompare`, and any `beta`), `m-ppo-clip`, `m-kl-sweep`, `m-overopt` [`tests/unit/preference-lab.test.ts`]. `m-pairs` exists (core; serves rlhf and constitutional-ai).
+- dpo (after rlhf, since it shares PreferenceLab): `PreferenceLab/m-optimal`, `m-dpo-pair`, `m-dpo-train`, `m-implicit`, `m-compare` [`tests/unit/preference-dpo.test.ts`].
+- constitutional-ai: `CritiqueRevise/m-revise`, `m-sl`, `m-edit` [`tests/unit/critique-revise.test.ts`]; uses PreferenceLab `pairs` (labels ai) and `ppo` (labels ai, compare human) without editing them. `m-rules` exists (core).
+- rlvr: `VerifierRL/m-sample`, `m-grpo`, `m-train`, `m-length`, `m-domains` [`tests/unit/verifier-rl.test.ts`]. `m-verify` exists (core; pass `verifier="lenient"` for the gamed-verifier step).
+- evaluations: its own EvalLab (not part of this core).
+
+## 8. Day 12 continuation and final review
+
+The interrupted implementation was resumed on 2026-10-06/07. All six lessons are written; final coordinator evidence and review status are in [day-12-review.md](day-12-review.md).
+
+The planned bundle fallback was needed: PreferenceLab initially measured 43.44 KB gzip. The five DPO modes listed above now live in **`DPOLab/`**, with their existing mathematics and shared preference data retained. RLHF and Constitutional AI continue to share PreferenceLab. Actual lesson tests are `preference-lab-rlhf.test.ts` and `preference-lab-dpo.test.ts`. The pure clipping helper moved to `src/lib/rl/surrogate.ts`; `src/lib/rl/ppo.ts` re-exports it for compatibility. Every Day 12 island now passes the 40 KB dependency-closure budget.
+
+**Owner instruction, 2026-10-07:** local verification servers no longer need additional permission. Finish and review Day 12, then stop. Obtain explicit permission before starting Day 13 or its core agent.

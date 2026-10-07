@@ -10,7 +10,7 @@
  * Measured: driftRuns(g, { warmIterations: 10, seed: 31, lr: 0.03 }) takes about 8 ms (memo is enough); its batch has
  * 32 positive and 32 negative advantages (a batch from the uniform policy has all 64 negative). Numbers: day-11.md §6.
  */
-import { clippedSurrogate } from '../../../lib/rl/ppo';
+import { clippedSurrogate } from '../../../lib/rl/surrogate';
 import { nums, num, type Opts } from '../_rl/kit';
 
 export { clippedSurrogate };

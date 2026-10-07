@@ -11,11 +11,11 @@ Widgets live in `src/components/widgets/<Name>/`: `<Name>.svelte` renders the in
 Use Node.js **22.12+**. Run commands directly; the owner permanently retired RTK on 2026-10-01, so never prefix commands with `rtk`.
 
 - `npm ci`: install locked dependencies.
-- `npm run dev`: start local development; obtain owner permission before launching a server.
+- `npm run dev`: start local development. The owner authorized local verification servers without further permission on 2026-10-07.
 - `npm run check`: check Astro, TypeScript, and content diagnostics.
 - `npm test`: run Vitest once; `npm run test:watch` watches changes.
 - `npm run build`: generate `dist/`; reserve shared-checkout builds for the coordinator.
-- `npm run preview`: serve the production build, with owner permission.
+- `npm run preview`: serve the production build; covered by the owner's standing local-server authorization.
 
 ## Coding Style & Naming Conventions
 
@@ -34,6 +34,8 @@ Run relevant tests and type checks. For UI changes, use `node scripts/check-page
 The repository has no commits yet, so no historical message convention exists. Prefer concise imperative subjects. Agents must not commit or push; the owner handles Git publication. PR descriptions should explain behavior, scope, validation, linked issues when applicable, and screenshots for visual changes.
 
 ## Lesson Authoring
+
+**Current owner gate (2026-10-07): finish Day 12, then report and review with the owner. Obtain permission before starting Day 13 or its core agent.** Local-server authorization does not authorize advancing to the next day.
 
 Read `CLAUDE.md`, `IDEA.md`, `LESSONS.md`, and `BUILDING.md`; inspect `dos&donts/` before UI work. Preserve curriculum order and one scrolling page per lesson. Teach intuition, mechanism, and visible consequences before advanced statistics.
 

@@ -47,18 +47,35 @@ export function gdPath(start = START, lr = LR, steps = STEPS, pts: Pt[] = POINTS
 }
 export const PATH = gdPath();
 
+/** Expand the same MSE used by the plot into per-example arithmetic. */
+export function calculation(w: number, b: number, pts: Pt[] = POINTS) {
+  const rows = pts.map((p) => {
+    const prediction = w * p.x + b, error = prediction - p.y;
+    return { ...p, prediction, error, squared: error ** 2 };
+  });
+  const sum = rows.reduce((s, p) => s + p.squared, 0);
+  const sumError = rows.reduce((s, p) => s + p.error, 0);
+  const sumErrorX = rows.reduce((s, p) => s + p.error * p.x, 0);
+  const [gw, gb] = grad(w, b, pts);
+  const next = { w: w - LR * gw, b: b - LR * gb };
+  return { rows, sum, sumError, sumErrorX, mse: sum / pts.length, gw, gb,
+    next: { ...next, loss: loss(next.w, next.b, pts) } };
+}
+
 // ---- timeline ----
 /** iterative: gradient descent walks to the answer. closed: the formula jumps there. tour: the dot visits lines all over the map. */
-export type Mode = 'iterative' | 'closed' | 'tour';
+export type Mode = 'iterative' | 'closed' | 'tour' | 'prediction' | 'errors' | 'update';
 export const DT = 0.18, T_GUESS = 2;
 /** Tour stops on the (w, b) map: a bad line, lines in other corners, then the best one. 2 s per leg, then a 2 s hold. */
 export const TOUR = [START, { w: 2.6, b: -2.4 }, { w: 2.4, b: 3.0 }, { w: -1.3, b: 3.0 }, { w: 0.2, b: 1.6 }, { w: BEST.w, b: BEST.b }];
 const T_LEG = 2;
-export const duration = (m: Mode) => (m === 'iterative' ? T_GUESS + STEPS * DT + 2.5 : m === 'tour' ? (TOUR.length - 1) * T_LEG + 2 : 7);
+export const duration = (m: Mode) => (m === 'update' ? 12 : m === 'prediction' || m === 'errors' ? 10 : m === 'iterative' ? T_GUESS + STEPS * DT + 2.5 : m === 'tour' ? (TOUR.length - 1) * T_LEG + 2 : 7);
 export const markers = (m: Mode) =>
-  m === 'iterative'
+  m === 'prediction' || m === 'errors' ? [{ at: 0, label: 'start' }, { at: 3, label: 'raise b' }, { at: 7, label: 'new line' }]
+    : m === 'update' ? [{ at: 0, label: 'read slopes' }, { at: 4, label: 'move' }, { at: 8, label: 'compare MSE' }]
+    : m === 'iterative'
     ? [{ at: 0, label: 'a guess' }, { at: T_GUESS, label: 'descend' }, { at: T_GUESS + STEPS * DT, label: 'settled' }]
-    : m === 'tour' ? [{ at: 0, label: 'a bad line' }, { at: 2 * T_LEG, label: 'other lines' }, { at: (TOUR.length - 2) * T_LEG, label: 'the best line' }]
+    : m === 'tour' ? [{ at: 0, label: 'a bad line' }, { at: 2 * T_LEG, label: 'other lines' }, { at: (TOUR.length - 2) * T_LEG, label: 'approach best' }]
     : [{ at: 0, label: 'a guess' }, { at: T_GUESS, label: 'solve' }, { at: 4.5, label: 'solved' }];
 const ease = (u: number) => { const c = Math.min(1, Math.max(0, u)); return c * c * (3 - 2 * c); };
 
@@ -71,6 +88,15 @@ export interface Frame {
 /** `path` lets a widget replay descent from a start point the user chose (its first element is the start). */
 export function frameAt(t: number, mode: Mode, path: PathPt[] = PATH, best = BEST): Frame {
   const S = path[0];
+  if (mode === 'prediction' || mode === 'errors') {
+    const u = ease((t - 3) / 4), w = S.w, b = S.b + u * Math.min(1, B_DOM[1] - S.b);
+    return { w, b, loss: loss(w, b), k: u, phase: 'tour' };
+  }
+  if (mode === 'update') {
+    const u = ease((t - 4) / 4), z = calculation(S.w, S.b).next;
+    const w = S.w + (z.w - S.w) * u, b = S.b + (z.b - S.b) * u;
+    return { w, b, loss: loss(w, b), k: u, phase: t < 4 ? 'a guess' : t < 8 ? 'descend' : 'settled' };
+  }
   if (mode === 'tour') {
     const u = Math.max(0, t) / T_LEG, i = Math.min(TOUR.length - 2, Math.floor(u)), f = ease(u - i);
     const a = i === 0 ? S : TOUR[i], z = TOUR[i + 1];

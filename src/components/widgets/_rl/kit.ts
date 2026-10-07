@@ -59,7 +59,7 @@ export interface UI { pick: string | null }
 export interface Kit {
   /** Compute once per page: every island asking for the same key shares the value. */
   memo<T>(k: string, f: () => T): T;
-  /** Run an exported function of src/lib/rl in the shared worker (memoised per page by name + args). Args and result must be cloneable. */
+  /** Run an exported function of src/lib/rl or src/lib/align in the shared worker (memoised per page by name + args). Args and result must be cloneable. */
   job<T>(fn: string, ...args: unknown[]): Promise<T>;
 }
 export interface ModeImpl<S, F extends Frame> {

@@ -107,6 +107,40 @@ describe('LossPlayground', () => {
 });
 
 describe('LineFit', () => {
+  it('expands predictions, signed errors and MSE with hand-checkable values', () => {
+    const c = LF.calculation(1, 1, [{ x: 2, y: 5 }, { x: 0, y: 0 }]);
+    expect(c.rows.map((p) => [p.prediction, p.error, p.squared])).toEqual([[3, -2, 4], [1, 1, 1]]);
+    expect(c.sum).toBe(5);
+    expect(c.mse).toBe(2.5);
+    expect(c.gw).toBe(-4);
+    expect(c.gb).toBe(-1);
+    expect(c.next.w).toBeCloseTo(1.32);
+    expect(c.next.b).toBeCloseTo(1.08);
+    expect(c.next.loss).toBeCloseTo((1.28 ** 2 + 1.08 ** 2) / 2);
+  });
+  it('the slow single update reaches exactly the first full-batch MSE update', () => {
+    for (const start of [LF.START, { w: 2.5, b: -3 }]) {
+      const path = LF.gdPath(start);
+      expect(LF.frameAt(3, 'update', path).w).toBe(start.w);
+      const end = LF.frameAt(8, 'update', path);
+      expect(end.w).toBeCloseTo(path[1].w, 12);
+      expect(end.b).toBeCloseTo(path[1].b, 12);
+      expect(end.loss).toBeCloseTo(path[1].loss, 12);
+      const middle = LF.frameAt(6, 'update', path);
+      expect(middle.loss).toBeCloseTo(LF.calculation(middle.w, middle.b).mse, 12);
+    }
+  });
+  it('the prediction and error demonstrations raise every prediction by one with fixed w', () => {
+    for (const mode of ['prediction', 'errors'] as const) {
+      const start = LF.frameAt(0, mode), end = LF.frameAt(10, mode);
+      expect(end.w).toBe(start.w);
+      const a = LF.calculation(start.w, start.b), z = LF.calculation(end.w, end.b);
+      z.rows.forEach((row, i) => expect(row.prediction - a.rows[i].prediction).toBeCloseTo(1));
+      expect(end.loss).toBeCloseTo(z.mse, 12);
+      const edge = LF.gdPath({ w: 1, b: LF.B_DOM[1] });
+      expect(LF.frameAt(10, mode, edge).b).toBe(LF.B_DOM[1]);
+    }
+  });
   it('gradient matches numerical', () => {
     for (const [w, b] of [[0, 0], [-1.4, -2.2], [2, 1]]) {
       const [gw, gb] = LF.grad(w, b), [nw, nb] = numGrad(LF.loss, w, b);

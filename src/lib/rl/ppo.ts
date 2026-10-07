@@ -8,17 +8,9 @@ import { createRng, type Rng } from '../math/rng';
 import { adam } from '../nn/optim';
 import { N, NA, START, step, sampleRow, type Grid } from './gridworld';
 import { policyValue, softmaxPolicy, softmaxRow } from './tabular';
+import { clippedSurrogate } from './surrogate';
+export { clippedSurrogate } from './surrogate';
 
-/**
- * The PPO-clip term for one sample: min(rho A, clip(rho, 1 - eps, 1 + eps) A) and its derivative with respect to rho.
- * The derivative is 0 exactly when the clipped branch is the smaller one and rho lies outside the band on the side the
- * advantage favours (A > 0 and rho > 1 + eps, or A < 0 and rho < 1 - eps); everywhere else it is A.
- */
-export function clippedSurrogate(rho: number, A: number, eps: number): { value: number; dRho: number; clipped: boolean } {
-  const lo = 1 - eps, hi = 1 + eps, c = rho < lo ? lo : rho > hi ? hi : rho, un = rho * A, cl = c * A;
-  const clipped = cl < un; // the minimum picks the flat branch
-  return { value: clipped ? cl : un, dRho: clipped ? 0 : A, clipped };
-}
 /** Exact KL(p || q) of two categorical distributions of n outcomes, read from offsets op and oq. */
 export function klCategorical(p: ArrayLike<number>, q: ArrayLike<number>, op = 0, oq = 0, n = Math.min(p.length - op, q.length - oq)): number {
   let k = 0;

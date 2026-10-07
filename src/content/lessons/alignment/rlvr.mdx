@@ -7,157 +7,181 @@ order: 7
 level: advanced
 duration: 30
 prereqs: ["alignment/rlhf"]
-status: stub
+status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
+import VerifierRL from '../../../components/widgets/VerifierRL/VerifierRL.svelte';
 
 When the answer can be checked by a program, no human labeler is needed.
 
 <Step title="Tasks a program can check">
 
-Some tasks come with an automatic check, an exact final answer for a math problem or unit tests for code, and that check can serve as the reward instead of a learned reward model.
+In [RLHF](/learn/alignment/rlhf/) the reward came from a model trained on human choices, and the policy learned to exploit its blind spots. Some tasks need no such model. A maths problem has one right answer, and code either passes its unit tests or does not. A short program, a **verifier**, can read the response and say pass or fail, and that verdict is the reward: 1 for a pass, 0 for a fail. Training a model on rewards like this is called **reinforcement learning with verifiable rewards** (RLVR); the name comes from the Tülu 3 paper, and DeepSeek-R1-Zero used rule-based accuracy and format rewards instead of a neural reward model.
 
-{/*
-IDEA: verifier = program; reward 1 if it passes, else 0. No reward model to exploit, but the verifier itself can be imperfect.
-WIDGET: VerifierRL mode="verify" verifier="strict". Toy task: add two numbers with 1 to 4 digits. A response is generated text: k worked column lines (with carries) then "Answer: N" (src/lib/align/verifier.ts). Shows 6 example responses and the verifier parsing each: extract last line, compare to the true sum; tick or cross.
-MOTION over t: each response types in; the verifier's parse highlights the extracted number; tick/cross appears.
-TRY: find the response whose working is right but whose last line is not in the required format, and see the verifier fail it.
-NUMBERS: none beyond the 6 verdicts.
-*/}
+A real model writes its response token by token. Here a policy chooses one of ten *styles* of response to an addition problem (how many columns of the sum to write out, and whether to give one answer or a list of guesses) and a fixed program writes the text, so every number can be computed exactly.
+
+Watch six responses. The verifier is strict: it reads only the last line, which must be exactly `Answer: N`, and compares $N$ with the true sum. Response 4 has correct working, but its last line holds a list of guesses, so the verifier fails it. Three of the six pass. A verifier checks what it was written to check, which is a strength (it cannot be talked into a pass) and, as step 6 shows, a limit.
+
+<VerifierRL client:visible mode="verify" verifier="strict" title="A strict verifier reads each response's last line" />
 
 </Step>
 
 <Step title="Many attempts per problem">
 
-The model answers each problem several times; some attempts pass and some fail, and that difference is all the learning signal there is.
+The policy answers each problem several times, and some attempts pass while others fail. That difference is the only learning signal there is: no one tells the model which step was wrong, only whether the whole attempt passed.
 
-{/*
-IDEA: sampling G attempts; pass@1 vs pass@k; the policy (tabular per digit count over k worked columns 0..4 and a format choice) starts mostly answering without working.
-WIDGET: VerifierRL mode="sample" G=8 problems=6 seed=2. Grid: rows = problems, columns = 8 attempts; each cell shows k (number of worked lines) as a small bar and a tick/cross.
-MOTION over t: attempts fill in row by row; per-row pass rate counts up; pass@1 and pass@8 readouts update.
-TRY: find a 3-digit problem where only the attempts that wrote out their working passed.
-NUMBERS: pass@1 and pass@8 over the 6 problems at the start policy.
-Say once: the toy assumes each column written out avoids a carry slip; that assumption is the environment, the learning is real.
-*/}
+The figure shows eight attempts at each of six problems. Each cell has a bar for how many lines of working the attempt wrote, and a tick or cross from the strict verifier. Two numbers summarise it. **pass@1** is the share of single attempts that pass: 13 of the 48 shown, 0.271. **pass@8** is the share of problems solved by at least one of eight attempts: 4 of 6, 0.667. Look at $317 + 833$. Seven attempts failed. The one that passed is the one that wrote out all three columns, carries included.
+
+In this toy, every column the policy writes out avoids one carry slip, and an attempt that skips a column adds it without carrying. That rule is the toy's assumption, chosen so that working pays; the learning that follows is real.
+
+<VerifierRL client:visible mode="sample" G={8} problems={6} seed={0} title="Eight attempts at each of six problems" />
 
 </Step>
 
 <Step title="Group-relative advantages">
 
-GRPO scores each attempt against the other attempts at the same problem, subtracting the group's mean reward and dividing by its spread, so no value network is needed.
+How should one attempt be credited? In [PPO](/learn/alignment/ppo/) a learned critic estimated what a state was worth, and the advantage was the outcome minus that estimate. **GRPO** (group relative policy optimization) drops the critic. It compares each attempt with the other attempts at the *same problem*: subtract the group's average reward and divide by the group's spread (standard deviation). An attempt that beat its siblings gets a positive advantage, and one that lost to them a negative one.
 
-{/*
-IDEA: A_i = (r_i - mean(r)) / std(r); groups where all pass or all fail give zero advantage and no gradient. Then a clipped policy-gradient update like PPO, optional KL.
-WIDGET: VerifierRL mode="grpo" G=8 problems=6 seed=2 (same samples as step 2). Advantage per cell as a signed bar (--viz-pos/--viz-neg); rows with uniform outcomes greyed with a "no signal" label; the resulting update arrows on the policy's choice bars.
-MOTION over t: rewards turn into advantages row by row (mean line drawn, bars grow); zero rows fade; policy bars nudge.
-TRY: count the rows that teach nothing.
-NUMBERS: number of zero-signal rows; the largest positive advantage and why (one pass among seven fails).
-SHOW THE MATH: GRPO advantage and objective (Shao et al. 2024). SHOW THE CODE: group advantage in NumPy, 4 lines.
-*/}
+At $317 + 833$ one attempt in eight passed. The average reward is $0.125$, and the passing attempt's advantage is $+2.65$, because passing was rare. Each of the seven failures gets $-0.38$. Now count the rows that teach nothing. When every attempt gets the same reward, there is nothing to compare, and every advantage is exactly 0: $3 + 1$ was solved every time, while $7770 + 5739$ and $28 + 68$ failed every time. That is 3 of the 6 problems giving no signal.
+
+The last stretch of the animation shows what the update does on $317 + 833$. The push on a style is the sum of the advantages of the attempts that chose it: $+2.65$ on writing all three columns, and $-1.89$ on writing no working, which five of the eight attempts chose. The update raises the first and lowers the second.
+
+<VerifierRL client:visible mode="grpo" G={8} problems={6} seed={0} title="Each attempt scored against its group" />
+
+<details>
+<summary>Show the math</summary>
+
+For a problem $q$, sample a group of $G$ attempts $o_1, \dots, o_G$ with rewards $r_1, \dots, r_G$. The advantage of attempt $i$ is
+
+$$\hat A_i = \frac{r_i - \operatorname{mean}(r_1,\dots,r_G)}{\operatorname{std}(r_1,\dots,r_G)},$$
+
+and it is 0 for every $i$ when the standard deviation is 0. GRPO (Shao et al., 2024) then maximises a PPO-style clipped objective with these advantages and a penalty for drifting from a reference policy:
+
+$$J = \mathbb{E}\left[\frac1G\sum_{i=1}^{G}\min\bigl(\rho_i \hat A_i,\ \operatorname{clip}(\rho_i, 1-\varepsilon, 1+\varepsilon)\,\hat A_i\bigr)\right] - \beta\, D_{\mathrm{KL}}\bigl(\pi_\theta \,\Vert\, \pi_{\mathrm{ref}}\bigr), \qquad \rho_i = \frac{\pi_\theta(o_i\mid q)}{\pi_{\mathrm{old}}(o_i\mid q)}.$$
+
+In a language model the ratio is taken per token. Here each batch is used once, so $\rho_i = 1$ and the clip never acts, and $\beta = 0$. With $G = 8$ and one pass, the mean is $1/8$ and the standard deviation is $\sqrt{(1/8)(7/8)} = 0.331$, which gives $(1 - 1/8)/0.331 = 2.646$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+r = np.array(rewards, dtype=float)            # one reward per attempt in the group
+std = r.std()
+adv = (r - r.mean()) / std if std > 0 else np.zeros_like(r)
+# every attempt then pushes up (adv > 0) or down (adv < 0) the log-probability of its own response
+```
+
+</details>
 
 </Step>
 
 <Step title="Training with the verifier">
 
-Repeating sample, verify and update, the policy learns what earns the reward, and accuracy rises on every problem size.
+Repeat the cycle: sample attempts, verify them, score each against its group, update the policy. The policy has one table of style probabilities for each digit count, and each iteration uses eight problems with eight attempts each.
 
-{/*
-IDEA: GRPO training loop with the strict verifier.
-WIDGET: VerifierRL mode="train" verifier="strict" iters=150 G=8 seed=5. Accuracy curve per digit count (1 to 4); policy choice bars for 3-digit problems.
-MOTION over t: curves draw; bars tween each iteration; a live sample response for a 3-digit problem refreshes every 10 iterations.
-TRY: compare how fast 1-digit and 4-digit problems improve.
-NUMBERS: accuracy per digit count at iterations 0 and 150.
-*/}
+Accuracy rises for every problem size. At the start the policy rarely writes working, and strict accuracy is $0.54$, $0.34$, $0.20$ and $0.09$ for 1, 2, 3 and 4 digit problems. Compare the extremes. By iteration 20, 1-digit problems are at $0.91$ while 4-digit problems are still at $0.22$, because a long sum has more places to slip and few attempts pass, so there is little to learn from. By iteration 50 all four sizes are at $0.95$ or more, and by iteration 150 every size is at $1.00$. The bars show why: on 3-digit problems the chance of writing all three columns grows from $0.08$ at the start to $0.98$ at iteration 50. Nobody told the policy to write its working. It found what earns the reward.
+
+<VerifierRL client:visible mode="train" verifier="strict" iters={150} G={8} problems={8} seed={5} title="GRPO against the strict verifier" />
 
 </Step>
 
 <Step title="Longer responses emerge">
 
-Nobody asked for longer answers, but because writing the working out makes passing more likely, the policy learns to write more, and more for harder problems.
+No reward asks for longer answers. But in this task, writing out the working makes passing more likely, so the policy that learns to pass also learns to write more, and writes the most where a slip is most likely.
 
-{/*
-IDEA: response length as an emergent result of reward, mirroring the growing chains of thought reported for DeepSeek-R1-Zero. Honest: in this toy the link between working and correctness is built into the task; real models are not given this rule.
-WIDGET: VerifierRL mode="length" iters=150 seed=5 (same run as step 4). Mean response length (tokens or lines) vs iteration, one line per digit count.
-MOTION over t: lines draw; a sample response grows longer at each marker.
-TRY: read the final mean length for 1-digit vs 4-digit problems.
-NUMBERS: mean length at start and end per digit count.
-*/}
+This is the same run as step 4, drawn as the mean response length in words. A 1-digit answer grows from $5.7$ to $10.0$ words (one worked line plus the answer), while a 4-digit answer grows from $8.4$ to $37.2$ words, four worked lines plus the answer. The DeepSeek-R1 paper reports a similar trend in a real model: R1-Zero's average response length on the training set grew steadily during RL, which the authors describe as the model learning to use more thinking time. In the toy the link between working and passing is built into the task; real models are given no such rule and have to find a useful way to think longer.
+
+<VerifierRL client:visible mode="length" iters={150} G={8} problems={8} seed={5} title="Mean response length while training" />
 
 </Step>
 
 <Step title="When the verifier can be gamed">
 
-A verifier checks only what it was written to check, and if it is too lenient the policy learns to pass the check rather than to solve the problem.
+A verifier can only check what it was written to check. Suppose a careless programmer loosens the rule: a response passes if the true sum appears *anywhere* in it. The policy is rewarded for whatever earns a pass, and that now includes writing a list of guesses and hoping the right number is among them.
 
-{/*
-IDEA: reward hacking against a program. Lenient verifier = "the true sum appears anywhere in the response". The policy discovers the "list several guesses" format.
-WIDGET: VerifierRL mode="train" verifier="lenient" iters=150 seed=5. Same view as step 4 plus a strict-verifier accuracy line computed on the same samples (true accuracy).
-MOTION over t: lenient reward climbs to near 1; strict accuracy flattens or falls; sample responses turn into lists of guesses.
-TRY: scrub to the end and read a sample response.
-NUMBERS: final lenient reward vs strict accuracy; share of responses in the guess-list format.
-*/}
+Here the same training runs against that lenient verifier. The dashed line applies an independent strict check: did the response end with one correct answer? Comparing the two checks reveals the loophole. The solid line is the reward the lenient verifier pays, and it climbs to $1.00$ on every problem size. For 1-digit and 2-digit sums the policy discovers that a list of four guesses almost always covers the slips, so by the end $56\%$ and $71\%$ of its responses are guess lists, and its strict pass rate has fallen from $0.54$ to $0.44$ and from $0.34$ to $0.29$. Longer sums are different: four guesses rarely cover the slips, so working things out still wins, with lists at $2\%$ and $1\%$ and strict pass rates of $0.98$ and $0.99$. Scrub to the end of the 2-digit sample: the answer is a list, such as `68 or 78 or 168 or 178`, which the lenient verifier passes and the strict one fails.
+
+<VerifierRL client:visible mode="train" verifier="lenient" iters={150} G={8} problems={8} seed={5} title="The same training with a lenient verifier" />
 
 </Step>
 
 <Step title="Where verifiable rewards stop">
 
-Verifiable rewards only exist where correctness can be checked, so the method is strongest for math and code and gives no signal at all on many tasks people care about.
+RLVR needs a useful check. A program can check a poem's line count or a plan's budget, but neither check decides its overall quality. In this example, prompts without a checker give every attempt reward 0. Every group then has zero advantage, and, as in step 3, supplies no learning signal.
 
-{/*
-IDEA: limited domains. Add prompts with no verifier (for example "write a short poem"): reward is always 0, every group has zero advantage, those prompts never change; also note results on whether RLVR adds new abilities or mostly sharpens ones the base model already samples (Yue et al. 2025, VERIFY).
-WIDGET: VerifierRL mode="domains" iters=150. Two panels: verifiable prompts (policy bars change) and unverifiable prompts (bars stay at the start policy); plus pass@1 vs pass@8 at start and end for the arithmetic prompts.
-MOTION over t: training runs; left bars move, right bars stay still; pass@k bars update.
-TRY: compare pass@8 at the start with pass@1 at the end.
-NUMBERS: those two numbers; change on the unverifiable prompts (exactly 0).
-*/}
+This run mixes addition problems with two open prompts. The left panel shows the style probabilities on 3-digit sums moving away from their starting outlines. The right panel shows the open prompts, and their bars do not move at all: the policy's change there is exactly $0.000$. These prompts have a separate table of probabilities, so the addition updates cannot change them. A language model shares weights across tasks; whether training carries over to other tasks needs to be measured.
+
+Look also at the bars below. With eight attempts, the starting policy solves $0.65$ of the sums at least once, but a single attempt passes only $0.29$ of the time. After training one attempt passes $1.00$. In this toy every style the trained policy uses was already possible at the start, so training mostly made the right style likely. Yue et al. (2025) tested whether this holds for real language models and found that RL-trained models beat their base models when one attempt is allowed, but that base models reach a higher pass@k when $k$ is large, which suggests that RLVR mostly selects reasoning the base model already has.
+
+<VerifierRL client:visible mode="domains" iters={150} G={8} problems={8} seed={5} title="Separate tasks with and without a reward signal" />
 
 </Step>
 
 <Step title="Common misconceptions">
 
-Common misunderstandings about RL with verifiable rewards.
+**You might think a reward from a program cannot be hacked.** It can, if it checks the wrong thing. The lenient verifier in step 6 paid full reward for guess lists, and strict accuracy fell on short problems while the reward reached 1.00.
 
-{/*
-NO WIDGET. Misconceptions:
-1. "A program reward cannot be hacked." It can, if it checks the wrong thing.
-2. "Models were taught to think longer." Length rose because it paid off under the reward.
-3. "GRPO needs a reward model." It needs only rewards; the group replaces the value network.
-4. "RLVR works for everything." Only where answers can be checked.
-5. "All attempts teach something." Uniform groups give zero signal.
-*/}
+**You might think models were taught to think longer.** No reward asked for length. It grew because longer working led to more passes. If working had not helped, the policy would have had no reason to write it.
+
+**You might think GRPO needs a reward model.** It needs only rewards, here a verifier's 0 or 1. The group of attempts takes the place of the learned critic that PPO uses.
+
+**You might think RLVR works for everything.** It works where answers can be checked, which is why it is strongest for maths and code. On the open prompts in step 7 nothing changed.
+
+**You might think every attempt teaches something.** A group where all attempts pass, or all fail, has zero advantage. In step 3, half the problems contributed nothing.
 
 </Step>
 
 <Step title="Check yourself">
 
-Questions on verifiers and group-relative training.
+<details>
+<summary>Four attempts get rewards 1, 0, 0, 0. What are the GRPO advantages?</summary>
 
-{/*
-NO WIDGET. Questions:
-1. Rewards in a group of 4: 1, 0, 0, 0. Compute the GRPO advantages.
-2. Why do very easy and very hard problems both give little signal?
-3. Design a stricter check that would have blocked the guess-list hack.
-4. Why might average response length grow during RLVR?
-5. Name a task where you could not write a verifier.
-*/}
+The mean is $0.25$ and the standard deviation is $\sqrt{0.25 \times 0.75} = 0.433$. The passing attempt gets $(1 - 0.25)/0.433 = +1.73$, and each failure gets $(0 - 0.25)/0.433 = -0.58$. They sum to 0.
+
+</details>
+
+<details>
+<summary>Why do very easy and very hard problems both give little signal?</summary>
+
+If every attempt passes, or every attempt fails, all the rewards in the group are equal, so every advantage is 0. The useful problems are those where the policy sometimes passes and sometimes fails, which is why the 4-digit problems in step 4 improved slowly at first: almost all their attempts failed.
+
+</details>
+
+<details>
+<summary>Design a stricter check that would have blocked the guess-list hack.</summary>
+
+Require the response to end with exactly one answer on its own line, as the strict verifier does, so that a list of several numbers fails. For code, the analogue is a hidden test set the model never sees, so it cannot write a function that special-cases the visible tests.
+
+</details>
+
+<details>
+<summary>Why might average response length grow during RLVR?</summary>
+
+If longer reasoning raises the chance of a correct answer, attempts that reason longer are rewarded more often, and the policy shifts toward them. The reward only counts the outcome, so length is a side effect of what works.
+
+</details>
+
+<details>
+<summary>Name a task whose overall quality is hard to verify with an exact check.</summary>
+
+Writing a kind reply or judging whether an essay is persuasive. Rules can check individual requirements, but an exact answer key does not capture overall quality. Human judgement or a learned reward model can supply a broader signal, as in the [RLHF](/learn/alignment/rlhf/) lesson.
+
+</details>
 
 </Step>
 
 <Step title="Going deeper">
 
-Papers on verifiable rewards and reasoning models.
+- Zhihong Shao et al., [DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models](https://arxiv.org/abs/2402.03300) (2024). Introduces GRPO.
+- DeepSeek-AI, [DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning](https://arxiv.org/abs/2501.12948) (2025). Rule-based accuracy and format rewards, and the growth of R1-Zero's response length (Figure 3).
+- Nathan Lambert et al., [Tulu 3: Pushing Frontiers in Open Language Model Post-Training](https://arxiv.org/abs/2411.15124) (2024). Names RLVR.
+- Yang Yue et al., [Does Reinforcement Learning Really Incentivize Reasoning Capacity in LLMs Beyond the Base Model?](https://arxiv.org/abs/2504.13837) (2025). Compares base and RL-trained models by pass@k.
+- Karl Cobbe et al., [Training Verifiers to Solve Math Word Problems](https://arxiv.org/abs/2110.14168) (2021). Verifiers as learned models of correctness.
+- Hunter Lightman et al., [Let's Verify Step by Step](https://arxiv.org/abs/2305.20050) (2023). Checking each reasoning step.
+- Victoria Krakovna et al., [Specification gaming: the flip side of AI ingenuity](https://deepmind.google/blog/specification-gaming-the-flip-side-of-ai-ingenuity/), DeepMind (2020).
 
-{/*
-NO WIDGET. References (frontier-adjacent: confirm details from the primary sources before writing):
-- Zhihong Shao et al., "DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models", arXiv:2402.03300 (GRPO).
-- DeepSeek-AI, "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning", arXiv:2501.12948.
-- Nathan Lambert et al., "Tulu 3: Pushing Frontiers in Open Language Model Post-Training", arXiv:2411.15124 (names RLVR).
-- Karl Cobbe et al., "Training Verifiers to Solve Math Word Problems", arXiv:2110.14168.
-- Hunter Lightman et al., "Let's Verify Step by Step", arXiv:2305.20050.
-- OpenAI, "Learning to Reason with LLMs", September 2024 (VERIFY URL).
-- Yang Yue et al., "Does Reinforcement Learning Really Incentivize Reasoning Capacity in LLMs Beyond the Base Model?", arXiv:2504.13837 (VERIFY).
-- Victoria Krakovna et al., "Specification gaming: the flip side of AI ingenuity", DeepMind blog 2020.
-Next: /learn/alignment/evaluations/
-*/}
+Next: [Evaluations](/learn/alignment/evaluations/).
 
 </Step>

@@ -7,144 +7,198 @@ order: 8
 level: core
 duration: 25
 prereqs: ["alignment/sft"]
-status: stub
+status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
+import EvalLab from '../../../components/widgets/EvalLab/EvalLab.svelte';
 
 A leaderboard number is only as trustworthy as the test behind it.
 
 <Step title="A benchmark is a sample of questions">
 
-A static benchmark is a fixed set of questions with known answers, and a model's score is the share it gets right, which is an estimate with its own uncertainty, not an exact property of the model.
+A **benchmark** is a fixed list of questions with known answers. A model's **score** is the share it gets right. It is tempting to treat that number as a fact about the model, but the questions are only a sample of all the questions the model could be asked. A different sample of 200 questions would give a different score, the way asking 200 people who they will vote for gives a different answer from asking another 200.
 
-{/*
-IDEA: benchmark score as a sample estimate of skill. Simulator (EvalLab/sim.ts): 6 fictional models with a true skill each, items with difficulties, P(correct) = sigmoid(skill - difficulty) (item response theory), seeded. Name models neutrally (Model A to F), never real products.
-WIDGET: EvalLab mode="benchmark" models=6 items=200 seed=1. Left: a grid of 200 item cells per model filling with right/wrong marks. Right: score bars with 95% binomial intervals and a tick at each model's true expected score.
-MOTION over t: items get answered in order; scores and intervals shrink as items accumulate.
-TRY: find two models whose intervals still overlap at 200 items.
-NUMBERS: each score with its interval; which pairs overlap.
-SHOW THE MATH: standard error sqrt(p(1-p)/n).
-*/}
+The quantity we really care about is the **true score**: the share the model would get right across all questions of this kind. The measured score is an estimate of it, and the estimate comes with a **95% interval**, a range built so that it contains the true score in about 95 out of 100 repeated tests. For a score $p$ on $n$ questions the interval is about $p \pm 1.96\sqrt{p(1-p)/n}$. A score of 0.70 on 200 questions therefore means "somewhere around 0.64 to 0.76" (see the [probability primer](/learn/math/probability/) for why).
+
+Six fictional models take the same 200 questions. Each cell is one answer (blue right, orange wrong), the coloured bar is the model's score with its interval, and the dashed tick is the true score the test is trying to measure. Watch the bars narrow as answers arrive. At the end, Model B scored 0.575 (115 of 200, interval 0.51 to 0.64) and Model C scored 0.555 (111 of 200, interval 0.49 to 0.62), so the test ranks B above C. But C is the better model: its true score is 0.615 against 0.568 for B. Eight of the 15 pairs of models have overlapping intervals. That warns us to look beyond the ranking, but overlap alone does not decide whether a difference is meaningful: compare the models directly on the same questions, as in step 6.
+
+<EvalLab client:visible mode="benchmark" models={6} items={200} seed={1} title="Six models, one 200-question test" />
+
+<details>
+<summary>Show the math</summary>
+
+If each question is answered right with probability $p$ (independently), the number right out of $n$ is binomial, so the score $\hat p$ has mean $p$ and **standard error**
+
+$$\mathrm{SE} = \sqrt{\frac{p(1-p)}{n}}.$$
+
+At $p = 0.7$ and $n = 200$ this is $0.032$, and $1.96 \times 0.032 = 0.063$. The error shrinks like $1/\sqrt n$: four times the questions halve the interval. The figure draws the Wilson interval, a refinement that behaves sensibly when $n$ is tiny; at 200 questions it is within a few thousandths of the formula above.
+
+[Overlapping individual confidence intervals do not establish a tie](https://cscu.cornell.edu/wp-content/uploads/ci.pdf). An interval for the difference addresses the comparison directly.
+
+Each simulated model has a skill $s$, each question a difficulty $d$, and the model answers right with probability $\sigma(s - d)$ (the one-parameter item response theory model). The true score is that probability averaged over the question difficulties.
+
+</details>
 
 </Step>
 
 <Step title="Human preference arenas">
 
-An arena asks people to compare two anonymous models' answers to the same prompt and turns the votes into ratings, which measures what users prefer rather than what is correct.
+Some questions have no answer key: "write a poem about autumn", "explain this error". An **arena** handles them by asking people. A voter sees two anonymous models answer the same prompt and picks the better answer. After many votes, a statistical model turns the win counts into one **rating** per model. This measures what voters prefer, which is related to correctness but not the same thing.
 
-{/*
-IDEA: pairwise votes, Bradley-Terry / Elo ratings with confidence intervals (link /learn/alignment/rlhf/). Votes have style bias (the length bias again).
-WIDGET: EvalLab mode="arena" models=6 votes=3000 seed=2. Vote particles stream between model pairs (Canvas if many); rating points with bootstrap or Fisher-information intervals converge; a toggle "voters favour longer answers" shifts the ratings of a verbose model.
-MOTION over t: votes accumulate; ratings move and intervals shrink.
-TRY: switch on the length preference and see which model climbs without getting more accurate.
-NUMBERS: ratings and intervals at 3000 votes; rank change of the verbose model with the toggle.
-*/}
+The standard model is **Bradley-Terry**: each model has a strength $\beta$, and the chance that A beats B is $\sigma(\beta_A - \beta_B)$, the same formula that trains reward models in [RLHF](/learn/alignment/rlhf/). Fitting the strengths to the votes by maximum likelihood gives ratings; here they are shown on the familiar chess-like scale, where a 100-point gap means the higher model wins about 64% of the time. The [Chatbot Arena paper](https://arxiv.org/abs/2403.04132) describes this method, using Bradley-Terry coefficients with confidence intervals in place of its earlier online Elo scores.
+
+The figure replays 3,000 votes between pairs of six fictional models. Each recent vote is an arc from the model that lost to the model that won, fading as it ages, and each row's bar is its rating with a 95% interval. After 300 votes the intervals are about 60 points wide on each side and the order is shaky. After 3,000 votes they are about 20 points on each side: Model F leads at 1160, then E at 1088, D at 1024, C at 980, B at 901 and A at 847.
+
+Now tick "Voters favour longer answers". Model C writes padded, wordy answers; the voters here give it a bonus in every comparison, although its answers are no more correct. The votes are the same pairs and the same coin flips, only C's chance of winning changes. Its rating jumps from 980 to 1081 and it climbs from fourth place to second, past D and E. The dashed tick shows the rating of 974 that voters judging only quality would give it, which the 980 matches closely. The other models slip a little, because ratings only say who beats whom.
+
+<EvalLab client:visible mode="arena" votes={3000} seed={3} title="An arena: votes become ratings" />
+
+<details>
+<summary>Show the math</summary>
+
+With $w_{ij}$ the number of times $i$ beat $j$, the log-likelihood is $\sum_{i\neq j} w_{ij}\log\sigma(\beta_i-\beta_j)$. Only differences matter, so the strengths are centred to average 0. A rating is $1000 + \tfrac{400}{\ln 10}\beta$, so a 400-point gap is 10 to 1 odds. The intervals come from the Fisher information of this likelihood: a pair that has met $n_{ij}$ times with win chance $q$ contributes $n_{ij}\,q(1-q)$.
+
+</details>
 
 </Step>
 
 <Step title="Contamination">
 
-If benchmark questions leak into the training data, a model can score well by remembering answers, and the score stops measuring the skill it was meant to.
+A model learns from a huge pile of text collected from the internet. If the questions of a benchmark, or their answers, are somewhere in that pile, the model may have seen them. It can then score well by remembering, and the score stops measuring the skill the benchmark was built for. This is **contamination** (or leakage).
 
-{/*
-IDEA: contamination; detection by comparing with a fresh, equally hard set (GSM1k-style).
-WIDGET: EvalLab mode="contamination" leak slider 0 to 50% (default 20%) items=400 seed=3. A contaminated model answers leaked items correctly with high probability; panel: public-set score vs fresh-set score, gap highlighted.
-MOTION over t: the leak fraction sweeps 0 to 50% along the timeline (slider follows); leaked items light up in the grid; the gap grows.
-TRY: set the leak to 20% and read the gap.
-NUMBERS: public and fresh scores and the gap at 0% and 20% leak.
-*/}
+The way to detect it is to compare the public benchmark with a **fresh test**: new questions of the same kind and difficulty that cannot have leaked. A model that generalises should score similarly on both, allowing for sampling noise and differences in question difficulty. Zhang et al. did this for a grade-school maths benchmark: they wrote a new set of questions in the same style, and found that some families of models lost up to 8% accuracy, and that the drop was larger for models that were more likely to generate examples from the old set ([GSM1k](https://arxiv.org/abs/2405.00332)). Frontier models in their study showed little sign of it.
+
+In the figure one model, whose true score is about 0.67, takes a public test of 400 questions and a fresh test of 400 new ones. A question that leaked into its training data is answered right 97% of the time. The share of leaked public questions grows from 0% to 20% (the cells with a dark ring and a dot). With no leak the two scores agree at 0.682 and 0.682. With 20% leaked, the public score has risen to 0.743 while the fresh score stays at 0.682, a gap of 0.060. Drag the slider to 50%: the gap becomes 0.160. A single gap of six points is about as large as luck alone produces on tests of 400 questions (the 95% interval for a difference is roughly 6 or 7 points), so a small leak is hard to prove from one pair of scores; a large one is unmistakable.
+
+<EvalLab client:visible mode="contamination" leakPct={20} items={400} seed={1} title="A leaked test: public score against fresh score" />
 
 </Step>
 
 <Step title="Goodhart's law: overfitting to the benchmark">
 
-When a score becomes the target, choices made to raise it, such as picking the best of many tries on the same public test, inflate it without improving the model.
+Even without any leak, a benchmark can be used up. Suppose a team builds fifty versions of a system, scores each on the same public test and publishes the best. Every version is equally good, so the scores differ only by luck, and the maximum of fifty lucky draws is above average by construction. The published number promises more than the system delivers.
 
-{/*
-IDEA: Goodhart; adaptive overfitting of a public leaderboard by selecting the best of many submissions evaluated on the same test set; a held-out private set reveals it.
-WIDGET: EvalLab mode="goodhart" submissions=50 items=200 seed=4. Fifty variants with the same true skill, each scored on the public set; the running best public score climbs; the selected variant's private-set score stays flat.
-MOTION over t: submissions arrive one by one; the best-so-far line steps up; its private score dot stays near the true skill.
-TRY: read the best public score after 50 submissions against the private score.
-NUMBERS: true skill, best public score, its private score.
-*/}
+This is an instance of **Goodhart's law**. The common wording, "when a measure becomes a target, it ceases to be a good measure", is usually credited to Marilyn Strathern's 1997 paper [Improving ratings](https://www.cambridge.org/core/journals/european-review/article/improving-ratings-audit-in-the-british-university-system/FC2EE640C0C44E3DB87C29FB666E9AAB). It restates Charles Goodhart's 1975 remark about monetary policy: any observed statistical regularity will tend to collapse once pressure is placed upon it for control purposes.
+
+In the figure, fifty variants all have the same true score, 0.596. Each is scored on the same public test of 200 questions (blue dots, one per try). The indigo line is the best public score so far, and the orange line below it is the score that same best try gets on a private test of 1,000 questions nobody tuned against. After 50 tries the best public score is 0.665, from try 16. On the private test that same variant scores 0.578, in line with the true 0.596. The 0.087 gap between the two numbers was produced by choosing.
+
+How big is the effect in practice? It depends on how many choices were made relative to the size of the test. The maximum of 50 draws sits about 2.25 standard errors above the average, and 0.035 times 2.25 is about 0.08, which is the size seen here. On the big ImageNet and CIFAR-10 test sets, Recht et al. built new test sets of the same kind, found lower scores, and concluded the drop was not caused by adaptivity ([arXiv:1902.10811](https://arxiv.org/abs/1902.10811)). Selection pressure is an issue mainly when many tries meet a small test, as when a few providers privately test many variants before publishing one: [The Leaderboard Illusion](https://arxiv.org/abs/2504.20879) reports 27 private variants tested by one provider before a release. A held-out private set, or the "reusable holdout" of Dwork et al. (Science, 2015), which limits how much each query leaks, are the standard defences.
+
+<EvalLab client:visible mode="goodhart" submissions={50} items={200} privateItems={1000} seed={2} title="Fifty tries at the same public test" />
+
+<details>
+<summary>Show the math</summary>
+
+A score on 200 questions with true score $p = 0.596$ has standard error $\sqrt{0.596 \times 0.404 / 200} = 0.035$. The expected maximum of 50 independent standard normal values is $2.25$, so the expected best public score is about $0.596 + 2.25 \times 0.035 = 0.67$. The private score of the chosen variant is a fresh draw, so its expected value is just $0.596$.
+
+</details>
 
 </Step>
 
 <Step title="Saturation">
 
-As models improve, scores pile up near the top of a benchmark, and the remaining differences become too small to separate from noise.
+As models improve, they stop making the mistakes a benchmark was built to find. Scores pile up against the top, the gaps between one generation and the next shrink, and soon the gaps are smaller than the noise. The benchmark is **saturated**. There is also a hard ceiling below 100%: some answer keys are simply wrong, and a model that answers correctly is marked wrong.
 
-{/*
-IDEA: saturation; discrimination collapses near 100%; label errors set a ceiling.
-WIDGET: EvalLab mode="saturation" generations=8 items=200 labelErrors=0.03 seed=5. Model skill rises over 8 generations; benchmark score approaches its ceiling (1 minus label errors); a harder benchmark beside it keeps separating them.
-MOTION over t: generations advance; scores climb; the gap between consecutive generations shrinks on the easy benchmark and stays visible on the hard one.
-TRY: find the generation after which the easy benchmark can no longer tell neighbours apart (overlapping intervals).
-NUMBERS: that generation; the ceiling score.
-*/}
+The figure follows eight generations of a model family, each a bit more skilled than the last. On the left an easy test of 200 questions, six of which (3%) have a wrong key, so the best possible score is 0.97 (dashed). On the right a hard test of the same size. A dot is a generation's score with its 95% interval; an indigo dot means its interval overlaps the previous generation's. On the easy test generation 1 scores 0.740 and generation 2 scores 0.890, clearly higher. Then generation 3 scores 0.935, and from generation 3 on each interval overlaps its predecessor's: the scores run 0.935, 0.965, 0.970, 0.970, 0.970, 0.970, jammed against the ceiling. The hard test gives non-overlapping intervals between successive generations from 4 to 7, which score 0.340, 0.585, 0.735 and 0.855.
+
+The hard test has its own blind spots. It is too hard for the first generations, which score 0.025, 0.145 and 0.160, and it begins to saturate at generation 8 (0.920). A benchmark discriminates among models whose skill is near its difficulty. When the models move on, the field needs a new benchmark, and the old one is still useful as a check that nothing has broken.
+
+<EvalLab client:visible mode="saturation" generations={8} items={200} labelErrors={0.03} seed={6} title="Eight generations on an easy and a hard test" />
 
 </Step>
 
 <Step title="Measuring more reliably">
 
-Error bars, held-out or freshly written test sets, and several different metrics turn a single number into evidence you can trust.
+Four habits turn a single number into evidence.
 
-{/*
-IDEA: good practice: report intervals; enough items; paired comparisons on the same items (lower variance); held-out tasks; multiple metrics.
-WIDGET: EvalLab mode="errorbars" items slider 25 to 2000 (log scale) models=2 skillGap small seed=6. Shows how often a 2-model comparison picks the wrong winner at each n, unpaired vs paired, over 500 simulated benchmark draws.
-MOTION over t: n sweeps along the timeline; the wrong-winner rate curve draws for both methods.
-TRY: find how many items you need for fewer than 5% wrong winners, paired vs unpaired.
-NUMBERS: those two item counts.
-SHOW THE MATH: paired difference standard error (Miller 2024).
-*/}
+1. **Report an interval** with every score, as in the first figure.
+2. **Use enough questions.** The error shrinks only like $1/\sqrt n$.
+3. **Compare models on the same questions.** If two models are tested on the same items, they tend to get the same items right and wrong, so most of the noise cancels in the difference between them (the **paired** comparison). Evan Miller's [statistical recipe for evals](https://arxiv.org/abs/2411.00640) calls this a "free" reduction in variance.
+4. **Hold out fresh questions** and use several different benchmarks, as in the last three steps.
+
+The figure puts habit 3 to the test. Two close models have true scores of about 0.78 and 0.82; before rounding, their gap is 0.033, or 3.3 percentage points. The curves show how often the weaker one comes out ahead after $n$ questions per model, on a log scale. Blue is the case where each model is scored on its own random questions (for example, numbers copied from two different papers); orange is the case where both answer the same questions. The reason is in the bar on the right: on 74% of questions both models are right and on 14% both are wrong, so only 11% of questions (4% where only the weaker model is right, 7% where only the stronger one is) say anything about the difference. At 200 questions the weaker model comes out ahead 21% of the time with separate questions, and 8% of the time on shared ones. To push that below 5%, separate questions need about 810 per model and shared questions about 280, nearly three times fewer.
+
+<EvalLab client:visible mode="errorbars" gap={0.15} title="How often does the weaker model come out ahead?" />
+
+<details>
+<summary>Show the math</summary>
+
+Let $a_i$ and $b_i$ be 1 if models A and B get question $i$ right. The estimated gap is the mean of $d_i = b_i - a_i$, with standard error
+
+$$\mathrm{SE}_{\text{paired}} = \sqrt{\frac{\mathrm{Var}(d_i)}{n}}, \qquad \mathrm{Var}(d_i) = \mathrm{Var}(a_i) + \mathrm{Var}(b_i) - 2\,\mathrm{Cov}(a_i, b_i).$$
+
+When models are right and wrong on the same questions the covariance is large and positive, which shrinks the variance. In the figure one question's score difference has standard deviation 0.33 when the questions are shared and 0.57 when they are separate. The weaker model comes out ahead with probability about $\Phi\!\left(-\Delta\sqrt n / \mathrm{sd}\right)$, where $\Delta = 0.033$ is the true gap and $\Phi$ the standard normal distribution function; setting this to 5% gives $n = (1.645\,\mathrm{sd}/\Delta)^2$.
+
+</details>
 
 </Step>
 
 <Step title="Common misconceptions">
 
-Common misreadings of benchmark results.
+**"A higher score always means a better model."** Not when the gap is inside the error bars: in the first figure Model B scored higher than Model C although C is better. And not when the test has leaked or been tuned against.
 
-{/*
-NO WIDGET. Misconceptions:
-1. "A higher score always means a better model." Not if the gap is inside the error bars or the test is contaminated.
-2. "Arena ratings measure correctness." They measure preference, including style.
-3. "A model that aces a benchmark has the skill it names." It may have memorised it.
-4. "More benchmarks fix everything." Shared contamination and Goodhart pressure apply to all of them.
-*/}
+**"Arena ratings measure correctness."** They measure what voters preferred, including style. When voters favour longer answers, the wordy model climbs from fourth to second with no gain in correctness.
+
+**"A model that aces a benchmark has the skill it names."** It may have seen the answers. A fresh test of the same kind is the check.
+
+**"More benchmarks fix everything."** Many benchmarks are scraped from the same internet, so they share contamination, and every one that becomes a target is subject to the same pressure.
 
 </Step>
 
 <Step title="Check yourself">
 
-Questions on evaluation.
+<details>
+<summary>1. A model scores 80% on 100 items. Roughly what is the 95% interval?</summary>
 
-{/*
-NO WIDGET. Questions:
-1. A model scores 80% on 100 items. Roughly what is the 95% interval?
-2. How would you test whether a benchmark leaked into training?
-3. Why does picking the best of 50 runs on the test set inflate the score?
-4. Why do paired comparisons need fewer items?
-5. What does a saturated benchmark still tell you?
-*/}
+$\mathrm{SE} = \sqrt{0.8 \times 0.2 / 100} = 0.04$, so the interval is about $0.80 \pm 1.96 \times 0.04 = 0.80 \pm 0.08$, from 0.72 to 0.88.
+
+</details>
+
+<details>
+<summary>2. How would you test whether a benchmark leaked into training?</summary>
+
+Write or collect fresh questions of the same kind and difficulty, and compare scores. If many models do much worse on the fresh set, or the drop tracks how well a model can reproduce the old questions, memorisation is likely. Check several models, because one gap can be luck.
+
+</details>
+
+<details>
+<summary>3. Why does picking the best of 50 runs on the test set inflate the score?</summary>
+
+Each run's score is its true skill plus luck. The maximum of 50 picks the largest luck, which averages about 2.25 standard errors, and that luck does not come with the model onto new data.
+
+</details>
+
+<details>
+<summary>4. Why do paired comparisons need fewer items?</summary>
+
+Models tend to be right and wrong on the same questions, so most questions contribute nothing to their difference. The variance of the difference falls with the covariance between the two models' answers.
+
+</details>
+
+<details>
+<summary>5. What does a saturated benchmark still tell you?</summary>
+
+That a model has the basic skill and has not broken. A drop on it is a warning, even though a rise of one point is meaningless.
+
+</details>
 
 </Step>
 
 <Step title="Going deeper">
 
-Papers and resources on evaluating language models.
+- Dan Hendrycks et al., [Measuring Massive Multitask Language Understanding](https://arxiv.org/abs/2009.03300): MMLU, 57 tasks.
+- Percy Liang et al., [Holistic Evaluation of Language Models](https://arxiv.org/abs/2211.09110): HELM.
+- Wei-Lin Chiang et al., [Chatbot Arena: An Open Platform for Evaluating LLMs by Human Preference](https://arxiv.org/abs/2403.04132).
+- Hugh Zhang et al., [A Careful Examination of Large Language Model Performance on Grade School Arithmetic](https://arxiv.org/abs/2405.00332): GSM1k and contamination.
+- Benjamin Recht et al., [Do ImageNet Classifiers Generalize to ImageNet?](https://arxiv.org/abs/1902.10811)
+- Evan Miller, [Adding Error Bars to Evals](https://arxiv.org/abs/2411.00640).
+- Douwe Kiela et al., [Dynabench: Rethinking Benchmarking in NLP](https://arxiv.org/abs/2104.14337).
+- Shivalika Singh et al., [The Leaderboard Illusion](https://arxiv.org/abs/2504.20879).
+- Cynthia Dwork et al., The reusable holdout: Preserving validity in adaptive data analysis, Science 349(6248), 2015.
+- Marilyn Strathern, [Improving ratings: audit in the British University system](https://www.cambridge.org/core/journals/european-review/article/improving-ratings-audit-in-the-british-university-system/FC2EE640C0C44E3DB87C29FB666E9AAB), European Review 1997.
 
-{/*
-NO WIDGET. References:
-- Dan Hendrycks et al., "Measuring Massive Multitask Language Understanding", arXiv:2009.03300 (MMLU).
-- Percy Liang et al., "Holistic Evaluation of Language Models", arXiv:2211.09110 (HELM).
-- Wei-Lin Chiang et al., "Chatbot Arena: An Open Platform for Evaluating LLMs by Human Preference", arXiv:2403.04132.
-- Hugh Zhang et al., "A Careful Examination of Large Language Model Performance on Grade School Arithmetic", arXiv:2405.00332 (GSM1k, contamination).
-- Benjamin Recht et al., "Do ImageNet Classifiers Generalize to ImageNet?", arXiv:1902.10811.
-- Evan Miller, "Adding Error Bars to Evals: A Statistical Approach to Language Model Evaluations", arXiv:2411.00640.
-- Douwe Kiela et al., "Dynabench: Rethinking Benchmarking in NLP", arXiv:2104.14337.
-- Shivalika Singh et al., "The Leaderboard Illusion", arXiv:2504.20879 (VERIFY).
-- Cynthia Dwork et al., "The reusable holdout: Preserving validity in adaptive data analysis", Science 2015 (VERIFY).
-- Charles Goodhart 1975 and Marilyn Strathern 1997 for the common phrasing of Goodhart's law (VERIFY wording).
-Next: Day 13, /learn/graphs-generative/gnn/
-*/}
+For held-out data in ordinary machine learning, see [train, validation and test](/learn/foundations/train-val-test/).
+
+Next: Day 13, [graph neural networks](/learn/graphs-generative/gnn/).
 
 </Step>

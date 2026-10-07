@@ -78,7 +78,7 @@ const here = Astro.url.pathname.replace(/\/$/, '');
 </html>
 <style>
   .site-header { border-bottom: 1px solid var(--rule); font-family: var(--font-ui); }
-  .bar { display: flex; align-items: center; justify-content: space-between; height: 3.5rem; gap: var(--s-4); }
+  .bar { max-width: 78rem; display: flex; align-items: center; justify-content: space-between; height: 3.5rem; gap: var(--s-4); }
   .brand { white-space: nowrap; font-weight: 700; letter-spacing: -0.02em; color: var(--text); text-decoration: none; font-size: 1.05rem; }
   nav { display: flex; align-items: center; gap: var(--s-1); font-size: var(--step--1); }
   nav a { color: var(--text-muted); text-decoration: none; padding: var(--s-2) var(--s-2); border-bottom: 2px solid transparent; }
