@@ -1,7 +1,27 @@
 import { describe, it, expect } from 'vitest';
-import { POINTS, BEST, START, PATH, STEPS, loss, grad, sigmoid, accuracy, gdPath, frameAt, duration, markers, X_DOM, W_DOM, B_DOM } from '../../src/components/widgets/LogisticFit/sim';
+import { POINTS, BEST, START, PATH, STEPS, loss, grad, sigmoid, probabilityCalculation, accuracy, gdPath, frameAt, duration, markers, X_DOM, W_DOM, B_DOM } from '../../src/components/widgets/LogisticFit/sim';
 
 describe('LogisticFit sim', () => {
+  it('expands the sigmoid from a hand-computable score and preserves the fitted precision', () => {
+    const zero = probabilityCalculation(2, 4, -2);
+    expect(zero.product).toBe(-4); expect(zero.z).toBe(0);
+    expect(zero.exponential).toBe(1); expect(zero.denominator).toBe(2);
+    expect(zero.p).toBe(0.5); expect(zero.percent).toBe(50);
+    const fitted = probabilityCalculation(BEST.w, BEST.b, -4);
+    expect(fitted.z).toBeCloseTo(-4.609201152834618, 12);
+    expect(fitted.exponential).toBeCloseTo(100.40391021207199, 9);
+    expect(fitted.p).toBeCloseTo(1 / fitted.denominator, 14);
+    expect(fitted.percent).toBeCloseTo(0.9861552655204725, 12);
+    expect(probabilityCalculation(1.26, 0.44, -4).z).toBeCloseTo(-4.60, 12);
+  });
+  it('the sweep calculation agrees with the probe throughout its motion', () => {
+    for (let t = 0; t <= 9; t += 0.125) {
+      const f = frameAt(t, 'sweep'), c = probabilityCalculation(f.w, f.b, f.probe!.x);
+      expect(c.p).toBe(f.probe!.p); expect(c.z).toBe(f.probe!.z);
+    }
+    expect(frameAt(4.5, 'sweep').probe!.x).toBe(0);
+    expect(probabilityCalculation(4, -3, -4).p).toBeGreaterThan(0);
+  });
   it('sigmoid basics and stability', () => {
     expect(sigmoid(0)).toBe(0.5);
     expect(sigmoid(2) + sigmoid(-2)).toBeCloseTo(1, 12);

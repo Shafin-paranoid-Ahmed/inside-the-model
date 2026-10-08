@@ -1,6 +1,6 @@
 ---
 title: "Gradient Descent"
-summary: "Repeatedly step opposite the gradient to roll down the loss surface."
+summary: "Fit the same regression line by calculating MSE gradients, updating its parameters, and choosing a learning rate."
 day: 1
 track: foundations
 order: 5
@@ -9,188 +9,182 @@ duration: 35
 prereqs: ["foundations/linear-regression","math/derivatives"]
 status: draft
 ---
+
 import Step from '../../../components/ui/Step.astro';
 import GradientDescent2D from '../../../components/widgets/GradientDescent2D/GradientDescent2D.svelte';
 
-<Step title="Rolling downhill in the fog">
+<Step title="Same line, same MSE: how do we choose the next parameters?">
 
-Imagine standing on a hillside in thick fog. You cannot see the valley. You can only feel the slope under your feet. A sensible strategy: feel which way the ground tilts downward, take a step that way, and repeat. You will not find the best path, but you will end up lower.
+In [linear regression](/learn/foundations/linear-regression/), our model predicted a number with $\hat y = wx+b$. We measured its mistakes with **mean squared error (MSE)**: subtract the observed answer from each prediction, square those errors, then average them. We will keep that exact model, those twelve examples, and that loss throughout this lesson.
 
-That is **gradient descent**, and it is how nearly every neural network is trained. The "hillside" is the loss as a function of the model's knobs, which you met in the last two lessons. The "slope under your feet" is a derivative. The ball in the figure is a model whose two knobs are the ball's position; its height is the loss.
+$$L(w,b)=\frac{1}{12}\sum_{i=1}^{12}(wx_i+b-y_i)^2.$$
 
-Watch the ball roll. The magenta arrow is the step it is about to take, pointing downhill.
+Here $L$ names the loss, $i$ identifies an example, and $\sum$ means "add the twelve terms." **Linear regression is the model. MSE is the score we want to lower. Gradient descent is the procedure that changes the model's parameters to lower that score.**
 
-<GradientDescent2D client:visible lockSurface view="roll" title="A ball rolling down a loss surface" />
+The map below is the regression lesson's loss map. Its horizontal coordinate is $w$, its vertical coordinate is $b$, and each contour joins parameter pairs with the same MSE. The dot is one whole line's parameter pair, not one training example. The diamond marks the best line.
 
-</Step>
+At the start, $w=-1.4$ and $b=-2.2$, so MSE is **28.664**. Play the animation and watch the dot approach the diamond. The following steps explain how each move is calculated.
 
-<Step title="The loss as a landscape">
-
-Two knobs give a landscape you can draw. Each position $(\theta_1, \theta_2)$ is one setting of the parameters, and the height is the loss there. On the flat page we draw it as a **contour map**: each curve joins positions with the same loss, and the curves are packed close together where the ground is steep.
-
-This surface is a bowl, $L = \tfrac12(\theta_1^2 + 8\theta_2^2)$. It curves eight times more sharply across the map (the vertical direction) than along it (the horizontal direction), so its contours are long thin ellipses. The minimum, where the loss is zero, is at the centre. Real networks have millions of knobs rather than two, and their landscape cannot be drawn, but the same picture applies.
-
-This figure adds four faint dashed paths: the routes the ball would take from four other starting points. They begin in different corners and all end at the same place, the bottom of the bowl. The dashed ring marks where the solid ball started. Drag it, or use the start sliders under the figure, and the ball rolls from the new place to that same bottom.
-
-<GradientDescent2D client:visible lockSurface view="starts" title="Five starts, one bottom" />
+<GradientDescent2D client:visible surface="regression" lockSurface view="roll" title="Each point on this map is a regression line" />
 
 </Step>
 
-<Step title="The gradient points uphill">
+<Step title="A gradient tells us which changes lower MSE">
 
-Which way is downhill? Calculus answers. The **gradient** of the loss is the vector of its partial derivatives, one per knob:
+Before choosing a move, ask two questions: what happens to MSE if we increase $w$ a little while holding $b$ fixed, and what happens if we increase $b$ while holding $w$ fixed? These two rates of change are **partial derivatives**. Together they form the **gradient**, written $\nabla L=(g_w,g_b)$.
 
-$$\nabla L = \left(\frac{\partial L}{\partial \theta_1},\ \frac{\partial L}{\partial \theta_2}\right).$$
+To calculate them, start with the error of example $i$: $e_i=wx_i+b-y_i$. The derivative of its square is $2e_i$. Changing $b$ changes the error at rate 1; changing $w$ changes it at rate $x_i$. Multiply those rates, then average over the examples:
 
-Each partial derivative says how fast the loss rises when only that knob is nudged upward. Put together, the gradient points in the direction of **steepest ascent**, straight uphill, and its length says how steep it is. To go downhill, go the opposite way: $-\nabla L$.
+$$g_w=\frac{2}{12}\sum_i e_i x_i,\qquad g_b=\frac{2}{12}\sum_i e_i.$$
 
-The small chart on the right shows this from the ball's point of view. It plots the loss along the line through the ball in the downhill direction. The ball is the filled dot at distance zero, and the curve slopes down to its right. The dashed magenta line is the tangent, whose slope is minus the length of the gradient. The steeper the ground, the steeper the tangent and the bigger the step.
+At the starting line, adding the twelve error-times-input terms gives $\sum_i e_i x_i\approx-105.016349$; adding the errors gives $\sum_i e_i\approx-33.549238$. Therefore:
 
-<GradientDescent2D client:visible lockSurface view="slice" title="The gradient at the ball, seen from the side" />
+$$g_w\approx\frac{2}{12}(-105.016349)\approx-17.502725,$$
+$$g_b\approx\frac{2}{12}(-33.549238)\approx-5.591540.$$
+
+A **negative** derivative means a small increase in that parameter lowers MSE. Both derivatives are negative here, so our next move should increase both parameters. For example, increasing only $w$ by $0.01$ lowers MSE from $28.664$ to $28.490$.
+
+Reset the figure and read the two slopes beneath it. The magenta arrow points opposite the gradient. The side chart takes a slice through the map along that direction: at distance zero we are at the update's starting parameters; moving a little to the right lowers MSE.
+
+<GradientDescent2D client:visible surface="regression" lockSurface view="slice" title="Use the two MSE slopes to choose a direction" />
 
 <details>
-<summary>Show the math</summary>
+<summary>Why subtract the gradient?</summary>
 
-For $L(\theta_1, \theta_2) = \tfrac12(\theta_1^2 + 8\theta_2^2)$ the partial derivatives are $\partial L/\partial\theta_1 = \theta_1$ and $\partial L/\partial\theta_2 = 8\theta_2$, so $\nabla L = (\theta_1,\ 8\theta_2)$. At the start $(3,\ 1.3)$ this is $(3,\ 10.4)$: the ground rises far more steeply in the second direction. The directional derivative in a unit direction $\mathbf u$ is $\nabla L \cdot \mathbf u$, which is largest when $\mathbf u$ points along $\nabla L$ itself (Cauchy-Schwarz), and that is why the gradient is the direction of steepest ascent.
+For small changes, $\Delta L\approx g_w\Delta w+g_b\Delta b$. If we choose $\Delta w=-\eta g_w$ and $\Delta b=-\eta g_b$, then $\Delta L\approx-\eta(g_w^2+g_b^2)$, which is negative when $\eta>0$ and the gradient is nonzero. This is a local approximation: a large step can overshoot, as we will see below.
 
 </details>
 
 </Step>
 
-<Step title="The update rule">
+<Step title="Turn the direction into one complete update">
 
-Now the whole algorithm fits on one line. From the current knobs $\theta$, step against the gradient by a scaled amount:
+The gradient supplies the direction and scale of change. The **learning rate**, $\eta$ ("eta"), controls how much of that change we take. With $\eta=0.08$, the update rule is:
 
-$$\theta \leftarrow \theta - \eta\,\nabla L(\theta).$$
+$$w_{\mathrm{new}}=w-\eta g_w,\qquad b_{\mathrm{new}}=b-\eta g_b.$$
 
-The number $\eta$ (eta) is the **learning rate**: how much of the gradient to step. Repeat until the steps become tiny. Cauchy described this method in 1847, for solving systems of equations.
+Substitute the starting parameters and the slopes we just calculated:
 
-For our bowl the update is easy to write out. With $\eta = 0.1$: $\theta_1 \leftarrow \theta_1 - 0.1\,\theta_1 = 0.9\,\theta_1$ and $\theta_2 \leftarrow \theta_2 - 0.1\cdot 8\theta_2 = 0.2\,\theta_2$. So the vertical coordinate shrinks fast (it is multiplied by 0.2 every step) and the horizontal one shrinks slowly (0.9 per step). The ball first dives toward the valley floor and then crawls along it. That is exactly the path in the figure.
+$$w_{\mathrm{new}}\approx-1.4-0.08(-17.502725)\approx0.000218,$$
+$$b_{\mathrm{new}}\approx-2.2-0.08(-5.591540)\approx-1.752677.$$
 
-The readout under this figure writes the rule out for the current step: the position $\theta$, the gradient $\nabla L$ there, and where the step lands, $\theta - \eta\nabla L$. The chart on the right tracks the loss after each step on a log scale, where every gridline is 100 times smaller than the one above. The loss starts at 11.26, falls to 0.547 after 10 steps, and to 0.00018 after 48. Drag the timeline through the steps and watch the arithmetic change.
+Subtracting a negative number increases the parameter. Calculate **both gradients at the old parameters**, then update $w$ and $b$ together. Now make all twelve predictions again using the new parameters, square the new errors, and average:
 
-<GradientDescent2D client:visible lockSurface view="update" lr={0.1} title="Updating: theta is minus eta times the gradient, over and over" />
+$$L_{\mathrm{new}}\approx\frac{1}{12}\sum_i(0.000218x_i-1.752677-y_i)^2\approx9.073.$$
+
+The MSE fell from **28.664 to 9.073**. That comparison is how we check whether the move helped. Watch the slow update below: the calculation states its destination while the dot moves there. The current MSE readout follows the moving dot. Displayed arithmetic is rounded; the symbol $\approx$ means "approximately equal."
+
+<GradientDescent2D client:visible surface="regression" lockSurface view="single" title="Calculate, move, then measure the new MSE" />
+
+</Step>
+
+<Step title="Recalculate the gradient after every update">
+
+The slopes change when the parameters change. We must therefore repeat the whole cycle: **predict, calculate errors, calculate gradients, update parameters**. Reusing the first gradient would keep pushing in the original direction even after we passed the best line.
+
+The figure now repeats this cycle. At learning rate $0.08$, MSE is **9.073 after one update**, **0.430 after ten**, and about **0.200 after forty**. Scrub to $t=2$ seconds (ten completed updates) and inspect the new slopes. They are calculated from the new line's errors, not the starting line's errors.
+
+The graph shows MSE against update count. Its vertical scale is logarithmic: moving from 10 to 1 is the same vertical distance as moving from 1 to 0.1. Near the best line, the positive and negative contributions to the gradient nearly cancel, so updates get smaller. MSE does not reach zero because a single straight line cannot pass through all twelve points.
+
+<GradientDescent2D client:visible surface="regression" lockSurface view="update" title="Recompute the slopes: the updates shrink near the best line" />
 
 <details>
-<summary>Show the code</summary>
+<summary>Show the code for these MSE updates</summary>
 
 ```python
 import numpy as np
 
-def grad(theta):                          # gradient of 0.5 * (t1**2 + 8 * t2**2)
-    return np.array([theta[0], 8 * theta[1]])
-
-theta, eta = np.array([3.0, 1.3]), 0.1
-for step in range(48):
-    theta = theta - eta * grad(theta)     # the update rule
+# x and y contain the same twelve training examples.
+w, b = -1.4, -2.2
+learning_rate = 0.08
+for update in range(48):
+    error = w * x + b - y
+    gradient_w = 2 * np.mean(error * x)
+    gradient_b = 2 * np.mean(error)
+    w = w - learning_rate * gradient_w
+    b = b - learning_rate * gradient_b
+    mse = np.mean((w * x + b - y) ** 2)
 ```
 
 </details>
 
 </Step>
 
-<Step title="The learning rate: too small, just right, too big">
+<Step title="The learning rate can help or undo the progress">
 
-The learning rate is the one knob you set by hand, and it matters enormously. Use the slider under the figure, or watch the timeline of each case below.
+The direction can be sensible while the step is too long. The learning rate multiplies both gradient components: a small rate moves cautiously; a larger one can cross the valley and land on its opposite side.
 
-- **Too small** ($\eta = 0.02$). The steps are tiny, so progress crawls. After 48 steps the loss is still 0.647, over a thousand times worse than with $\eta = 0.1$.
-- **About right** ($\eta = 0.1$). Smooth, fast descent.
-- **Too large, but not too much** ($\eta = 0.24$). The ball overshoots the valley floor on every step, hopping from one wall to the other, and still spirals in, because each hop is a little smaller than the last. It is at 0.0023 after 48 steps, slower than $\eta = 0.1$ despite the bigger steps.
-- **Too large** ($\eta = 0.26$). Each hop is now *bigger* than the last. The ball gets thrown higher and higher up the walls. The loss is 31.5 after 10 steps, higher than the starting 11.26, and about 10,900 after 48. This is **divergence**.
+The figure starts at **0.26**, which zigzags but still approaches the best line. Change the learning rate and compare MSE after 48 updates:
 
-There is a sharp threshold. Along the steep direction, the update is $\theta_2 \leftarrow (1 - 8\eta)\,\theta_2$. The multiplier's size is below 1 only when $0 \lt \eta \lt 2/8 = 0.25$. That number, $2/L$ where $L$ is the largest curvature of the surface, is the critical learning rate for any bowl.
+- **0.01:** MSE is **1.296**. The steps are safe but progress is slow.
+- **0.08:** MSE is about **0.200**, near the minimum.
+- **0.26:** MSE is **0.202**. Overshoots shrink, so the fit still improves overall.
+- **0.28:** MSE grows to about **3855**. Overshoots grow instead of shrinking: this is **divergence**.
 
-Try it: set the slider to 0.24, then 0.26, and watch the readout's status and the slice chart. In the slice, the open dot shows where the next step lands. With a good rate it lands lower than the ball. With a rate that is too large it lands *higher*, on the opposite wall.
+Try $0.28$ and watch the loss graph turn upward. The dot eventually leaves the map; the graph and readout continue to show its growing error. A downhill direction is only a local guide, not a promise that every step length will reduce loss.
 
-<GradientDescent2D client:visible lockSurface lr={0.24} title="Learning rate: 0.24 zigzags but converges; 0.26 diverges" />
+<GradientDescent2D client:visible surface="regression" lockSurface view="rates" lr={0.26} title="Same MSE, different step sizes" />
 
 <details>
-<summary>Show the math</summary>
+<summary>Show the stability boundary for this MSE</summary>
 
-On a quadratic $L(\theta) = \tfrac12 \sum_j \lambda_j \theta_j^2$, gradient descent multiplies coordinate $j$ by $1 - \eta\lambda_j$ each step. It converges for every coordinate exactly when $|1 - \eta\lambda_j| \lt 1$, that is $\eta \lt 2/\lambda_j$ for all $j$, so the binding constraint is $\eta \lt 2/\lambda_{\max}$. Here $\lambda_{\max} = 8$. The best fixed rate balances the fastest and slowest directions: $\eta = 2/(\lambda_{\max} + \lambda_{\min})$. When $\lambda_{\max}/\lambda_{\min}$ (the condition number) is large, the steep direction forces a small $\eta$ and the flat direction then crawls. This slow, zigzag behavior is what the optimizers of Day 6 (momentum, Adam) are designed to fix.
+This MSE is a quadratic bowl. Its matrix of second derivatives is $H=2\begin{pmatrix}\operatorname{mean}(x^2)&\operatorname{mean}(x)\\\operatorname{mean}(x)&1\end{pmatrix}$. Let $\lambda_{\max}$ be its largest eigenvalue, the greatest curvature in any parameter direction. Full-batch gradient descent converges from every start when $0<\eta<2/\lambda_{\max}$. For these twelve inputs the boundary is approximately **0.2724**, explaining why 0.26 converges and 0.28 diverges. This number belongs to this dataset and loss scale; it is not a universal learning rate.
 
 </details>
 
 </Step>
 
-<Step title="Local minima, saddles and plateaus">
+<Step title="SGD estimates the gradient from fewer examples">
 
-A bowl has one bottom, so descent always finds it. Real loss surfaces are not that kind. Two other terrains show what can go wrong.
+So far, each update uses all twelve examples: **full-batch gradient descent**. With a very large dataset, computing every example's contribution before each update can be expensive. **Stochastic gradient descent (SGD)** uses a randomly selected example, or a small group called a **mini-batch**, to estimate the gradient.
 
-**Two valleys.** This surface has a shallow valley on the right and a deeper one on the left. Gradient descent only ever goes downhill, so it settles in whichever valley it starts above. From the default start on the right it ends in the right valley at loss 0.57. Drag the start to the left side and it ends in the deep valley at $-0.63$. A valley that is not the lowest is a **local minimum**.
+The model and MSE objective stay the same. Only the examples used to choose an update change. For one sampled example, there is no twelve-term average: its gradient is simply $g_w=2e_i x_i$, $g_b=2e_i$.
 
-<GradientDescent2D client:visible lockSurface={false} surface="multi" title="Two valleys: where you start decides where you end" />
+Reset this figure. Its first update uses **example 9**, giving slopes approximately **$(-12.9624,-10.2874)$**, compared with the full-data slopes **$(-17.5027,-5.5915)$**. At the same learning rate, its first update gives MSE **10.565**, rather than the full-batch update's **9.073**. The MSE readout still evaluates all twelve examples, so we can compare fairly.
 
-**Saddles and plateaus.** The next surface has a **saddle** at the centre: it curves up in one direction and down in the other, like a horse's saddle. Right at the saddle the gradient is zero, but it is not a minimum. Near it the gradient is tiny, so the ball moves very slowly, lingering for roughly 15 steps before it slides off sideways. Flat regions where the gradient is almost zero for a long stretch are called **plateaus**, and they slow training in the same way.
+Watch the sampled-example path wobble. One example can prefer a move that makes the average error worse, especially near the best fit. With uniform sampling, the average of the possible sample gradients equals the full gradient; individual updates need not lower the full loss. Larger mini-batches reduce the noise, and decreasing the learning rate can help the parameters settle.
 
-In networks with millions of knobs, saddles turn out to be far more common than bad local minima, and much of the difficulty of training is getting through flat stretches, not being trapped.
-
-<GradientDescent2D client:visible lockSurface={false} surface="saddle" title="A saddle: the gradient nearly vanishes, then the ball slides off" />
-
-</Step>
-
-<Step title="Stochastic gradients">
-
-There is a practical problem. The loss of a real model is an average over *all* the training examples, and computing the exact gradient means passing over every one of them: millions of examples for a single step.
-
-The fix, due in spirit to Robbins and Monro (1951), is to estimate the gradient from a small random sample. This is **stochastic gradient descent** (SGD), and the sample is called a **mini-batch**. The estimate is noisy but points downhill on average, and it is thousands of times cheaper. So we take many cheap, noisy steps instead of a few expensive, exact ones.
-
-Tick "Noisy gradient (SGD)" under the figure. In this figure the noise is added to the true gradient at every step (the faint grey arrow is the true gradient, the magenta arrow the noisy one that is actually used). The ball still heads to the bottom, but it wanders, and near the minimum it jitters around instead of settling exactly, because the noise does not vanish when the true gradient does. Real training handles this by shrinking the learning rate over time.
-
-<GradientDescent2D client:visible lockSurface sgd title="SGD: cheaper noisy steps that still go downhill on average" />
-
-<details>
-<summary>Show the math</summary>
-
-If the loss is an average over $N$ examples, $L(\theta) = \frac1N\sum_i \ell_i(\theta)$, the mini-batch estimate uses a random subset $B$: $\hat g = \frac1{|B|}\sum_{i\in B}\nabla\ell_i(\theta)$. It is **unbiased**, $\mathbb E[\hat g] = \nabla L(\theta)$, and its variance falls as $1/|B|$. The figure's noise, a fixed Gaussian added to each gradient component, is a simplified stand-in for that; in real models the noise level depends on the batch and the point.
-
-</details>
+<GradientDescent2D client:visible surface="regression" lockSurface sgd title="One sampled example chooses the step; all twelve measure its MSE" />
 
 </Step>
 
 <Step title="Common misconceptions">
 
-- **You might think** gradient descent always finds the best possible parameters. **Actually** it finds a point where the gradient is nearly zero: possibly a local minimum, possibly a saddle. Whether that is good depends on the landscape.
-- **You might think** a bigger learning rate just means faster learning. **Actually** past a threshold ($2/L$ on a bowl) it makes things worse, and beyond it the loss explodes.
-- **You might think** the gradient points at the minimum. **Actually** it points straight uphill from where you stand. On a stretched bowl that direction is far from the direction of the minimum, which is why the ball zigzags.
-- **You might think** SGD is a sloppy approximation used only because we are lazy. **Actually** the noise is cheap to produce, unbiased, and can even help by shaking the ball out of shallow dips.
+- **"Gradient descent is a different model from linear regression."** It is a way to fit parameters. Here it fits the same line using the same MSE.
+- **"A negative gradient means decrease the parameter."** The rule subtracts the gradient. Subtracting a negative number increases the parameter.
+- **"The gradient points directly at the best parameters."** It describes the local direction of steepest increase. Its opposite can cross a valley rather than point straight at its bottom.
+- **"Every gradient-descent update lowers loss."** A large learning rate can overshoot; a sampled gradient can also increase full-data loss.
+- **"A zero gradient means zero error."** At the best line, error contributions cancel even though individual predictions are still imperfect.
 
 </Step>
 
 <Step title="Check yourself">
 
 <details>
-<summary>The loss is $L = \theta^2$ and $\theta = 3$. Compute one step with $\eta = 0.1$.</summary>
+<summary>Which part is the model, which is the loss, and which is the training procedure?</summary>
 
-The gradient is $2\theta = 6$, so $\theta \leftarrow 3 - 0.1 \cdot 6 = 2.4$.
-
-</details>
-
-<details>
-<summary>On $L = \tfrac12\lambda\theta^2$, what is the largest learning rate that still converges?</summary>
-
-$\eta \lt 2/\lambda$. At exactly $2/\lambda$ the ball just bounces between $\pm\theta$ forever.
+The model is $\hat y=wx+b$. The loss is MSE. Gradient descent is the procedure that updates $w$ and $b$ to reduce MSE.
 
 </details>
 
 <details>
-<summary>Why does the ball zigzag on a stretched bowl?</summary>
+<summary>If b = -2.2, its gradient is -5.59154, and the learning rate is 0.08, what is the new b?</summary>
 
-The gradient points straight uphill, which on a stretched bowl mostly points across the narrow direction rather than along the valley, so each step overcorrects across the valley while making slow progress along it.
-
-</details>
-
-<details>
-<summary>Why do we use mini-batches instead of the full dataset?</summary>
-
-A mini-batch gradient is unbiased and far cheaper than a pass over all the data, so many cheap noisy steps beat a few exact ones.
+$b_{\mathrm{new}}=-2.2-0.08(-5.59154)\approx-1.752677$. It increases because we subtract a negative value.
 
 </details>
 
 <details>
-<summary>Gradient descent stops at a point with zero gradient. Is it necessarily a minimum?</summary>
+<summary>Why must we recalculate the errors before the second update?</summary>
 
-No. It could be a local minimum, a saddle point or the middle of a plateau.
+The new parameters make different predictions, so they have different errors and different MSE slopes. The next gradient must describe the new line.
+
+</details>
+
+<details>
+<summary>Why can one-example SGD raise the full-data MSE?</summary>
+
+It chooses a move using one example's squared error. Improving that example can worsen enough of the others to raise their average squared error.
 
 </details>
 
@@ -198,10 +192,11 @@ No. It could be a local minimum, a saddle point or the middle of a plateau.
 
 <Step title="Going deeper">
 
-- Cauchy (1847), "Méthode générale pour la résolution des systèmes d'équations simultanées", *Comptes Rendus* 25: 536–538: the first description of gradient descent.
-- Robbins and Monro (1951), ["A Stochastic Approximation Method"](https://doi.org/10.1214/aoms/1177729586), *Annals of Mathematical Statistics* 22(3): the origin of stochastic gradient methods.
-- Goodfellow, Bengio and Courville, [*Deep Learning*](https://www.deeplearningbook.org/), section 4.3 (gradient-based optimization) and chapter 8 (optimization for training).
-- 3Blue1Brown, [*Gradient descent, how neural networks learn*](https://www.youtube.com/watch?v=IHZwWFHWa-w).
-- Ruder, ["An overview of gradient descent optimization algorithms"](https://arxiv.org/abs/1609.04747): where the story goes next.
+The same update rule applies to neural networks: compute the chosen loss, differentiate it with respect to the parameters, and subtract a scaled gradient. Neural-network losses need not have the single bowl-shaped minimum we have here. They can contain local minima, flat regions, and saddles, where the gradient is zero without a minimum. We will return to those difficulties in [optimizers](/learn/neural-networks/optimizers/).
+
+- [Derivatives](/learn/math/derivatives/) and [the chain rule](/learn/math/chain-rule/) explain the calculus used in the MSE gradients.
+- Goodfellow, Bengio and Courville, [Deep Learning, chapter 4](https://www.deeplearningbook.org/contents/numerical.html): gradient-based optimization.
+- Robbins and Monro, [A Stochastic Approximation Method](https://doi.org/10.1214/aoms/1177729586): the foundation of stochastic approximation.
+- Next: [logistic regression and the sigmoid](/learn/foundations/logistic-regression/), where the linear score becomes a class probability.
 
 </Step>

@@ -16,6 +16,12 @@ export const START = { w: 0.1, b: -2.2 };
 export const LR = 0.5, STEPS = 40;
 
 export const sigmoid = (z: number) => (z >= 0 ? 1 / (1 + Math.exp(-z)) : Math.exp(z) / (1 + Math.exp(z)));
+/** Intermediate values in p = 1 / (1 + exp(-(wx + b))). */
+export function probabilityCalculation(w: number, b: number, x: number) {
+  const product = w * x, z = product + b, exponent = -z, exponential = Math.exp(exponent);
+  const denominator = 1 + exponential, p = sigmoid(z);
+  return { x, product, z, exponent, exponential, denominator, p, percent: 100 * p };
+}
 const softplus = (z: number) => Math.max(z, 0) + Math.log1p(Math.exp(-Math.abs(z)));
 
 /** Mean log-loss (binary cross-entropy): -mean[ y ln p + (1-y) ln(1-p) ], computed stably from the score. */
@@ -61,13 +67,12 @@ const steepS = (u: number) => S_LO * Math.exp(u * Math.log(S_HI / S_LO));
 const uOne = Math.log(1 / S_LO) / Math.log(S_HI / S_LO);
 const tOne = (() => { let a = 1, b = 8; for (let i = 0; i < 50; i++) { const m = (a + b) / 2; if (steepU(m) < uOne) a = m; else b = m; } return a; })();
 export const X_BOUND = -BEST.b / BEST.w;
-const tBound = ((X_BOUND - X_DOM[0]) / (X_DOM[1] - X_DOM[0])) * 8 + 0.5;
 
 export const markers = (m: Mode) =>
   m === 'train'
     ? [{ at: 0, label: 'a guess' }, { at: T_GUESS, label: 'descend' }, { at: T_GUESS + STEPS * DT, label: 'settled' }]
     : m === 'sweep'
-      ? [{ at: 0, label: 'far left' }, { at: tBound - 0.7, label: 'near the boundary' }, { at: tBound + 0.7, label: 'far right' }]
+      ? [{ at: 0, label: 'left side' }, { at: 4.5, label: 'right side' }, { at: 8.5, label: 'end' }]
       : m === 'knobs' ? [{ at: 0, label: 'slide b' }, { at: T_KNOB, label: 'tilt w' }]
       : [{ at: 0, label: 'too flat' }, { at: tOne, label: 'best fit' }, { at: T_STEEP - 1.4, label: 'overconfident' }];
 

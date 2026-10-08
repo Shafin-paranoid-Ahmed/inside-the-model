@@ -195,6 +195,42 @@ describe('LineFit', () => {
 });
 
 describe('GradientDescent2D', () => {
+  it('the regression surface and updates are exactly the preceding lesson MSE', () => {
+    const s = GD.SURFACES.regression, tr = GD.trajectory(s, s.start, s.lr);
+    tr.slice(0, LF.PATH.length).forEach((p, i) => {
+      expect(p.x).toBe(LF.PATH[i].w); expect(p.y).toBe(LF.PATH[i].b);
+      expect(p.f).toBe(LF.PATH[i].loss);
+    });
+    const mid = GD.frameAt(GD.DT / 2, tr, s.lr, s);
+    expect(mid.f).toBeCloseTo(LF.loss(mid.x, mid.y), 12);
+    expect(mid.f).not.toBeCloseTo((tr[0].f + tr[1].f) / 2, 2);
+    const end = GD.frameAt(GD.DT, tr.slice(0, 2), s.lr, s);
+    expect(end.x).toBe(tr[1].x); expect(end.f).toBeCloseTo(tr[1].f, 12);
+    const boundary = GD.frameAt(4.8, tr, s.lr, s);
+    expect(boundary.k).toBe(24); expect(boundary.u).toBe(0);
+    expect(boundary.x).toBe(tr[24].x);
+  });
+  it('regression SGD uses actual sample gradients and their average equals the full gradient', () => {
+    const s = GD.SURFACES.regression, tr = GD.trajectory(s, s.start, s.lr, true, 3);
+    expect(tr).toEqual(GD.trajectory(s, s.start, s.lr, true, 3));
+    tr.forEach((p) => {
+      const g = LF.grad(p.x, p.y, [LF.POINTS[p.sample!]]);
+      expect([p.gx, p.gy]).toEqual(g);
+      const avg = LF.POINTS.map(q => LF.grad(p.x, p.y, [q])).reduce((v,g) => [v[0] + g[0] / 12, v[1] + g[1] / 12], [0, 0]);
+      expect(avg[0]).toBeCloseTo(p.tx, 10); expect(avg[1]).toBeCloseTo(p.ty, 10);
+    });
+    expect(tr[0].sample).toBe(8);
+    expect(tr[1].f).toBeCloseTo(10.56510395246707, 10);
+    expect(tr.some((p, i) => i > 0 && p.f > tr[i - 1].f)).toBe(true);
+  });
+  it('the lesson learning rates straddle the regression stability boundary', () => {
+    const s = GD.SURFACES.regression;
+    expect(2 / s.hmax!).toBeCloseTo(0.272396, 6);
+    const end = (lr: number) => GD.trajectory(s, s.start, lr).at(-1)!.f;
+    expect(end(0.01)).toBeCloseTo(1.295606, 6);
+    expect(end(0.26)).toBeCloseTo(0.202170, 6);
+    expect(end(0.28)).toBeGreaterThan(3800);
+  });
   it('analytic gradients match numerical ones on every surface', () => {
     for (const s of Object.values(GD.SURFACES)) {
       for (const [x, y] of [[0.3, -0.7], [1.9, 1.1], [-2.2, 0.4], [3, 2]]) {

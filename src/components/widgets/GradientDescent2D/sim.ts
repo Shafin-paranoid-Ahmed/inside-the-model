@@ -1,7 +1,8 @@
 /** Gradient descent on 2D loss surfaces: exact gradients, full-batch vs noisy (SGD-like) steps. Pure logic, no DOM. */
 import { createRng } from '../../../lib/math/rng';
+import { POINTS, START, BEST, loss, grad } from '../LineFit/sim';
 
-export type SurfaceId = 'bowl' | 'multi' | 'saddle';
+export type SurfaceId = 'regression' | 'bowl' | 'multi' | 'saddle';
 export interface Surface {
   id: SurfaceId;
   name: string;
@@ -44,12 +45,25 @@ const saddle: Surface = {
   levels: [-1.2, -0.9, -0.6, -0.3, -0.1, 0.1, 0.4, 0.9, 1.6, 2.6, 4],
   start: [2.6, 0.03], lr: 0.2,
 };
-export const SURFACES: Record<SurfaceId, Surface> = { bowl, multi, saddle };
+const meanX = POINTS.reduce((s, p) => s + p.x, 0) / POINTS.length;
+const meanXX = POINTS.reduce((s, p) => s + p.x * p.x, 0) / POINTS.length;
+/** Exactly the twelve-example MSE from the preceding linear-regression lesson. */
+const regression: Surface = {
+  id: 'regression', name: 'Regression MSE', f: loss, grad,
+  xd: [-2.5, 4], yd: [-3.2, 3.6],
+  levels: [0.4, 1, 2, 3.5, 5.5, 8, 12, 17, 24].map(v => loss(BEST.w, BEST.b) + v),
+  hmax: meanXX + 1 + Math.hypot(meanXX - 1, 2 * meanX),
+  start: [START.w, START.b], lr: 0.08,
+};
+export const SURFACES: Record<SurfaceId, Surface> = { regression, bowl, multi, saddle };
 
 export const NOISE_STD = 1.5;
 export const STEPS = 48, DT = 0.2;
 export const duration = () => STEPS * DT;
-export const markers = () => [0, 12, 24, 36].map((k) => ({ at: k * DT, label: k === 0 ? 'start' : `step ${k}` }));
+export const markers = () => [
+  { at: 0, label: 'early' }, { at: 16 * DT, label: 'middle' },
+  { at: 32 * DT, label: 'late' }, { at: STEPS * DT, label: 'done' },
+];
 
 export interface Step {
   x: number; y: number; f: number;
@@ -58,9 +72,11 @@ export interface Step {
   /** True gradient here. */
   tx: number; ty: number;
   diverged: boolean;
+  /** One-example SGD: index of the training example used for this update. */
+  sample?: number;
 }
 
-/** lr·gradient descent from `start`. With `noise`, every gradient gets N(0, NOISE_STD²) added per component (seeded). */
+/** Regression SGD samples one real example; other surfaces use seeded Gaussian noise. */
 export function trajectory(s: Surface, start: [number, number], lr: number, noise = false, seed = 1, steps = STEPS): Step[] {
   const rng = createRng(seed);
   let [x, y] = start;
@@ -68,8 +84,10 @@ export function trajectory(s: Surface, start: [number, number], lr: number, nois
   let dead = false;
   for (let i = 0; i <= steps; i++) {
     const [tx, ty] = s.grad(x, y);
-    const gx = tx + (noise ? rng.normal(0, NOISE_STD) : 0), gy = ty + (noise ? rng.normal(0, NOISE_STD) : 0);
-    out.push({ x, y, f: s.f(x, y), gx, gy, tx, ty, diverged: dead });
+    const sample = noise && s.id === 'regression' ? Math.floor(rng.uniform(0, POINTS.length)) : undefined;
+    const [gx, gy] = sample !== undefined ? grad(x, y, [POINTS[sample]])
+      : [tx + (noise ? rng.normal(0, NOISE_STD) : 0), ty + (noise ? rng.normal(0, NOISE_STD) : 0)];
+    out.push({ x, y, f: s.f(x, y), gx, gy, tx, ty, diverged: dead, sample });
     if (!dead) {
       x -= lr * gx; y -= lr * gy;
       if (!(Math.abs(x) < 1e3 && Math.abs(y) < 1e3)) { dead = true; x = Math.sign(x || 1) * 1e3; y = Math.sign(y || 1) * 1e3; }
@@ -88,12 +106,14 @@ export interface Frame {
   diverged: boolean;
 }
 /** Everything needed to draw at time t: the ball glides from step k to k+1 along -lr·g. */
-export function frameAt(t: number, tr: Step[], lr: number): Frame {
-  const n = tr.length - 1, raw = Math.max(0, Math.min(n, t / DT)), k = Math.min(n - 1, Math.floor(raw)), u = raw - k;
+export function frameAt(t: number, tr: Step[], lr: number, surface?: Surface): Frame {
+  const n = tr.length - 1, position = Math.max(0, Math.min(n, t / DT));
+  const raw = Math.abs(position - Math.round(position)) < 1e-9 ? Math.round(position) : position;
+  const k = Math.min(n - 1, Math.floor(raw)), u = raw - k;
   const a = tr[k], b = tr[k + 1], e = ease(u);
-  const clampV = (v: number) => Math.max(-50, Math.min(50, v));
+  const x = a.x + (b.x - a.x) * e, y = a.y + (b.y - a.y) * e;
   return {
-    x: clampV(a.x + (b.x - a.x) * e), y: clampV(a.y + (b.y - a.y) * e), f: a.f + (b.f - a.f) * e, k, u,
+    x, y, f: surface ? surface.f(x, y) : a.f + (b.f - a.f) * e, k, u,
     arrow: { x: a.x, y: a.y, gx: a.gx * lr, gy: a.gy * lr, alpha: a.diverged ? 0 : 1 - ease(Math.min(1, Math.max(0, (u - 0.25) / 0.6))) },
     diverged: b.diverged || !(Math.abs(b.f) < 1e6),
   };

@@ -6,7 +6,7 @@
   import { setupStage, f2 } from '../F1Shared/canvas';
   import { scale, splitPanels, contour, clamp } from '../F1Shared/plot';
   import F1Slider from '../F1Shared/F1Slider.svelte';
-  import { POINTS, BEST, START, W_DOM, B_DOM, X_DOM, LR, STEPS, PATH, loss, sigmoid, accuracy, grad, gdPath, duration, markers, frameAt, T_GUESS, type Mode, type PathPt } from './sim';
+  import { POINTS, BEST, START, W_DOM, B_DOM, X_DOM, LR, STEPS, PATH, loss, sigmoid, accuracy, grad, gdPath, probabilityCalculation, duration, markers, frameAt, T_GUESS, type Mode, type PathPt } from './sim';
 
   interface Props {
     title?: string;
@@ -21,6 +21,7 @@
   const init = untrack(() => ({ mode, boundary, showGrad, title: title || 'A line, squashed into a probability' }));
   const T = duration(init.mode), MK = markers(init.mode);
   const LOSS_MIN = BEST.loss;
+  const sweep = init.mode === 'sweep';
 
   let playing = $state(false), speed = $state(0.5), uiT = $state(0);
   /** Hand-set knobs in the demo modes; cleared when the timeline plays again. */
@@ -34,13 +35,15 @@
 
   const phase = $derived(over || manual ? 'manual' : (markerAt(uiT, MK)?.label ?? ''));
   const g = $derived(grad(ui.w, ui.b));
+  const arithmetic = $derived(ui.probe ? probabilityCalculation(ui.w, ui.b, ui.probe.x) : null);
+  const precise = (v: number) => v !== 0 && Math.abs(v) < 0.000001 ? v.toExponential(3) : f2(v, 6);
   const narration = $derived(
     phase === 'manual' ? (init.mode === 'train' ? 'You placed a new guess. Press Play (or Descend from here) and training starts from this spot.' : 'You set w and b by hand. Press Play to resume the demo.')
       : phase === 'slide b' ? 'Only b changes: the curve slides left and right, and the dashed boundary at x = −b/w slides with it. The steepness stays the same.'
       : phase === 'tilt w' ? 'Only w changes: the curve gets steeper or flatter. Steep means confident far from the boundary; flat means unsure everywhere.'
       : phase === 'a guess' ? 'A first guess: the curve is nearly flat and pushed to the right, so points of both classes get poor probabilities.'
       : phase === 'descend' ? 'Each step nudges (w, b) downhill on the log-loss. The curve shifts and steepens; the dot on the map slides to the minimum.'
-      : phase === 'settled' && init.mode === 'train' ? (ui.loss - LOSS_MIN > 0.005 ? `All ${STEPS} steps used, and the dot is not at the diamond yet: from this start the valley floor is nearly flat, so the gradient and the steps are tiny. Gradient descent would need many more steps.` : 'Settled: no direction lowers the average log-loss any further.')
+      : phase === 'settled' && init.mode === 'train' ? (ui.loss - LOSS_MIN > 0.005 ? `All ${STEPS} steps used. The model is still above the minimum and needs more updates.` : 'Forty updates complete: close to the minimum. More updates can still reduce the loss.')
       : phase === 'far left' ? 'Far to the left the score is very negative, so the probability is close to 0.'
       : phase === 'near the boundary' ? 'Near the boundary the score is close to 0 and the probability passes through 0.5.'
       : phase === 'far right' ? 'Far to the right the score is large and positive, so the probability is close to 1.'
@@ -53,7 +56,7 @@
   $effect(() => { if (playing) { over = null; manual = false; } speed; wake(); });
 
   const frame = () => {
-    if (over) return { w: over.w, b: over.b, loss: loss(over.w, over.b), k: 0, probe: null };
+    if (over) return { w: over.w, b: over.b, loss: loss(over.w, over.b), k: 0, probe: sweep ? probabilityCalculation(over.w, over.b, frameAt(t, 'sweep').probe!.x) : null };
     return frameAt(t, init.mode, path);
   };
   const snap = () => { const f = frame(); return { w: f.w, b: f.b, loss: f.loss, acc: accuracy(f.w, f.b), probe: f.probe }; };
@@ -65,21 +68,23 @@
     playing = false; ui = snap(); wake();
   };
   function launch() { manual = false; over = null; t = T_GUESS; playing = true; wake(); }
-  function reset() { path = PATH; over = null; manual = false; t = 0; playing = true; wake(); }
+  function reset() { path = PATH; over = null; manual = false; t = 0; playing = !reducedMotion(); wake(); }
 
   onMount(() => {
     const stage = setupStage(cv, () => render());
-    let lastUi = 0, dragging = false;
+    let dragging = false;
     const NX = 64, NY = 56;
     const grid = new Float64Array(NX * NY);
     for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) grid[j * NX + i] = loss(W_DOM[0] + ((W_DOM[1] - W_DOM[0]) * i) / (NX - 1), B_DOM[0] + ((B_DOM[1] - B_DOM[0]) * j) / (NY - 1));
     const LEVELS = [0.02, 0.05, 0.1, 0.2, 0.35, 0.55, 0.8, 1.1, 1.5].map((d) => LOSS_MIN + d);
     let cache = { key: '', paths: [] as Path2D[] };
     const lay = () => {
-      const { main, side, stacked } = splitPanels(stage.w, stage.h, 0.55);
+      const panels = splitPanels(stage.w, stage.h, 0.55);
+      const { side, stacked } = panels;
+      const main = sweep ? { x: 0, y: 0, w: stage.w, h: stage.h } : panels.main;
       const d = { l: main.x + 34, r: main.x + main.w - 8, t: main.y + 14, b: main.y + main.h - 26 };
       const s = { l: side.x + 40, r: side.x + side.w - 10, t: side.y + 22, b: side.y + side.h - 30 };
-      return { main, side, stacked, d, s, dx: scale(X_DOM[0], X_DOM[1], d.l, d.r), dy: scale(-0.1, 1.1, d.b, d.t), cw: scale(W_DOM[0], W_DOM[1], s.l, s.r), cb: scale(B_DOM[0], B_DOM[1], s.b, s.t) };
+      return { main, side, stacked, d, s, dx: scale(X_DOM[0] - (sweep ? 0.15 : 0), X_DOM[1] + (sweep ? 0.15 : 0), d.l, d.r), dy: scale(-0.1, 1.1, d.b, d.t), cw: scale(W_DOM[0], W_DOM[1], s.l, s.r), cb: scale(B_DOM[0], B_DOM[1], s.b, s.t) };
     };
     function contours(L: ReturnType<typeof lay>) {
       const key = `${L.s.l}|${L.s.r}|${L.s.t}|${L.s.b}`;
@@ -104,7 +109,7 @@
       ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
       for (const y of [0, 0.5, 1]) { ctx.strokeStyle = c.rule.hex; ctx.beginPath(); ctx.moveTo(d.l, L.dy(y)); ctx.lineTo(d.r, L.dy(y)); ctx.stroke(); ctx.fillStyle = c.muted.hex; ctx.fillText(String(y), d.l - 6, L.dy(y)); }
       ctx.save(); ctx.beginPath(); ctx.rect(d.l, d.t, d.r - d.l, d.b - d.t); ctx.clip();
-      if (init.boundary && Math.abs(f.w) > 1e-3) {
+      if (!sweep && init.boundary && Math.abs(f.w) > 1e-3) {
         const xb = -f.b / f.w;
         ctx.setLineDash([5, 5]); ctx.strokeStyle = c.accent.hex; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.8;
         ctx.beginPath(); ctx.moveTo(L.dx(xb), d.t); ctx.lineTo(L.dx(xb), d.b); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
@@ -115,14 +120,14 @@
       for (let i = 0; i <= 120; i++) { const x = X_DOM[0] + ((X_DOM[1] - X_DOM[0]) * i) / 120, y = sigmoid(f.w * x + f.b); if (i) ctx.lineTo(L.dx(x), L.dy(y)); else ctx.moveTo(L.dx(x), L.dy(y)); }
       ctx.stroke();
       // each point: stem length = how far its probability is from the truth
-      for (const p of POINTS) {
+      for (const p of sweep ? [] : POINTS) {
         const q = sigmoid(f.w * p.x + f.b), ty = p.y, wrongness = Math.abs(ty - q);
         ctx.strokeStyle = c.grad.hex; ctx.globalAlpha = 0.25 + 0.65 * wrongness; ctx.lineWidth = 1.6;
         ctx.beginPath(); ctx.moveTo(L.dx(p.x), L.dy(ty)); ctx.lineTo(L.dx(p.x), L.dy(q)); ctx.stroke(); ctx.globalAlpha = 1;
         ctx.fillStyle = c.raised.hex; ctx.strokeStyle = c.fwd.hex; ctx.lineWidth = 1.6;
         ctx.beginPath(); ctx.arc(L.dx(p.x), L.dy(q), 3, 0, 6.2832); ctx.fill(); ctx.stroke();
       }
-      for (const p of POINTS) {
+      for (const p of sweep ? [] : POINTS) {
         const col = p.y ? c.pos : c.neg;
         ctx.fillStyle = col.hex; ctx.strokeStyle = c.raised.hex; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.arc(L.dx(p.x), L.dy(p.y), 5, 0, 6.2832); ctx.fill(); ctx.stroke();
@@ -137,6 +142,7 @@
       ctx.restore();
       ctx.font = stage.body(12, true); ctx.fillStyle = c.muted.hex; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('x', d.r, L.main.y + L.main.h - 1);
       ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('P(y = 1) = σ(w·x + b)', d.l + 4, L.main.y + 1);
+      if (sweep) return;
 
       const s = L.s;
       ctx.font = stage.body(12.5); ctx.fillStyle = c.text.hex; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -179,15 +185,15 @@
       ctx.beginPath(); ctx.arc(L.cw(clamp(f.w, W_DOM[0], W_DOM[1])), L.cb(clamp(f.b, B_DOM[0], B_DOM[1])), 6.5, 0, 6.2832); ctx.fill(); ctx.stroke();
     }
 
-    const loop = createLoop(cv, (dt, now) => {
+    const loop = createLoop(cv, (dt) => {
       if (!over) t = advance({ t, playing, speed }, dt, { duration: T }).t;
       render(); tl.paint(t);
-      if (now - lastUi > 100 || !playing) { lastUi = now; ui = snap(); uiT = t; }
+      ui = snap(); uiT = t;
       return playing || dragging;
     }, { onView: (_v, first) => { if (first && !reducedMotion()) playing = true; } });
     wake = loop.wake;
 
-    const inSide = (e: PointerEvent) => { const r = cv.getBoundingClientRect(), L = lay(), x = e.clientX - r.left, y = e.clientY - r.top; return { L, x, y, ok: x >= L.s.l - 8 && x <= L.s.r + 8 && y >= L.s.t - 8 && y <= L.s.b + 8 }; };
+    const inSide = (e: PointerEvent) => { const r = cv.getBoundingClientRect(), L = lay(), x = e.clientX - r.left, y = e.clientY - r.top; return { L, x, y, ok: !sweep && x >= L.s.l - 8 && x <= L.s.r + 8 && y >= L.s.t - 8 && y <= L.s.b + 8 }; };
     const put = (e: PointerEvent) => { const { L, x, y } = inSide(e); place(W_DOM[0] + ((x - L.s.l) / (L.s.r - L.s.l)) * (W_DOM[1] - W_DOM[0]), B_DOM[0] + ((y - L.s.b) / (L.s.t - L.s.b)) * (B_DOM[1] - B_DOM[0])); };
     const down = (e: PointerEvent) => { if (inSide(e).ok) { dragging = true; cv.setPointerCapture(e.pointerId); put(e); e.preventDefault(); } };
     const move = (e: PointerEvent) => { if (dragging) put(e); else cv.style.cursor = inSide(e).ok ? 'crosshair' : ''; };
@@ -197,28 +203,40 @@
   });
 </script>
 
-<FigureCard title={init.title} role="group" aspect="720 / 400" narrowAspect="360 / 620"
-  label="Left: sixteen points of two classes on a line, with the sigmoid curve P(y=1) and a small ring on the curve above each point showing its probability. Right: contour map of the log-loss over steepness w and offset b, with a dot for the current curve, a diamond at the minimum, and the path taken."
-  legend={[{ label: 'class 1', color: '--viz-pos' }, { label: 'class 0', color: '--viz-neg' }, { label: 'P(y=1) curve', color: '--viz-forward', shape: 'line' }, { label: init.showGrad ? 'error (stem) / downhill step' : 'error (stem)', color: '--viz-gradient', shape: 'line' }, { label: 'minimum / boundary', color: '--accent' }]}>
+<FigureCard title={init.title} role="group" aspect={sweep ? '720 / 320' : '720 / 400'} narrowAspect={sweep ? '360 / 300' : '360 / 620'}
+  label={sweep ? 'Probability curve with a movable input x. Dotted guides connect x to its probability; the calculation below expands every operation.' : 'Left: sixteen labeled points and the sigmoid probability curve. Right: contour map of log-loss over w and b, with the current curve marked by a dot and the minimum by a diamond.'}
+  legend={sweep ? [{ label: 'probability curve', color: '--viz-forward', shape: 'line' }, { label: 'selected input', color: '--accent' }] : [{ label: 'class 1', color: '--viz-pos' }, { label: 'class 0', color: '--viz-neg' }, { label: 'P(y=1) curve', color: '--viz-forward', shape: 'line' }, { label: init.showGrad ? 'error (stem) / downhill step' : 'error (stem)', color: '--viz-gradient', shape: 'line' }, { label: 'minimum / boundary', color: '--accent' }]}>
   <canvas bind:this={cv} style="touch-action: none" aria-hidden="true"></canvas>
   {#snippet controls()}
     <Timeline bind:this={tl} bind:t={uiT} bind:playing bind:speed duration={T} markers={MK} label="Timeline: the sigmoid model"
       onSeek={(to) => { over = null; manual = false; t = to; wake(); }} onStep={(to) => { over = null; manual = false; t = to >= T ? 0 : to; wake(); }} onReset={reset} />
   {/snippet}
   {#snippet readout()}
+    {#if sweep && arithmetic}
+      <div class="arithmetic">
+        <p><strong>1. Multiply:</strong> w × x ≈ ({f2(ui.w, 6)}) × ({f2(arithmetic.x, 4)}) ≈ {f2(arithmetic.product, 6)}.</p>
+        <p><strong>2. Add b:</strong> z ≈ {f2(arithmetic.product, 6)} + ({f2(ui.b, 6)}) ≈ <b>{f2(arithmetic.z, 6)}</b>.</p>
+        <p><strong>3. Flip the sign and exponentiate:</strong> −z ≈ {f2(arithmetic.exponent, 6)}; e<sup>−z</sup> ≈ <b>{precise(arithmetic.exponential)}</b>.</p>
+        <p><strong>4. Add 1, then divide:</strong> p = 1 / (1 + e<sup>−z</sup>) ≈ 1 / {f2(arithmetic.denominator, 6)} ≈ <b>{precise(arithmetic.p)}</b>.</p>
+        <p><strong>As a percentage:</strong> p × 100 ≈ <b>{f2(arithmetic.percent, 3)}%</b> probability of class 1.</p>
+        <p class="say">e ≈ 2.71828. Values are rounded; ≈ means approximately equal.</p>
+      </div>
+    {:else}
     <p class="vals num">w = <b>{f2(ui.w)}</b> · b = <b>{f2(ui.b)}</b> · log-loss = <b>{f2(ui.loss, 3)}</b> · accuracy = <b>{Math.round(ui.acc * 16)}/16</b>
       {#if ui.probe}<span class="base">· at x = {f2(ui.probe.x, 1)}: score z = {f2(ui.probe.z)}, P(y=1) = {f2(ui.probe.p)}</span>
       {:else}<span class="base">· minimum: w = {f2(BEST.w)}, b = {f2(BEST.b)}, log-loss = {f2(LOSS_MIN, 3)}</span>{/if}</p>
     {#if init.showGrad}<p class="vals num grad">∂L/∂w = <b>{f2(g[0], 3)}</b> · ∂L/∂b = <b>{f2(g[1], 3)}</b>
       <span class="base">· next step: w → {f2(ui.w - LR * g[0])}, b → {f2(ui.b - LR * g[1])} (step size {LR})</span></p>{/if}
     <p class="say" role="status" aria-live="polite">{narration}</p>
+    {/if}
   {/snippet}
   {#snippet footer()}
     <div class="ctl">
       <F1Slider label="w" value={ui.w} min={W_DOM[0]} max={W_DOM[1]} step={0.01} oninput={(v) => place(v, ui.b)} />
       <F1Slider label="b" value={ui.b} min={B_DOM[0]} max={B_DOM[1]} step={0.01} oninput={(v) => place(ui.w, v)} />
+      {#if sweep}<F1Slider label="input x" value={ui.probe?.x ?? -4} min={-4} max={4} step={0.01} oninput={(v) => { t = v + 4.5; playing = false; ui = snap(); uiT = t; wake(); }} />{/if}
       {#if init.mode === 'train'}<button type="button" class="btn" onclick={launch}>Descend from here</button>{/if}
-      <span class="hint">You can also click or drag on the contour map. Decision boundary at x = {f2(-ui.b / (ui.w || 1e-9), 2)}.</span>
+      <span class="hint">{sweep ? 'Change input x and follow its calculation above.' : `You can also click or drag on the contour map. ${Math.abs(ui.w) < 1e-9 ? 'w is zero: probability is the same for every input.' : `Decision boundary at x = ${f2(-ui.b / ui.w, 2)}.`}`}</span>
     </div>
   {/snippet}
 </FigureCard>
@@ -226,6 +244,8 @@
 <style>
   p { margin: 0; }
   .vals { font: 0.95rem var(--font-code); font-variant-numeric: tabular-nums; }
+  .arithmetic { font: 0.95rem / 1.6 var(--font-ui); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .arithmetic p + p { margin-top: var(--s-2); }
   .vals b { font-weight: 650; color: var(--viz-forward); }
   .vals.grad b { color: var(--viz-gradient); }
   .base { font-size: 0.8rem; color: var(--text-muted); }

@@ -32,17 +32,40 @@ $$\sigma(z) = \frac{1}{1 + e^{-z}}.$$
 
 For a very negative $z$, $e^{-z}$ is huge and $\sigma(z)$ is close to 0. For $z = 0$, $\sigma(0) = 1/2$. For a very positive $z$, $e^{-z}$ is tiny and $\sigma(z)$ is close to 1. The curve is smooth and always increasing, so a larger score always means a higher probability.
 
-Our model is $P(y = 1 \mid x) = \sigma(wx + b)$. In the figure a probe slides along $x$ at the fitted values $w = 1.26$, $b = 0.44$. At $x = -4$ the score is $-4.61$ and the probability is 0.010. At $x = 0$ the score is $0.44$ and the probability is 0.61. At $x = 4$ it reaches 0.996. The dotted lines read the probability off the curve.
+Here $\sigma$ ("sigma") is the name of the function, and $e\approx2.71828$ is a mathematical constant. The expression $e^{-z}$ means raise $e$ to the power $-z$; it does **not** mean multiply $e$ by $-z$. You can calculate it with the $e^x$ or `exp` key on a calculator. The denominator is always greater than 1, so dividing 1 by it produces a value between 0 and 1.
 
-<LogisticFit client:visible mode="sweep" title="Slide along x: the score becomes a probability" />
+Our model has two stages: **calculate a linear score**, then **convert that score into a probability**:
+
+$$z=wx+b,\qquad p=P(y=1\mid x)=\sigma(z)=\frac{1}{1+e^{-z}}.$$
+
+Read $P(y=1\mid x)$ as "the model's probability of class 1, given input $x$." The probability of class 0 is $1-p$.
+
+Let's calculate the figure's starting point, $x=-4$, without skipping any operations. The fitted parameters are approximately $w=1.262401$ and $b=0.440404$:
+
+1. **Multiply the input by the weight:** $wx\approx1.262401\times(-4)=-5.049604$.
+2. **Add the intercept:** $z\approx-5.049604+0.440404=-4.609200$.
+3. **Negate the score:** $-z\approx4.609200$. The negative score becomes a positive exponent.
+4. **Calculate the exponential:** $e^{4.609200}\approx100.4038$.
+5. **Add one:** $1+100.4038=101.4038$.
+6. **Divide:** $p\approx1/101.4038\approx0.009862$, or about **0.986% probability of class 1**.
+
+That is where the displayed probability of about **0.01** comes from. It is a fraction on a 0-to-1 scale; multiply by 100 to express it as a percentage. The negative score makes the denominator large, so the probability is small.
+
+The live calculation uses the full parameter precision, giving $z\approx-4.609201$ and $e^{-z}\approx100.403910$. The small difference from the hand calculation is rounding. In particular, the shorter display $w=1.26$, $b=0.44$ gives $z=-4.60$ if you calculate from those rounded numbers; it cannot give exactly $-4.61$.
+
+Now move **input x** to 0. Multiplying by zero removes the weight term, leaving $z=b\approx0.440404$. Then $e^{-z}\approx0.643776$, so $p\approx1/1.643776\approx0.608355$: about **60.836%**, not 44%. At $x=4$, the same sequence gives $z\approx5.490009$ and $p\approx0.995889$, or **99.589%**. Follow the dotted guides and the arithmetic below the curve as you change the input.
+
+<LogisticFit client:visible mode="sweep" title="Calculate wx + b, then 1 / (1 + exp(−z))" />
 
 </Step>
 
 <Step title="w tilts the curve, b slides it">
 
-The two knobs have simple jobs. The **offset** $b$ slides the curve left or right: the curve crosses 0.5 exactly where $wx + b = 0$, at $x = -b/w$. This is the **decision boundary**, the dashed vertical line. With the fitted values it is at $x = -0.35$. Points to its right are predicted class 1.
+To turn a probability into a class label, we need a rule. Here we predict class 1 above probability 0.5 and class 0 below it. At the threshold, the score is zero because $\sigma(0)=1/(1+e^0)=1/(1+1)=0.5$.
 
-The **steepness** $w$ sets how quickly confidence grows as you move away from the boundary. Small $w$ gives a lazy ramp; large $w$ gives a sharp step.
+The **offset** $b$ slides the curve left or right when $w$ is held fixed. Solve $wx+b=0$ by subtracting $b$ and dividing by $w$: $x=-b/w$ (when $w\ne0$). This is the **decision boundary**, the dashed vertical line. With the fitted values, $x\approx-0.440404/1.262401\approx-0.349$. Since $w$ is positive, points to its right are predicted class 1. A negative $w$ reverses the direction.
+
+The magnitude of $w$ sets how quickly the probability changes: small $|w|$ gives a gradual ramp; large $|w|$ gives a sharp transition. Changing $w$ with a nonzero $b$ also moves the boundary, since $-b/w$ changes.
 
 The timeline turns one knob at a time. First only $b$ moves: the curve slides left and right without changing shape, and the dashed boundary slides with it. Then only $w$ moves: the curve flattens and sharpens. On the map, the dot travels straight up and down, then straight left and right. Afterwards, drag the sliders or click anywhere on the contour map to try your own settings.
 
@@ -54,11 +77,15 @@ The ring on the curve above each point is that point's predicted $P(y = 1)$. The
 
 <Step title="Why not squared error? Log-loss">
 
-For a point with true label $y$ and predicted probability $p$, a natural score is how surprised the model is by the truth. **Log-loss** (binary cross-entropy) is
+Until now we have only calculated probabilities. Training also needs a loss. In Day 1, MSE measured errors in predicted numbers. We could apply squared error to probabilities too, but logistic regression usually uses **log-loss**, also called **binary cross-entropy**. It gives a large penalty when the model assigns a very small probability to the class that actually occurred.
+
+For one point with true label $y$ and predicted class-1 probability $p$, the loss is
 
 $$\ell(p, y) = -\big[\,y \ln p + (1 - y)\ln(1 - p)\,\big].$$
 
-For a class 1 point this is $-\ln p$. If the model said $p = 0.9$, the loss is $0.105$. If it said $p = 0.1$, the loss is $2.30$. If it said $p = 0.01$, it is $4.61$. Confident and wrong is punished heavily, while confident and right costs almost nothing. The average of $\ell$ over all points is the number in the readout. A model that always says $0.5$ scores $\ln 2 = 0.693$; anything lower beats guessing.
+Here $\ln$ is the natural logarithm, the inverse of the exponential. If $y=1$, substitution gives $-[1\ln p+0\ln(1-p)]=-\ln p$. If $y=0$, it gives $-[0\ln p+1\ln(1-p)]=-\ln(1-p)$. In either case, take minus the logarithm of the probability assigned to the true class.
+
+For a class 1 point, $p=0.9$ gives $-\ln(0.9)\approx0.105$; $p=0.1$ gives $-\ln(0.1)\approx2.303$; $p=0.01$ gives $-\ln(0.01)\approx4.605$. Confident and wrong costs much more than confident and right. The figure averages this loss across all sixteen points. A model that always predicts $0.5$ has loss $-\ln(0.5)\approx0.693$; a lower average beats that constant-probability baseline on these data.
 
 Watch the curve steepen while $(w, b)$ moves along the dashed line on the map, scaled from 0.1 to 3 times the best fit (the boundary stays put). Too flat, the loss is 0.634 because nothing is decided. At the best fit it is 0.452. Beyond that the curve becomes overconfident on the overlapping points, and at three times the fit the loss climbs back to 0.651. Only the middle setting is the right amount of confidence for this data.
 
@@ -67,7 +94,7 @@ Watch the curve steepen while $(w, b)$ moves along the dashed line on the map, s
 <details>
 <summary>Show the math</summary>
 
-Suppose each label is a coin flip with $P(y = 1) = p_i$. The likelihood of the data is $\prod_i p_i^{y_i}(1 - p_i)^{1 - y_i}$. Taking $-\frac{1}{n}\ln$ of it gives exactly the mean log-loss, so minimizing log-loss is maximum likelihood estimation. With squared error, a sigmoid model has flat regions where the curve saturates, which makes learning stall; log-loss has no such plateau, and it is convex in $(w, b)$.
+Suppose each label is a coin flip with $P(y = 1) = p_i$. The likelihood of independent labels is $\prod_i p_i^{y_i}(1 - p_i)^{1 - y_i}$. Taking $-\frac{1}{n}\ln$ of it gives the mean log-loss, so minimizing log-loss is maximum likelihood estimation. With squared error after the sigmoid, the score derivative includes a factor $p(1-p)$ that becomes small near 0 or 1, even for confident mistakes. With log-loss the score derivative simplifies to $p-y$. The mean logistic log-loss is convex in $(w,b)$, though progress can still be slow in flat directions.
 
 </details>
 
@@ -81,7 +108,14 @@ $$\frac{\partial L}{\partial w} = \frac{1}{n}\sum_i (p_i - y_i)\,x_i, \qquad \fr
 
 Each point pushes with a force equal to its error $p_i - y_i$, the same stem you see in the figure. A class 1 point with a low $p$ pulls the curve up towards it; a class 0 point with a high $p$ pushes it down.
 
-Start at $w = 0.1$, $b = -2.2$, where the log-loss is 1.173. The gradient is $(-0.304, -0.403)$. With a step size of $0.5$ the first update gives $w = 0.252$, $b = -2.00$, and the loss falls to 1.050. After 10 steps it is 0.558 and after 40 it is 0.453, within 0.001 of the minimum $0.452$ at $w = 1.26$, $b = 0.44$. Because log-loss is convex, every start ends at the same place. See [gradient descent](/learn/foundations/gradient-descent/) for the update rule.
+The **training procedure is still gradient descent**: calculate the current loss gradients, then subtract the learning rate times each one. The prediction now includes a sigmoid and the loss is now log-loss, so the gradient formulas change. The update rule does not.
+
+Start at $w=0.1$, $b=-2.2$, where log-loss is 1.173. The gradient is approximately $(-0.304193,-0.403397)$. With learning rate $0.5$:
+
+$$w_{\mathrm{new}}\approx0.1-0.5(-0.304193)\approx0.252096,$$
+$$b_{\mathrm{new}}\approx-2.2-0.5(-0.403397)\approx-1.998301.$$
+
+Recompute the probabilities and log-loss at these parameters: the loss falls to **1.050**. After 10 updates it is **0.558** and after 40 it is **0.453**, about **0.0011** above the minimum **0.4521**. With a suitable learning rate, descent approaches this dataset's finite optimum; forty updates do not reach it exactly.
 
 This figure shows the gradient itself. The magenta arrow on the map is the next step, $-0.5\,\nabla L$, drawn from the dot. The readout writes out both partial derivatives and where the step lands. Watch the arrow shrink as the dot nears the diamond: near the minimum the errors $p_i - y_i$ mostly cancel, so the gradient fades. Then click anywhere on the map to place your own starting guess and press Play. Training runs from your guess and heads for the same diamond, because there is only one bottom. From a far corner, such as large $w$ and large $b$, 40 steps are not enough: the valley floor there is nearly flat, so the arrow is tiny and progress is slow. That is a real weakness of plain gradient descent, and Day 6's optimizers are built to fix it.
 
