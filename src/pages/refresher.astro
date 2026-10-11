@@ -1,15 +1,54 @@
 ---
 import Base from '../layouts/Base.astro';
+import { getPath, getMathPrimer } from '../lib/curriculum';
+import { REFRESHER } from '../lib/refresher';
+import katex from 'katex';
+
+const days = await getPath();
+const math = await getMathPrimer();
+const eqHtml = (tex: string) => katex.renderToString(tex, { displayMode: true, throwOnError: false });
+const groups = [
+  { id: 'math-primer', heading: 'Math primer', lessons: math },
+  ...days.map((d) => ({ id: `day-${d.day}`, heading: `Day ${d.day}: ${d.title}`, lessons: d.lessons })),
+]
+  .map((g) => ({ ...g, lessons: g.lessons.filter((l) => REFRESHER[l.id]) }))
+  .filter((g) => g.lessons.length > 0);
 ---
-<Base title="Refresher" description="Every lesson's refresher card in one place.">
+<Base title="Refresher" description="Every lesson's recap and key equation on one page, for revising without the walkthrough.">
   <div class="wrap page">
     <h1>Refresher</h1>
-    <div class="prose">
-      <p>Every lesson opens with a short refresher: a summary, the key equations and what to know first. This page will collect them all, for readers who want the recap without the walkthrough.</p>
-    </div>
+    <p class="lede">Every lesson's recap and key equation on one page. Use it to revise, or to check what a lesson covers before you start it.</p>
+    <nav class="jump ui" aria-label="Jump to a day">
+      {groups.map((g) => <a href={`#${g.id}`}>{g.id === 'math-primer' ? 'Math' : g.heading.split(':')[0]}</a>)}
+    </nav>
+    {groups.map((g) => (
+      <section class="day" aria-labelledby={g.id}>
+        <h2 id={g.id}>{g.heading}</h2>
+        {g.lessons.map((l) => {
+          const card = REFRESHER[l.id];
+          return (
+            <article class="card prose">
+              <h3><a href={`/learn/${l.id}`}>{l.data.title}</a></h3>
+              <p>{card.tldr}</p>
+              {card.eq && <Fragment set:html={eqHtml(card.eq)} />}
+            </article>
+          );
+        })}
+      </section>
+    ))}
   </div>
 </Base>
 <style>
   .page { padding-block: var(--s-7) 0; }
-  h1 { font-size: var(--step-4); margin-bottom: var(--s-5); }
+  h1 { font-size: var(--step-4); }
+  .lede { max-width: var(--measure); color: var(--text-muted); margin-bottom: var(--s-5); }
+  .jump { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); margin-bottom: var(--s-6); font-size: 0.85rem; }
+  .day { padding-block: var(--s-5); border-top: 1px solid var(--rule); }
+  h2 { font-size: var(--step-1); margin-bottom: var(--s-4); scroll-margin-top: var(--s-6); }
+  .card { max-width: var(--measure); padding-block: var(--s-3); }
+  .card h3 { font-size: 1rem; margin: 0 0 var(--s-2); }
+  .card h3 a { text-decoration: none; }
+  .card h3 a:hover { text-decoration: underline; }
+  .card p { margin: 0; }
+  .card :global(.katex-display) { overflow-x: auto; overflow-y: hidden; padding-block: var(--s-1); }
 </style>

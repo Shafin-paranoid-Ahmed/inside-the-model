@@ -11,8 +11,8 @@ Status values: **accepted** means reviewed by screenshot and fixed. **draft?** m
 | Day | Track / lessons | Status |
 |---|---|---|
 | Math primer | math/{vectors, dot-product, matrices, derivatives, chain-rule, probability} | accepted |
-| 1 | foundations/{what-is-a-model, data-features-labels, loss-functions, linear-regression, gradient-descent} | accepted |
-| 2 | foundations/{logistic-regression, softmax-cross-entropy, decision-boundaries, overfitting-bias-variance, train-val-test, regularization} | accepted |
+| 1 | foundations/{what-is-a-model, data-features-labels, loss-functions, linear-regression, gradient-descent} | accepted. linear-regression and gradient-descent revised by the owner (2026-10-08) to show every arithmetic step and keep one running regression + MSE example; see `plans/audit-2026-10-11-day1-day2.md`. Owner clarity sign-off on the revision pending |
+| 2 | foundations/{logistic-regression, softmax-cross-entropy, decision-boundaries, overfitting-bias-variance, train-val-test, regularization} | accepted. logistic-regression revised by the owner (2026-10-08): sigmoid arithmetic expanded step by step; see `plans/audit-2026-10-11-day1-day2.md`. Owner clarity sign-off on the revision pending |
 | 3 | classic-ml/{k-nearest-neighbors, decision-trees, ensembles, svm-kernels, k-means, pca, classic-vs-deep} | accepted + wave-checked (2026-10-01) |
 | 4 | neural-networks/{neuron, activation-functions, mlp, hidden-layers, universal-approximation} | accepted + wave-checked (2026-10-01; original five widgets preserved) |
 | 5 | neural-networks/{computational-graphs, chain-rule-visually, forward-backward-pass, backprop-mlp, autodiff, vanishing-exploding-gradients} | accepted + wave-checked (2026-10-01) |

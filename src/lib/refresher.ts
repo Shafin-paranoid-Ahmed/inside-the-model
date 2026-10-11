@@ -301,6 +301,31 @@ export const REFRESHER: Record<string, Refresher> = {
     eq: String.raw`\min\bigl(\rho A,\ \operatorname{clip}(\rho,\ 1-\varepsilon,\ 1+\varepsilon)\,A\bigr)`,
   },
 
+  // ---------------------------------------------------------------- Day 12
+  'alignment/sft': {
+    tldr: 'A pretrained model only continues text. Supervised fine-tuning keeps training it on instruction and good-response pairs, with the loss counted on the response tokens only, so it learns the behaviour of answering. It imitates its demonstrations, so it can be no better than they are.',
+    eq: String.raw`L(\theta) = -\frac1N \sum_i \log \pi_\theta(y_i \mid x_i)`,
+  },
+  'alignment/rlhf': {
+    tldr: 'People pick the better of two answers, and a reward model learns scores whose differences predict those choices. PPO then raises the reward while a KL penalty keeps the policy near the SFT model. Push too hard and the policy exploits the reward model\'s blind spots: reward hacking.',
+    eq: String.raw`P(y_w \succ y_l) = \sigma\bigl(r(y_w) - r(y_l)\bigr)`,
+  },
+  'alignment/dpo': {
+    tldr: 'The policy RLHF aims for can be written in closed form, so DPO skips the reward model and the RL loop. It trains on preference pairs with a classification-style loss that widens the gap between the chosen and rejected log-ratios against a frozen reference. That gap is an implicit reward.',
+    eq: String.raw`L = -\log \sigma\bigl(\beta\,[\,(\log\pi(y_w) - \log\pi_{\text{ref}}(y_w)) - (\log\pi(y_l) - \log\pi_{\text{ref}}(y_l))\,]\bigr)`,
+  },
+  'alignment/constitutional-ai': {
+    tldr: 'Write the standards down as a short list of principles. The model critiques and revises its own answers against them, and is fine-tuned on the revisions. Then an AI judge, not a person, labels preference pairs for the usual reward model and PPO: RLAIF. Change the principles and the behaviour changes.',
+  },
+  'alignment/rlvr': {
+    tldr: 'When a program can check the answer, as in math or code, it can be the reward. Sample several attempts per problem and score each against the group\'s average (GRPO), so right answers are pushed up and wrong ones down. It only works where a checker exists, and a sloppy checker can be gamed.',
+    eq: String.raw`\hat A_i = \frac{r_i - \operatorname{mean}(r_1,\dots,r_G)}{\operatorname{std}(r_1,\dots,r_G)}`,
+  },
+  'alignment/evaluations': {
+    tldr: 'A benchmark score is a sample, so it has an error bar that shrinks only like one over the square root of the number of questions. Comparing models on the same questions narrows it. Scores mislead when test questions leak into training, when people tune to the benchmark, or when it saturates.',
+    eq: String.raw`\mathrm{SE} = \sqrt{\frac{p(1-p)}{n}}`,
+  },
+
   // ---------------------------------------------------------------- Day 13
   'graphs-generative/gnn': {
     tldr: 'A graph neural network updates each node from messages sent by its neighbours, with an order-independent aggregate such as a sum or mean. Stacking k layers lets a node see k hops away. GCN averages with degree weighting, GAT learns attention over neighbours, and a readout pools nodes into one graph vector.',
