@@ -24,11 +24,22 @@ The function that does this is **softmax**. In the figure, the left bars are the
 
 <Step title="Exponentiate, then normalize">
 
-Softmax does two things. First it applies $e^{z}$ to every score, which makes every number positive and makes bigger scores count *disproportionately* more. Then it divides by the total, so the results sum to 1:
+Softmax does two things. First it applies $e^{z}$ to every score, the same exponential the sigmoid used, which makes every number positive and makes bigger scores count *disproportionately* more. Then it divides by the total, so the results sum to 1.
+
+To write that as a formula we number the classes A, B, C, D as 1, 2, 3, 4. The letter $i$ stands for whichever class we are computing, $z_i$ is its score and $p_i$ its probability. The sign $\sum_j$ means "add up over every class $j$", so $\sum_j e^{z_j} = e^{z_1} + e^{z_2} + e^{z_3} + e^{z_4}$:
 
 $$p_i = \frac{e^{z_i}}{\sum_{j} e^{z_j}}.$$
 
-With the starting scores $z = (1.5,\ 0.8,\ -0.4,\ 0.3)$ the exponentials are $4.48,\ 2.23,\ 0.67,\ 1.35$, which total $8.73$, so $p \approx (0.51,\ 0.26,\ 0.08,\ 0.15)$. Score A is only 0.7 above score B, yet it gets twice B's probability: adding a constant to a logit multiplies its probability, it does not add to it.
+**Worked through.** The starting scores are $z = (1.5,\ 0.8,\ -0.4,\ 0.3)$.
+
+1. Exponentiate each: $e^{1.5} = 4.482$, $e^{0.8} = 2.226$, $e^{-0.4} = 0.670$, $e^{0.3} = 1.350$.
+2. Add them: $4.482 + 2.226 + 0.670 + 1.350 = 8.727$.
+3. Divide each by the total: A $= 4.482 / 8.727 = 0.514$, B $= 2.226 / 8.727 = 0.255$, C $= 0.670 / 8.727 = 0.077$, D $= 1.350 / 8.727 = 0.155$.
+4. Check: $0.514 + 0.255 + 0.077 + 0.155 = 1.001$, which is 1 up to rounding.
+
+Score A is only 0.7 above score B, yet it gets about twice B's probability: $0.514 / 0.255 = 2.01$, and that ratio is exactly $e^{1.5} / e^{0.8} = e^{0.7} \approx 2.01$. A *difference* between two scores becomes a *ratio* between their probabilities.
+
+**Softmax with two classes is the sigmoid.** Give class 1 the score $z$ and class 0 the score $0$. Then $p_1 = e^{z} / (e^{z} + e^{0}) = e^{z} / (e^{z} + 1)$. Divide top and bottom by $e^{z}$ and you get $1 / (1 + e^{-z})$, the sigmoid from [logistic regression](/learn/foundations/logistic-regression/). Softmax is the same idea for any number of classes.
 
 Two consequences. Adding the same number to *every* logit changes nothing, since it cancels in the ratio. And the scores are only meaningful relative to each other. (In real code, subtract the largest logit first so that $e^{z}$ cannot overflow.)
 
@@ -50,7 +61,11 @@ def softmax(z, tau=1.0):
 
 <Step title="Temperature: sharpen or flatten">
 
-Sometimes we divide the logits by a **temperature** $\tau$ before softmax: $p_i = \mathrm{softmax}(z/\tau)_i$. The figure below sweeps $\tau$ with the scores held fixed. At $\tau = 1$ you get the ordinary softmax. At low temperature (the sweep reaches about 0.3) the top class takes almost everything: A goes from 0.51 to 0.90. At high temperature (about 3) the bars flatten toward equal shares, and A falls to 0.33. As $\tau \to 0$ softmax becomes "pick the largest" and as $\tau \to \infty$ it becomes uniform.
+Sometimes we divide the logits by a **temperature** $\tau$ (the Greek letter tau) before softmax: $p_i = \mathrm{softmax}(z/\tau)_i$. The figure below sweeps $\tau$ with the scores held fixed. At $\tau = 1$ you get the ordinary softmax.
+
+At low temperature (the sweep reaches about 0.3) the top class takes almost everything. Dividing by 0.3 gives scores $(5.00,\ 2.67,\ -1.33,\ 1.00)$, whose exponentials are $148.4,\ 14.4,\ 0.26,\ 2.72$ with total $165.8$, so A gets $148.4 / 165.8 = 0.90$. Dividing stretched the gaps between scores, and the exponential turned bigger gaps into much bigger ratios.
+
+At high temperature (about 3) the bars flatten toward equal shares. Dividing by 3 gives $(0.50,\ 0.27,\ -0.13,\ 0.10)$, exponentials $1.649,\ 1.306,\ 0.875,\ 1.105$, total $4.935$, so A gets $1.649 / 4.935 = 0.33$. As $\tau \to 0$ softmax becomes "pick the largest" and as $\tau \to \infty$ it becomes uniform.
 
 Drag the temperature slider yourself. Text-generating models use exactly this knob: a low temperature makes the model repeat its favorite word, a high one makes it wander.
 
@@ -64,9 +79,9 @@ Now suppose the correct answer is class C, the outlined bar on the right. A good
 
 $$L = -\ln p_{\text{true}}.$$
 
-If the model gives the truth probability 1, the loss is 0. Probability 0.5 costs $\ln 2 = 0.69$, probability 0.077 (where the figure starts, for class C) costs $2.57$, and probability 0.01 costs $4.6$. The loss grows without bound as the model becomes confidently wrong, which is exactly the behavior we want. Guessing uniformly over four classes scores $\ln 4 = 1.39$, a useful baseline.
+Here $\ln$ is the natural logarithm, the inverse of $e^{x}$, and the minus sign makes the loss positive because the log of a number below 1 is negative. If the model gives the truth probability 1, the loss is $-\ln 1 = 0$. Probability 0.5 costs $-\ln 0.5 = 0.69$. Class C starts at the probability we just computed, $0.670 / 8.727 = 0.077$, which costs $-\ln 0.077 = 2.57$. Probability 0.01 costs $4.6$. The loss grows without bound as the model becomes confidently wrong, which is exactly the behavior we want. Guessing uniformly over four classes scores $\ln 4 = 1.39$, a useful baseline.
 
-The figure shows the loss under the bars. Change the true class with the buttons, or drag scores, and watch the loss react: raise the true class's score and the loss drops, raise a wrong class's score and it climbs. This is the same log loss as in the [loss functions lesson](/learn/foundations/loss-functions/), extended from two classes to many.
+The figure shows the loss under the bars. Change the true class with the buttons, or drag scores, and watch the loss react: raise the true class's score and the loss drops, raise a wrong class's score and it climbs. This is the same log-loss as in [logistic regression](/learn/foundations/logistic-regression/), extended from two classes to many. There, a label of 1 cost $-\ln p$ and a label of 0 cost $-\ln(1 - p)$. In both cases that is minus the log of the probability given to the true class, which is exactly $-\ln p_{\text{true}}$.
 
 <SoftmaxBars client:visible mode="loss" title="The loss is only about the true class" />
 
@@ -85,20 +100,29 @@ Since $\ln p_{\text{true}} = z_{\text{true}} - \ln\sum_j e^{z_j}$, the loss is $
 
 <Step title="The gradient is p minus y">
 
-To train, we need to know how the loss changes when each logit changes. Differentiating $L = \ln\sum_j e^{z_j} - z_{\text{true}}$ gives a result that is unusually clean:
+To train, we use the same procedure as before, gradient descent. To keep the example small, the four logits themselves are the parameters being trained. We need to know how the loss changes when each logit changes. Write the label as $y = (0, 0, 1, 0)$: 1 for the true class C, 0 for the others (a **one-hot** label). Differentiating $L = \ln\sum_j e^{z_j} - z_{\text{true}}$ gives a result that is unusually clean:
 
 $$\frac{\partial L}{\partial z_i} = p_i - y_i.$$
 
-The third panel plots it. For the true class it is $p_{\text{true}} - 1$, which is negative: raising that logit lowers the loss. For every other class it is $p_i$, which is positive: raising those logits raises the loss. With the starting scores and true class C the gradient is $(0.51,\ 0.26,\ -0.92,\ 0.15)$. It sums to zero, and it is large exactly when the model is wrong, shrinking to nothing as $p_{\text{true}} \to 1$.
+The third panel plots it. For the true class it is $p_{\text{true}} - 1$, which is negative: raising that logit lowers the loss. For every other class it is $p_i$, which is positive: raising those logits raises the loss. With the starting scores and true class C, subtract the label from the probabilities: $(0.514 - 0,\ 0.255 - 0,\ 0.077 - 1,\ 0.155 - 0) = (0.51,\ 0.26,\ -0.92,\ 0.15)$. It sums to zero, and it is large exactly when the model is wrong, shrinking to nothing as $p_{\text{true}} \to 1$.
 
-Watch the timeline apply gradient descent to the four logits ($z \leftarrow z - 0.35\,(p - y)$, 48 steps). The true class rises, the others fall, the gradient bars shrink, and the loss goes from 2.57 to about 0.05. Because a step is proportional to the error, learning is fast at first and gentle at the end. (The gradient is shown at temperature 1; the figure's temperature slider is only for playing.)
+**One update, in full.** With learning rate $0.35$, each logit moves by $-0.35$ times its gradient entry:
+
+- A: $1.5 - 0.35 \times 0.514 = 1.320$
+- B: $0.8 - 0.35 \times 0.255 = 0.711$
+- C: $-0.4 - 0.35 \times (-0.923) = -0.077$
+- D: $0.3 - 0.35 \times 0.155 = 0.246$
+
+Run softmax again on the new scores and class C's probability rises from $0.077$ to $0.116$, so the loss falls from $-\ln 0.077 = 2.57$ to $-\ln 0.116 = 2.15$.
+
+Watch the timeline repeat this update 48 times. The true class rises, the others fall, the gradient bars shrink, and the loss goes from 2.57 to about 0.05. Because a step is proportional to the error, learning is fast at first and gentle at the end. (The gradient is shown at temperature 1; the figure's temperature slider is only for playing.)
 
 <SoftmaxBars client:visible mode="grad" title="Training the scores toward the true class" />
 
 <details>
 <summary>Show the math</summary>
 
-Using $\partial p_j / \partial z_i = p_j(\delta_{ij} - p_i)$ and $\sum_j y_j = 1$:
+Using $\partial p_j / \partial z_i = p_j(\delta_{ij} - p_i)$, where $\delta_{ij}$ is 1 when $i = j$ and 0 otherwise, and $\sum_j y_j = 1$:
 
 $$\frac{\partial L}{\partial z_i} = -\sum_j \frac{y_j}{p_j}\,p_j(\delta_{ij} - p_i) = -y_i + p_i \sum_j y_j = p_i - y_i.$$
 

@@ -83,3 +83,15 @@ If `src/lib/transformer/` does not land: Day 14 writes its own minimal forward +
 5. **Budget:** `PromptLab` and `AgentTrace` both carry the transformer forward; keep it in a shared module so Vite splits it once. Watch the RAGPipeline text layout at 390 px.
 6. **Determinism across browsers:** PromptModel inference must match Node for quoted numbers; use only + − × ÷ and a deterministic `exp` (as Seq2SeqAttention does) or quote rounded values.
 7. **Citations marked VERIFY** in the skeletons must be checked before writing (arXiv ids, LLaVA-1.5 token count, ZeRO 16 bytes/param, NF4 levels, vendor doc URLs).
+
+## 6. Core results (measured; these override the briefs)
+
+Started 2026-10-12 with owner permission. The Day 10 `icl` model is not extended (its numbers are quoted by Day 10 lessons); `prompt-model` is a separate entry in `scripts/train-models.ts`. Defaults taken for §5 open questions: stand-ins and their figure labels as written in §5.1, shipped weights (owner decision 1), LSA, the invented handbook (owner decision 4).
+
+### 6.1 PromptModel
+
+(core agent: training command, config, size, every metric the lessons may quote)
+
+### 6.2 Retrieval and loop core
+
+(core agent: corpus stats, probe-query results, ANN numbers, loop and task-suite results)

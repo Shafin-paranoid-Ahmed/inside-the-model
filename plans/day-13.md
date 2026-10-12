@@ -120,3 +120,44 @@ All widgets use the shared plane domain [-2.2, 2.2]² (moons fit with padding), 
 - **Class colours:** guidance needs "upper / lower moon" colours, and GAN needs real vs generated. There is no categorical token set (BUILDING §7 open question). The plan uses neutral for data, `--viz-forward` for model output, and pos/neg only for signed D(x). Guidance labels borrow `--viz-pos`/`--viz-neg` unless the owner adds categorical tokens.
 - **In-browser training time** across four widgets: each runs once per page in a worker. The AE page trains 3 nets, the VAE page 4. If a run exceeds about 4 s on a mid laptop, cut steps and say so in the plan, not the prose.
 - **GNN:** add a trained mode (node classification) or keep random weights? See checklist item 7.
+
+## 6. Core results (coordinator, 2026-10-11)
+
+- `src/lib/gen/mlp.ts`: deterministic `exp`/`tanh`/`sigmoid`/`log`/`sin`/`cos`/`normal(rng)` (only + − × ÷ and sqrt, so Chrome and Node train bit-identically), `timeFeatures(t, out, o)` (5 features: t, sin/cos πt, sin/cos 2πt; `TIME_FEATURES = 5`), `paramCount`, `initMlp(sizes, rng)`, `createCache(sizes, B)`, `forward(p, sizes, X, B, cache)` (tanh hidden, linear output; returns `cache.acts[L]`), `backward(p, sizes, cache, dY, grad, B?)` (ADDS into grad, writes dLoss/dInput into `cache.dIn`, which GAN and VAE need), `createAdam(n, b1 = 0.9, b2 = 0.999)`, `adam(p, g, st, lr)`. Use `normal(rng)` from here, never `rng.normal()` (Math.log/cos), in anything that feeds training.
+- `src/lib/gen/toy.ts`: `Mixture` now has `upper` (26 for the moons: components 0..25 are the upper moon), `mixture()`, `MOONS`, `DOMAIN = 2.2`, `sampleData(m, n, seed) → { x, k, moon }` (moon 0 upper, 1 lower), `posteriorMean(m, a, b, x, y, out, only?)`, `score(m, a, b, x, y, out, only?)`, `logp(m, a, b, x, y)`, `quality(pts, m) → { onData, upper, lower }` (upper/lower are shares of the on-data points).
+- `DiffusionDenoiser/sim.ts` keeps its VP-parameterised `logp(m, tau, …)`/`score(m, tau, …)` and `sampleData` (adds `u`) as thin wrappers over the core. `GenCommon` deleted.
+- Measured training cost in Node (vitest, this machine), batch 64, forward + backward + Adam: **7→64→64→2 ≈ 2.2 ms/step** (4k steps ≈ 9 s, so the plan's 4k steps is too many: use ≤ 1.8k steps or hidden 48), **2→32→32→1 ≈ 0.55 ms/step**. Size each trainer so its worker finishes in about 4 s.
+- Tests: `tests/unit/gen-core.test.ts` (13).
+
+## 8. Diffusion learned-sampler probe (diffusion agent, 2026-10-12)
+
+`quality().onData` of learned ODE samples from the same fixed noise, 1,800 updates (3.3–3.4 s training each). b² = 1 − ᾱ.
+
+| Loss weighting | Plain sampler | Stop at τ 0.1 (x̂0 step) | 0.05 (x̂0) | 0.02 (x̂0) |
+|---|---|---|---|---|
+| uniform (shipped) | 0.667 | 0.370 (0.655) | 0.558 (0.677) | 0.628 (0.678) |
+| 0.1/(b²+0.05) | 0.672 | | | |
+| 0.3/(b²+0.2) | 0.720 | | | 0.715 (0.725) |
+| (b²+0.01)^-½, capped | 0.693 | | | |
+
+Training longer helps (4k steps 0.67, 8k steps 0.77) but breaks the ~4 s budget. The shortfall is mid-τ routing (x̂0 at τ 0.1 is already only 65% on a moon), not the last small-τ steps. Kept: uniform loss, 0.667.
+
+## 7. GAN probe results
+
+Trainer: `GANDuel/sim.ts` `trainGAN`. G 2-32-32-2, D 2-32-32-1 (sigmoid), batch 64, Adam beta1 0.5, D step then non-saturating G step, G output layer scaled by 0.1 at init (`gInit`; without it the random G already overlapped the moons at step 0 with 53% on-data, which hid the story). 1500 steps, checkpoint every 25 (61 snaps), about 3 s per run in Node. `onData` = `quality()` on 300 fixed noise points. Seeds are the `createRng` seed for init, batches and noise.
+
+Findings while probing (2000 steps, before `gInit`): equal rates (0.0005 to 0.002) give a noisy generator that hovers at 20-70% on data with D at chance. A fast detective and slow forger is what converges: lrD 0.005, lrG 0.0003 reached 86-90% on data with both moons about 50/50 on seeds 1 and 2 (also 0.003/0.0003 at 75%, 0.012/0.0012 at 92%). Instability appears as lrG rises toward lrD (0.003-0.004 vs 0.005). On the two moons I found no honest collapse: lrG 0.005-0.01 with beta1 0.9 and lrD 0.0003 only throws the cloud off the data (onData near 0, shares 0/1 are noise), never a settled one-moon cloud. Per owner decision 4 the collapse step uses a ring of 8 Gaussians (radius 1.6, sigma 0.07, `RING`, labelled in the figure).
+
+Final runs (`RUN_CFG`, all seed 1, gInit 0.1; stats read at the last checkpoint unless stated; D(real)/D(fake) = mean D output):
+
+| run | lrD | lrG | data | result |
+|---|---|---|---|---|
+| stable | 0.005 | 0.0003 | moons | onData 0 -> 0.817; upper/lower 0.465/0.535; D(real) 0.578, D(fake) 0.477; D accuracy 0.598; second half (steps 750-1500) onData 0.640-0.817 (mean 0.752); losses (25-step means) D 1.278/G 0.885 at step 25, D 1.092/G 1.229 at step 100, D 1.264/G 0.838 averaged over steps 500-1500 |
+| unstable | 0.005 | 0.004 | moons | second half onData 0.130-0.730 (mean 0.464); ends 0.353; losses D 1.389, G 0.704 (steps 500+), i.e. no warning in the loss |
+| collapse | 0.005 | 0.0003 | ring of 8 | onData 0.643; shares of generated points by mode 1..8: 16 0 17 1 15 0 15 0 %, off 36%; D accuracy 0.765, losses D 0.867/G 1.597 (last 25 steps) |
+| ringOk | 0.003 | 0.003 | ring of 8 | onData 0.890; shares 14 12 9 9 13 14 13 6 %, off 11% |
+| disc (G frozen) | 0.005 | none | moons, 600 steps | D accuracy 0.483 at step 0, 1.000 by step 300; D(real) 0.999, D(fake) 0.001 at end |
+
+Other ring runs at rates 0.005/0.0003 (seeds 1-5, no gInit) also ended on exactly 4 of 8 modes, so the collapse is not a seed fluke. Ring seeds are otherwise erratic (0.001/0.001 left several seeds at 4-6 modes), which is why ringOk uses 0.003/0.003 (8 modes on seeds 1 and 2).
+
+Other numbers quoted in the prose: noise grid 15x15 on [-2, 2]^2 through the stable G: 192/225 = 85% on a moon (`quality` gives 86% on a slightly different grid test earlier; the widget count is the quoted one). Gradient step (stable run, checkpoint 8 = step 200, first 60 generated points, move scaled so the mean move is 0.25): mean D 0.459 -> 0.574, mean |grad log D| 0.826 -> 0.436, 19 of the 26 points more than 3 sigma off the moons are pushed toward their nearest centre, on-data share 0.567 -> 0.617. The direction claim is noisy: at neighbouring checkpoints the fraction was 50-75%, and checkpoint 8 was picked for the clearest effect.

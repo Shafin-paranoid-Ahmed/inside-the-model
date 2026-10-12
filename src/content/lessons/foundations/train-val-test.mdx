@@ -24,9 +24,15 @@ The fix is simple: never grade the model on data it trained on. Set some data as
 
 <Step title="Training error is optimistic">
 
-Once the dots have settled, the model starts training. It is a degree-13 polynomial fitted by gradient descent (the [previous lesson's](/learn/foundations/overfitting-bias-variance/) flexible model), and the horizontal axis counts training steps. The teal curve is the loss on the training bin, and for now it is the only curve. It only ever goes down: gradient descent is built to make exactly this number smaller.
+Once the dots have settled, the model starts training. The three pieces are familiar:
 
-By the end, the training loss is about 0.14. The data was generated with noise that no model can explain, and that sets a **noise floor** of 0.25 (the dotted line, the average squared noise). A training loss well *below* the floor is not skill, it is the model fitting noise it has seen. The training loss is therefore an optimistic report card.
+- **Model:** a degree-13 polynomial, the [previous lesson's](/learn/foundations/overfitting-bias-variance/) flexible kind of curve.
+- **Loss:** mean squared error, as in linear regression: the average of (prediction minus observed $y$)² over a set of points.
+- **Procedure:** gradient descent, as in the [gradient descent lesson](/learn/foundations/gradient-descent/). (The previous lesson used the least-squares shortcut instead. Here we take gradient steps so we can watch the model change over time.)
+
+Each update uses every training point at once, so one update is also one full pass through the training set, called an **epoch**. The horizontal axis counts epochs, up to 1,000. The teal curve is the MSE on the training bin, and for now it is the only curve. It only ever goes down: gradient descent is built to make exactly this number smaller.
+
+By the end, the training loss is about 0.14. The data was generated with random noise of standard deviation $0.5$ added to every label, which no model can predict. On average that noise alone adds $0.5^2 = 0.25$ to the MSE, so $0.25$ is the **noise floor** (the dotted line). This dataset is noisier than the previous lesson's, whose floor was $0.25^2 = 0.0625$. A training loss well *below* the floor is not skill, it is the model fitting noise it has seen. The training loss is therefore an optimistic report card.
 
 <DataSplitter client:visible lockSplit show="train" startAt={2.5} title="Training loss keeps falling, even below the noise floor" />
 
@@ -36,7 +42,7 @@ By the end, the training loss is about 0.14. The data was generated with noise t
 
 The indigo curve, new in this figure, is the loss on the **validation set**: examples the model never trains on, used to measure progress and to choose settings. It first falls along with the training loss, because the model really is learning the pattern. Then it turns upward while the training loss keeps falling. The model has started memorizing the training points' noise, which does not carry over to new points.
 
-Everything you can tune, the number of training steps, the model size, the learning rate, the strength of regularization, is called a **hyperparameter**, and you choose it by watching validation loss. Here the choice is how long to train. **Early stopping** means keeping the model from the step where validation loss is lowest. Watch the timeline pass the dashed marker: for the default split that is around epoch 18, with a validation loss near 0.42, while by the end it has climbed to about 0.53.
+Everything you can tune, the number of training steps, the model size, the learning rate, the strength of regularization, is called a **hyperparameter**, and you choose it by watching validation loss. Here the choice is how long to train. **Early stopping** means keeping the model from the step where validation loss is lowest. Watch the timeline pass the dashed marker: for the default split (40 training, 20 validation and 40 test points) that is epoch 18, with a validation MSE of 0.42, while by epoch 1,000 it has climbed to about 0.53.
 
 <DataSplitter client:visible lockSplit show="val" startAt={2.5} title="Validation loss bottoms out: the early-stopping point" />
 

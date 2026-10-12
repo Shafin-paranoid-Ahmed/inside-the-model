@@ -16,7 +16,9 @@ import BoundaryExplorer from '../../../components/widgets/BoundaryExplorer/Bound
 
 A classifier looks at a point and answers with a class. If you feed it every point on a plane, the plane splits into regions: here it says "blue", there it says "orange". The curve between the regions is the **decision boundary**, the place where the answer flips.
 
-In the figure, each point has two measurements, its $x$ and $y$ coordinates. Blue circles are class 1 and orange diamonds are class 0. The background colour is the classifier's belief: the bluer it is, the more sure the model is that a point there belongs to class 1. The black line is where the belief is exactly one half. Watch it swing into place as training runs.
+In [logistic regression](/learn/foundations/logistic-regression/) each example had one input, $x$, and the observed answer was $y$. Here each example has **two** inputs, so we call them $x_1$ and $x_2$: the horizontal and vertical position of a dot. (We do not call the vertical position $y$, because $y$ already means the observed answer.) The answer is now a class, written $c$: blue circles are class 1 ($c = 1$) and orange diamonds are class 0 ($c = 0$). There are 60 dots, 30 of each class.
+
+The background colour is the classifier's belief: the bluer it is, the more sure the model is that a point there belongs to class 1. The black line is where the belief is exactly one half. Watch it swing into place as training runs.
 
 <BoundaryExplorer client:visible title="Training a classifier: the boundary finds its place" editable={false} />
 
@@ -24,18 +26,51 @@ In the figure, each point has two measurements, its $x$ and $y$ coordinates. Blu
 
 <Step title="From score to probability to boundary">
 
-The model in the figure is the one from [logistic regression](/learn/foundations/logistic-regression/). It computes a **score** from the coordinates, then turns the score into a probability with the sigmoid:
+The model is logistic regression with one extra weight. It has three parameters: a bias $b$ and one weight per input, $w_1$ and $w_2$. It computes a **score** $z$, then turns the score into a probability with the sigmoid $\sigma$, exactly as before:
 
-$$z = b + w_1 x + w_2 y, \qquad P(\text{class 1}) = \sigma(z) = \frac{1}{1 + e^{-z}}.$$
+$$z = b + w_1 x_1 + w_2 x_2, \qquad P(\text{class 1}) = \sigma(z) = \frac{1}{1 + e^{-z}}.$$
 
-The sigmoid equals one half exactly when $z = 0$. So the decision boundary is the set of points where the score is zero. That is a single equation, $b + w_1 x + w_2 y = 0$, and it describes a straight line.
+**One worked point.** After training, the weights are about $b = -0.087$, $w_1 = 4.83$, $w_2 = 4.37$. Take the blue dot at $x_1 = 0.862$, $x_2 = 0.592$:
 
-This figure draws the score itself. The thin lines join points with the same score, $z = -2, -1, +1, +2$, and the thick line is $z = 0$. They are parallel and evenly spaced because $z$ is linear: every equal step away from the line adds the same amount to $z$. The chart on the right shows the loss, the number training pushes down. It starts at $\ln 2 \approx 0.693$: with all weights at zero every point gets probability one half, and the loss is the same whatever the labels are. Drag the timeline back and forth to see the line and the loss move together.
+- $w_1 x_1 = 4.83 \times 0.862 = 4.163$
+- $w_2 x_2 = 4.37 \times 0.592 = 2.587$
+- $z = -0.087 + 4.163 + 2.587 = 6.663$, so about $6.66$
+- $e^{-6.66} \approx 0.00128$, so $P = 1 / (1 + 0.00128) \approx 0.9987$: 99.87% sure it is blue. Correct.
+
+An orange dot at $x_1 = -0.674$, $x_2 = -0.535$ gives $z = -0.087 + 4.83 \times (-0.674) + 4.37 \times (-0.535) = -0.087 - 3.255 - 2.338 = -5.68$. Then $e^{5.68} \approx 293$ and $P = 1 / (1 + 293) \approx 0.0034$: 0.34% blue, so 99.66% orange. Also correct. (These use rounded weights; the figure's full-precision values differ only in the last digit.)
+
+**Where the boundary comes from.** The sigmoid equals one half exactly when $z = 0$: then $e^{-0} = 1$ and $P = 1 / (1 + 1) = 0.5$. So the decision boundary is the set of points where the score is zero, $b + w_1 x_1 + w_2 x_2 = 0$. That is one equation in two unknowns, and it describes a straight line. With the trained weights it is $-0.087 + 4.83\,x_1 + 4.37\,x_2 = 0$, or $x_2 = (0.087 - 4.83\,x_1) / 4.37$. For example, at $x_1 = 0$ the line is at $x_2 = 0.087 / 4.37 \approx 0.020$.
+
+The next figure draws the score itself. The thin lines join points with the same score, $z = -2, -1, +1, +2$, and the thick line is $z = 0$. They are parallel and evenly spaced because $z$ is linear: every equal step away from the line adds the same amount to $z$.
+
+</Step>
+
+<Step title="Training: the same procedure, one more weight">
+
+The chart on the right of the figure is the **loss**, the number training pushes down. It is the log-loss from logistic regression, averaged over all 60 dots. The **procedure** is unchanged too: gradient descent, with learning rate $0.8$, for 200 updates. Only the model gained a weight.
+
+**The first update, in full.** All three parameters start at zero, so every dot has $z = 0$ and $P = 0.5$. Each dot's loss is $-\ln 0.5 = \ln 2 \approx 0.693$, so the average starts at $0.693$, whatever the labels are.
+
+For log-loss the gradient for each parameter is the average of (probability minus label) times that parameter's input, the same rule as in logistic regression:
+
+- For $w_1$: the 60 values of $(P - c) \times x_1$ add up to $-16.134$. Divide by 60: $-0.2689$.
+- For $w_2$: the 60 values of $(P - c) \times x_2$ add up to $-13.564$. Divide by 60: $-0.2261$.
+- For $b$: its input is always 1, so add up $(P - c)$ itself. That is $+0.5$ for each of the 30 orange dots and $-0.5$ for each of the 30 blue dots, so the sum is $0$.
+
+Then each parameter steps against its gradient:
+
+- $w_1 = 0 - 0.8 \times (-0.2689) = 0.2151$
+- $w_2 = 0 - 0.8 \times (-0.2261) = 0.1809$
+- $b = 0 - 0.8 \times 0 = 0$
+
+Recomputing all 60 probabilities with these weights gives an average loss of $0.600$, down from $0.693$. Repeat 200 times and the loss reaches $0.042$, with all 60 dots on the correct side. Drag the timeline back and forth to see the line and the loss move together.
+
+<BoundaryExplorer client:visible title="The line is the set of points where the score is zero" editable={false} scores />
 
 <details>
 <summary>Show the math</summary>
 
-$\sigma(z) = \tfrac12$ means $1 + e^{-z} = 2$, so $e^{-z} = 1$ and $z = 0$. In two dimensions $b + w_1 x + w_2 y = 0$ is a line with normal vector $(w_1, w_2)$. In $d$ dimensions the same equation is a flat hyperplane. The loss is the mean cross-entropy $-\tfrac1n\sum_i \big[c_i \ln p_i + (1-c_i)\ln(1-p_i)\big]$.
+The loss is the mean log-loss $L = -\tfrac1n\sum_i \big[c_i \ln P_i + (1-c_i)\ln(1-P_i)\big]$ with $n = 60$. Its gradients are $\partial L/\partial w_1 = \tfrac1n \sum_i (P_i - c_i)\,x_{1,i}$, $\partial L/\partial w_2 = \tfrac1n \sum_i (P_i - c_i)\,x_{2,i}$ and $\partial L/\partial b = \tfrac1n \sum_i (P_i - c_i)$. In $d$ dimensions the boundary $b + w_1 x_1 + \dots + w_d x_d = 0$ is a flat hyperplane.
 
 </details>
 
@@ -46,25 +81,29 @@ $\sigma(z) = \tfrac12$ means $1 + e^{-z} = 2$, so $e^{-z} = 1$ and $z = 0$. In t
 import numpy as np
 
 def train(X, c, steps=200, lr=0.8):
-    Xb = np.c_[np.ones(len(X)), X]           # bias column, then features
-    w = np.zeros(Xb.shape[1])
+    Xb = np.c_[np.ones(len(X)), X]           # a column of 1s for b, then x1, x2
+    w = np.zeros(Xb.shape[1])                # [b, w1, w2], all start at 0
     for _ in range(steps):
-        p = 1 / (1 + np.exp(-Xb @ w))        # probability of class 1
-        w -= lr * Xb.T @ (p - c) / len(X)    # gradient of mean cross-entropy
+        p = 1 / (1 + np.exp(-Xb @ w))        # probability of class 1 for every dot
+        w -= lr * Xb.T @ (p - c) / len(X)    # average of (p - c) times each input
     return w                                 # boundary: Xb @ w == 0
 ```
 
 </details>
 
-<BoundaryExplorer client:visible title="The line is the set of points where the score is zero" editable={false} scores />
-
 </Step>
 
 <Step title="Weights move the boundary, confidence is distance">
 
-Changing the weights moves the line. The bias $b$ slides it without turning it, and the ratio $w_1 : w_2$ sets its direction. Training is a search for the weights that put the line between the two groups.
+Changing the weights moves the line. The bias $b$ slides it without turning it, and the ratio $w_1 : w_2$ sets its direction.
 
-Hover over the plane. The readout shows the probability at that spot and, for a line, the **distance to the boundary**. The two are tied together. The score $z$ is the distance times the length of the weight vector, so points far from the line get scores far from zero, and the sigmoid turns those into probabilities near 0 or 1. Points close to the line get probabilities near one half. That is why the dashed contours, at 12% and 88%, run parallel to the boundary on each side: confidence is just distance from the line.
+Hover over the plane. The readout shows the probability at that spot and the **distance to the boundary**. The two are tied together by one number, the length of the weight vector, written $\lVert w \rVert = \sqrt{w_1^2 + w_2^2}$. The score is that length times the signed distance (positive on the blue side, negative on the orange side):
+
+$$z = \lVert w \rVert \times \text{distance}.$$
+
+For the trained weights, $\lVert w \rVert = \sqrt{4.83^2 + 4.37^2} = \sqrt{23.33 + 19.10} = \sqrt{42.43} \approx 6.51$. The orange dot from before had $z = -5.68$, so its signed distance is $-5.68 / 6.51 \approx -0.87$: 0.87 units from the line, on the orange side. Far from the line means a score far from zero, and the sigmoid turns that into a probability near 0 or 1.
+
+The dashed contours are where the score is $+2$ and $-2$. At $z = 2$: $e^{-2} \approx 0.135$, so $P = 1 / 1.135 \approx 0.88$. At $z = -2$: $e^{2} \approx 7.39$, so $P = 1 / 8.39 \approx 0.12$. That is why they mark 88% and 12%, and why they run parallel to the boundary, $2 / 6.51 \approx 0.31$ units away on each side. Confidence is just distance from the line.
 
 Now click on the plane to add a point, choosing its class in the menu. Put an orange diamond deep in the blue region and see the line lurch to accommodate it, and the loss jump up.
 
@@ -73,7 +112,7 @@ Now click on the plane to add a point, choosing its class in the menu. Put an or
 <details>
 <summary>Show the math</summary>
 
-The distance from $(x, y)$ to the line $b + w_1 x + w_2 y = 0$ is $z / \lVert w \rVert$ with $\lVert w \rVert = \sqrt{w_1^2 + w_2^2}$. Then $P = \sigma(\lVert w \rVert \cdot \text{distance})$. Scaling the weights up makes the same boundary more confident, sharpening the transition from blue to orange without moving the line.
+The signed distance from $(x_1, x_2)$ to the line $b + w_1 x_1 + w_2 x_2 = 0$ is $z / \lVert w \rVert$. Then $P = \sigma(\lVert w \rVert \cdot \text{distance})$. Scaling all of $b$, $w_1$, $w_2$ up by the same factor makes the same boundary more confident, sharpening the transition from blue to orange without moving the line.
 
 </details>
 
@@ -81,21 +120,25 @@ The distance from $(x, y)$ to the line $b + w_1 x + w_2 y = 0$ is $z / \lVert w 
 
 <Step title="When a line is not enough">
 
-The figure below uses the XOR data. The classes sit in opposite corners: class 1 is upper right and lower left, class 0 is the other two. Try to place a line so that blue is on one side and orange on the other. You cannot: any line leaves about half the points on the wrong side. Points on the wrong side get a heavy black outline.
+The figure below uses the XOR data. The classes sit in opposite corners: class 1 is upper right and lower left, class 0 is the other two. Try to place a line so that blue is on one side and orange on the other. You cannot: any line that gets one blue corner right puts the other blue corner on the wrong side. Points on the wrong side get a heavy black outline.
 
-The model is not badly trained. It is too simple. A line is the only boundary shape it can draw, so training just finds the least bad line and the loss stalls near $\ln 2$. Nothing in more training time can fix that.
+The model is not badly trained. It is too simple. A line is the only boundary shape it can draw, so training finds the least bad line and stops improving. Here the corners hold unequal numbers of dots, and the best line gives up on the emptiest one: all 8 dots in the upper right land on the wrong side, plus 6 elsewhere. That is 14 of the 60 dots wrong (77% correct) and a loss of $0.651$, barely below the $0.693$ of knowing nothing. More training cannot fix that.
 
-<BoundaryExplorer client:visible dataset="xor" model="linear" title="XOR with a straight boundary: stuck near 50%" />
+<BoundaryExplorer client:visible dataset="xor" model="linear" title="XOR with a straight boundary: stuck short of a clean split" />
 
 </Step>
 
 <Step title="Bend the boundary by adding features">
 
-The fix is to give the model more to work with. Instead of only $x$ and $y$, feed it the extra features $x^2$, $xy$ and $y^2$. The score becomes
+The fix is to give the model more to work with. Instead of only $x_1$ and $x_2$, also feed it three new inputs computed from them: $x_1^2$, $x_1 x_2$ and $x_2^2$. Each new input gets its own weight, so there are now six parameters:
 
-$$z = b + w_1 x + w_2 y + w_3 x^2 + w_4 xy + w_5 y^2.$$
+$$z = b + w_1 x_1 + w_2 x_2 + w_3 x_1^2 + w_4 x_1 x_2 + w_5 x_2^2.$$
 
-It is still a logistic regression, still linear in the weights, and it is trained exactly the same way. But the set $z = 0$ is now a conic section: an ellipse, a hyperbola, a pair of lines. For XOR the useful feature is $xy$, which is positive in exactly the two blue corners and negative in the two orange ones. Watch the weight on $xy$ take over.
+It is still a logistic regression: the score is still "each input times its weight, added up", the loss is still log-loss, and the gradient-descent procedure is the same. But the set $z = 0$ is now a curve: an ellipse, a hyperbola or a pair of lines.
+
+For XOR the useful input is the product $x_1 x_2$. It is positive when $x_1$ and $x_2$ have the same sign (the two blue corners) and negative when they differ (the two orange corners). Watch its weight take over. After training, $w_4 \approx 6.94$, far larger than the others ($b = -0.14$, $w_1 = -1.02$, $w_2 = -0.62$, $w_3 = -0.07$, $w_5 = 0.44$).
+
+**Two worked corners.** At the blue corner $x_1 = 0.7$, $x_2 = 0.7$, the product is $0.49$, so the $x_1 x_2$ term adds $6.94 \times 0.49 = +3.40$. All the other terms together add $-1.11$. So $z = 3.40 - 1.11 = 2.29$, and $P = 1 / (1 + e^{-2.29}) = 1 / 1.10 \approx 0.91$. At the orange corner $x_1 = 0.7$, $x_2 = -0.7$, the product is $-0.49$, so that term adds $-3.40$. The rest add $-0.24$, so $z = -3.64$ and $P = 1 / (1 + e^{3.64}) = 1 / 39.1 \approx 0.03$. The one product input flips the sign of the score between the corners, and all 60 dots end up on the correct side.
 
 <BoundaryExplorer client:visible dataset="xor" model="poly" title="XOR with squared and product features: the boundary bends" />
 
@@ -104,8 +147,8 @@ It is still a logistic regression, still linear in the weights, and it is traine
 
 ```python
 def poly_features(X):
-    x, y = X[:, 0], X[:, 1]
-    return np.c_[x, y, x**2, x * y, y**2]     # then train() as before
+    x1, x2 = X[:, 0], X[:, 1]
+    return np.c_[x1, x2, x1**2, x1 * x2, x2**2]   # then train() as before
 
 w = train(poly_features(X), c)
 ```
@@ -116,7 +159,9 @@ w = train(poly_features(X), c)
 
 <Step title="A closed boundary">
 
-The rings dataset has class 0 in a disc at the centre and class 1 on a circle around it. No line separates these, and no single curve of the form "one side is blue" is a line at all: the boundary must be a closed loop. With the $x^2$ and $y^2$ features it can be. A circle centred at the origin is $x^2 + y^2 = r^2$, which is a score $z = w_3 x^2 + w_5 y^2 + b$ with $w_3 = w_5 > 0$ and $b = -w_3 r^2$.
+The rings dataset has class 0 in a disc at the centre (about 0.38 from the middle) and class 1 on a circle around it (about 1.05 from the middle). No line separates these: the boundary must be a closed loop. With the squared inputs it can be. A circle of radius $r$ centred at the origin is $x_1^2 + x_2^2 = r^2$, which is the score $z = b + w_3 x_1^2 + w_5 x_2^2$ with $w_3 = w_5 > 0$ and $b = -w_3 r^2$.
+
+Training finds nearly that: $b \approx -3.26$, $w_3 \approx 4.99$, $w_5 \approx 5.84$, and small values for the other weights. At the centre every input is 0, so $z = b = -3.26$ and $P = 1 / (1 + e^{3.26}) \approx 0.04$: orange. On the $x_1$ axis, ignoring the small weights, the boundary is where $4.99\,x_1^2 = 3.26$, so $x_1 = \sqrt{3.26 / 4.99} \approx 0.81$. On the $x_2$ axis it is at $\sqrt{3.26 / 5.84} \approx 0.75$. That is a slightly squashed loop, sitting between the inner disc and the outer ring.
 
 Use the **Features** menu to switch between the two models, and the **Data** menu to try all three datasets. Notice the trade: more features can draw more shapes, and in real models that same freedom is what lets a network memorise noise. You will meet that in [overfitting](/learn/foundations/overfitting-bias-variance/).
 
@@ -129,7 +174,7 @@ Use the **Features** menu to switch between the two models, and the **Data** men
 <Step title="Common misconceptions">
 
 - **You might think** a classifier stores the boundary as a line to be drawn. **Actually** it stores weights. The boundary is the set of points where a score crosses zero, and it exists only because we ask where the answer flips.
-- **You might think** training longer will eventually fit any data. **Actually** the model can only draw boundaries of the shape its features allow. A line on XOR never gets past chance, however long it trains.
+- **You might think** training longer will eventually fit any data. **Actually** the model can only draw boundaries of the shape its features allow. On XOR the best line still gets 14 of the 60 dots wrong, however long it trains.
 - **You might think** a probability of 0.9 means the model is right 90% of the time. **Actually** it says the point is far from the boundary. Whether 0.9 is honest is a separate question, called calibration.
 - **You might think** more features are always better. **Actually** they give the boundary freedom to wiggle around individual points, including noisy ones.
 
@@ -147,14 +192,14 @@ One half, since $\sigma(0) = 0.5$. The point lies exactly on the decision bounda
 <details>
 <summary>A logistic model has $b = -1$, $w_1 = 2$, $w_2 = 0$. Where is the boundary?</summary>
 
-Solve $-1 + 2x = 0$, so $x = 0.5$: a vertical line. Points to the right of it are class 1.
+The score is $z = -1 + 2x_1 + 0 \times x_2 = -1 + 2x_1$. Solve $-1 + 2x_1 = 0$, so $x_1 = 0.5$: a vertical line, whatever $x_2$ is. Points to the right of it have $z > 0$, so they are class 1.
 
 </details>
 
 <details>
 <summary>You double every weight and the bias. What happens to the boundary and to the confidence?</summary>
 
-The boundary is unchanged because $z = 0$ is the same equation. The confidence rises, because every score doubles and the sigmoid saturates faster.
+The boundary is unchanged: if $b + w_1 x_1 + w_2 x_2 = 0$ then $2b + 2w_1 x_1 + 2w_2 x_2 = 0$ too. The confidence rises, because every score doubles. A point with $z = 2$ (88%) now has $z = 4$, and $1 / (1 + e^{-4}) \approx 0.98$.
 
 </details>
 
@@ -168,7 +213,7 @@ Its boundary is a line, and no line puts the two blue corners on one side and th
 <details>
 <summary>Which single extra feature makes XOR easy?</summary>
 
-The product $xy$: it is positive when $x$ and $y$ share a sign and negative otherwise.
+The product $x_1 x_2$: it is positive when $x_1$ and $x_2$ share a sign (the blue corners) and negative otherwise (the orange corners).
 
 </details>
 

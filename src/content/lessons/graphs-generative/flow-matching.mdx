@@ -7,147 +7,195 @@ order: 6
 level: advanced
 duration: 30
 prereqs: ["graphs-generative/diffusion"]
-status: stub
+status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
+import FlowField from '../../../components/widgets/FlowField/FlowField.svelte';
 
 A cleaner cousin of diffusion: learn the direction each point should move.
 
-{/* SKELETON (Day 13 plan: plans/day-13.md). Widget: FlowField (to build). Same two-moons data
-    (src/lib/gen/toy.ts). Linear path x_t = (1 - t) x_0 + t x_1 with x_0 noise and x_1 data (time runs
-    noise to data, the opposite of the diffusion lesson's tau: say so once). Learned velocity MLP
-    (input x, y and time features) trained in a worker; the exact marginal velocity of the moons
-    mixture is closed form (src/lib/gen/toy.ts posteriorMean) and is used for the "marginal" step and
-    as a check. Euler integration for sampling. Numbers from FlowField/sim.ts probes only. */}
-
 <Step title="Noise that flows into data">
-Flow matching generates data by letting points of random noise drift along a learned velocity field until they land on the data.
 
-{/* IDEA: generation as transport: a velocity field v(x, t) moves every point; integrate from t = 0 (noise)
-    to t = 1 (data).
-    WIDGET: FlowField mode="flow" (learned field, 64 Euler steps).
-    OVER t: 600 particles move with short trails; faint arrows show the field at the current time.
-    LOOK: the paths are nearly straight lines, unlike the curved diffusion paths.
-    QUOTE: on-data fraction and moon shares at the end (quality()). */}
+Flow matching generates data by letting points of random noise drift along a **velocity field**: at every place and every moment, an arrow says which way and how fast to move. Follow the arrows long enough and the noise lands on the data.
+
+The figure runs this on the same 600 two-moons points as the rest of the day. Time $t$ runs from $0$ (pure noise) to $1$ (data). This is the opposite direction from the noise level $\tau$ of the [diffusion lesson](/learn/graphs-generative/diffusion/), where $\tau = 1$ was noise. The pink arrows are the field, learned by a small network trained in your browser, and it changes as time passes. Colour shows which moon a point ends on. After 64 small steps, $68\%$ of the points are on a moon, split $50\%$ and $50\%$. That is about what the diffusion lesson's trained network managed ($67\%$), with the same network size and the same 1,800 updates.
+
+<FlowField client:visible mode="flow" title="Noise flows into data along a learned field" />
+
 </Step>
 
 <Step title="Probability paths from noise to data">
-Pair each noise point with a data point and slide it along the straight line between them: that defines a path for the whole cloud.
 
-{/* IDEA: conditional path x_t = (1 - t) x_0 + t x_1; its velocity is constant, x_1 - x_0. At each t the
-    cloud of all such points is a distribution p_t, blending noise into data.
-    WIDGET: FlowField mode="pairs" (40 random noise-data pairs drawn as lines, plus the full cloud faint).
-    OVER t: points slide along their lines from noise to data; loop.
-    LOOK: lines cross each other, so two paths can pass through the same spot heading different ways.
-    QUOTE: none beyond the path formula; name the pair count.
-    SHOW THE MATH: the path and its time derivative. */}
+How do you train a field when you only have data and noise, and no example of anything moving? Invent the movement. Pair each noise point $\mathbf x_0$ with a data point $\mathbf x_1$ at random, and join them by a straight line, walked at constant speed:
+
+$$
+\mathbf x_t = (1-t)\,\mathbf x_0 + t\,\mathbf x_1, \qquad \frac{d\mathbf x_t}{dt} = \mathbf x_1 - \mathbf x_0 .
+$$
+
+At each time $t$, the cloud of all these points is a blend of noise and data: pure noise at $t = 0$, the moons at $t = 1$.
+
+The figure shows 40 of the 600 pairs as lines, with the full cloud in grey. Look at the highlighted pair, pair 1, and read its numbers off the caption: it starts at $(-1.05, -1.09)$, ends at $(0.76, -0.48)$, and moves with velocity $(1.80, 0.61)$ the whole way. At $t = 0.5$ it is at $(-0.14, -0.79)$. Notice that the lines cross: two different pairs can be at the same spot at the same time, heading in different directions.
+
+<FlowField client:visible mode="pairs" title="Forty straight paths, one pairing each" />
+
+<details>
+<summary>Show the math</summary>
+
+The velocity of a single pair does not depend on $t$: differentiating $\mathbf x_t = (1-t)\mathbf x_0 + t\mathbf x_1$ gives the constant $\mathbf x_1 - \mathbf x_0$. Compare with diffusion, where the same two ends are mixed as $\mathbf x_\tau = \sqrt{\bar\alpha_\tau}\,\mathbf x_{\text{data}} + \sqrt{1-\bar\alpha_\tau}\,\boldsymbol\varepsilon$: the weights follow a curve instead of a straight line in $t$.
+
+</details>
+
 </Step>
 
 <Step title="One velocity per place and time">
-A network can only give one velocity at each place and time, so where paths cross it learns their average direction.
 
-{/* IDEA: the marginal velocity v*(x, t) = E[x_1 - x_0 given x_t = x]. Following it moves the cloud through
-    exactly the same p_t as the crossing straight lines, but the individual paths no longer cross; they
-    curve.
-    WIDGET: FlowField mode="marginal" (exact field from the closed form, conditional lines faint behind).
-    OVER t: path time t sweeps 0 to 1; the arrow field and a few particles following it.
-    LOOK: at a crossing, compare the two conditional directions with the single arrow drawn there.
-    QUOTE: at one fixed spot and t, the two conditional velocities and the marginal arrow (from probe).
-    SHOW THE MATH: v* as a posterior mean; why matching p_t needs no pairing. */}
+A network gives exactly one arrow at each place and time, but the crossing lines want several. So the best field is the **average** of the velocities of all paths passing through that place at that time. This is the marginal velocity:
+
+$$
+v^*(\mathbf x, t) = \mathbb E\big[\,\mathbf x_1 - \mathbf x_0 \;\big|\; \mathbf x_t = \mathbf x\,\big].
+$$
+
+Moving the cloud with this field produces exactly the same blend of noise and data at every time as the crossing lines do, without anyone having to say which noise point goes to which data point. Only the individual paths change: they no longer cross, they bend.
+
+The figure uses the exact field of the moons, which can be written down. Watch the playback pause at $t = 0.5$ on the spot $(0.5, 0)$. The 24 grey arrows are the velocities of 24 paths passing through it, drawn from their data points. Their typical speed is $1.82$, but they point every which way. The black arrow is the field there, the average: it points to $(0.29, -0.35)$, a speed of only $0.46$. Opposing directions cancel, which is why the paths bend toward the moons instead of running straight.
+
+<FlowField client:visible mode="marginal" title="The field is the average of the paths through each spot" />
+
+<details>
+<summary>Show the math</summary>
+
+The conditional velocity $\mathbf x_1 - \mathbf x_0$ at the point $\mathbf x_t$ equals $(\mathbf x_1 - \mathbf x_t)/(1-t)$. Averaging over the data points that could have produced $\mathbf x_t$ gives $v^*(\mathbf x, t) = (\mathbb E[\mathbf x_1 \mid \mathbf x_t = \mathbf x] - \mathbf x)/(1-t)$: the field points from where you are toward the best current guess of the clean data point.
+
+</details>
+
 </Step>
 
 <Step title="Regressing the velocity field">
-Training is plain regression: show the network a point on a random path and ask it for that path's velocity.
 
-{/* IDEA: conditional flow matching loss: squared error between v_theta(x_t, t) and x_1 - x_0. Its minimiser
-    is the marginal field of the previous step, even though each target is one random pairing. The loss
-    therefore never reaches zero.
-    WIDGET: FlowField mode="train".
-    OVER t: scrubs training snapshots; the learned arrows at t = 0.5 line up with the exact arrows drawn
-    faintly; a log-scale loss curve with a dashed floor (the irreducible part, computed from the exact
-    field) and matching cursor.
-    LOOK: the loss levelling off at the floor, not at zero.
-    QUOTE: start loss, end loss, the floor value.
-    SHOW THE MATH: the CFM loss and the statement that its gradient equals the marginal loss gradient.
-    SHOW THE CODE: an 8-line PyTorch training step (compare with the DDPM one). */}
+Training is plain regression. Pick a data point, a noise point and a time, build the point on their line, and ask the network for the velocity of that line. The target is the line's own velocity $\mathbf x_1 - \mathbf x_0$, even though the network will see many other lines through the same spot. Averaging over those is exactly what squared error does, so the network ends up at the marginal field of the previous step.
+
+This also explains the loss. Each target is one random pairing, so even the exact field cannot match it. The dashed line is the loss of the exact field: $1.20$, a floor the network cannot go below. The network starts at $1.50$ and ends at $1.30$. Scrub through the snapshots. The grey arrows are the exact field at $t = 0.5$, the pink arrows are the network's. Untrained, they are $101^\circ$ apart on average. After 1,800 updates the gap is $25^\circ$ at $t = 0.5$, and $29^\circ$ at $t = 0.9$, close to the data, where the field changes fastest.
+
+<FlowField client:visible mode="train" title="The network's arrows against the exact ones, as it trains" />
+
+<details>
+<summary>Show the math</summary>
+
+$$
+L = \mathbb E_{t,\ \mathbf x_0,\ \mathbf x_1}\ \big\|\mathbf x_1 - \mathbf x_0 - v_\theta(\mathbf x_t,\ t)\big\|^2, \qquad \mathbf x_t = (1-t)\mathbf x_0 + t\mathbf x_1 .
+$$
+
+Its gradient with respect to $\theta$ is the same as that of the loss against the marginal field $v^*$, so training on single pairs is training toward the average (Lipman et al., 2023). The two losses differ only by a constant, the floor.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def train_step(model, x1, opt):
+    t = torch.rand(x1.shape[0], 1)                  # a random time per example
+    x0 = torch.randn_like(x1)                       # noise to start from
+    xt = (1 - t) * x0 + t * x1                      # the point on the straight line
+    loss = ((model(xt, t) - (x1 - x0)) ** 2).mean() # regress onto the line's velocity
+    opt.zero_grad(); loss.backward(); opt.step()
+```
+
+Compare with the diffusion step: the same four lines, with a different way to build $\mathbf x_t$ and a different target.
+
+</details>
+
 </Step>
 
 <Step title="Sampling by integrating an ODE">
-To generate, start at noise and take many small steps along the learned arrows, a method called Euler integration.
 
-{/* IDEA: sampling solves the ODE dx/dt = v_theta(x, t) with Euler steps x += h v. Deterministic: the same
-    noise point always ends at the same data point.
-    WIDGET: FlowField mode="sample" steps=[64].
-    OVER t: particles take the 64 steps; each step's position is a dot along the trail.
-    LOOK: the trail of one highlighted particle and its end point.
-    QUOTE: on-data fraction with 64 steps. */}
+To generate, start at noise and take small steps along the learned arrows. This is **Euler integration** of the equation $d\mathbf x/dt = v_\theta(\mathbf x, t)$: at each step, move by the arrow at the current place and time, scaled by the step size $1/S$ for $S$ steps. There is no randomness after the start, so the same noise point always ends on the same data point.
+
+The figure takes 64 steps. The dark line is one highlighted particle, with a circle where it stands after each step. All 600 points arrive with $68\%$ on the moons.
+
+<FlowField client:visible mode="sample" steps={64} showControls={false} title="Sixty-four Euler steps" />
+
 </Step>
 
 <Step title="How few steps can you take?">
-Because the paths are almost straight, a handful of large steps already lands close to the data.
 
-{/* IDEA: step count is the cost of sampling; straighter paths tolerate bigger steps.
-    WIDGET: FlowField mode="sample" steps=[4] with a selector 1 / 2 / 4 / 8 / 64 and a small chart of
-    on-data fraction vs steps.
-    OVER t: particles jump in 4 visible segments; chart cursor on the current step count.
-    LOOK: switch to 1 step and see where the samples land (the average, between the moons).
-    QUOTE: on-data fraction for 1, 2, 4, 8 and 64 steps. */}
+Each step costs one run of the network, so fewer steps means faster generation. The selector below changes the step count, and the chart records what share of the samples end on a moon. With 64 steps the answer is $68\%$. With 8 steps it is $63\%$, with 4 steps $57\%$, with 2 steps $35\%$. With a single step it is $7\%$: every point jumps straight along the arrow at its starting position, which is the average direction to the data, so they all land in a small clump at the centre, between the moons. Try the selector and watch where the dots stop.
+
+<FlowField client:visible mode="sample" steps={4} title="How many steps does it take?" />
+
 </Step>
 
 <Step title="Comparison with diffusion">
-Diffusion and flow matching move noise to the same data, but along differently shaped paths, which changes how many steps sampling needs.
 
-{/* IDEA: Gaussian diffusion is flow matching with a different path (its schedule bends the paths); the
-    straight path is simpler to integrate. Same noise, same data, two fields.
-    WIDGET: FlowField mode="compare": left the diffusion probability-flow ODE paths (exact score, imported
-    from DiffusionDenoiser/sim.ts, time-reversed to run noise to data), right the flow-matching paths,
-    from the same 200 starting points, at an equal step budget selector 4 / 64.
-    OVER t: both sets of particles move in sync.
-    LOOK: the diffusion paths curve and overshoot at 4 steps; the flow paths stay near straight lines.
-    QUOTE: average path length relative to the straight-line distance, and on-data fraction at 4 steps,
-    for both. Probe first; if the gap is small, say so plainly.
-    SHOW THE MATH: the diffusion path written as x_t = a(t) x_1 + b(t) x_0 alongside (1 - t), t. */}
+Gaussian diffusion is flow matching with a different path: its schedule bends the way noise and data are mixed. Everything else is the same idea, a field that carries noise to data. So the two can be compared step for step, from the same noise.
+
+To see the paths without any training noise, this figure uses the ideal field on both sides: the ideal denoiser of the diffusion lesson (its probability-flow ODE, run from noise to data) in the diffusion panel, and the ideal velocity field of this lesson in the flow panel. Pick a budget of 4 or 64 steps. At 4 steps, flow matching puts $76\%$ of the 200 points on the moons and diffusion $42\%$. At 64 steps both are almost there: $100\%$ and $99\%$. So the flow field pays off when steps are few. Why: in flow matching the final step always ends exactly at the field's current guess of the clean point, so even a coarse path finishes close to the data.
+
+The paths are not straighter, though. Measured as the total length of the paths divided by the total straight distance from start to end, flow matching's sampled paths score $1.9$ at 4 steps and $1.8$ at 64, while diffusion's score $1.0$ and $1.1$. The straight lines are the training pairs of step 2. The paths of the field bend where lines cross, as in step 3, and noise points first move inward before spreading out to the moons.
+
+<FlowField client:visible mode="compare" steps={4} title="Diffusion and flow matching, step for step" />
+
+<details>
+<summary>Show the math</summary>
+
+Both write the path as a blend of a data point $\mathbf x_1$ and noise $\mathbf x_0$: $\mathbf x_t = a(t)\,\mathbf x_1 + b(t)\,\mathbf x_0$. Flow matching takes $a = t$, $b = 1-t$. Variance-preserving diffusion takes $a = \sqrt{\bar\alpha}$, $b = \sqrt{1-\bar\alpha}$, with time reversed, so the weights follow the curve of the noise schedule. Only the path differs; the field is trained by regression in both.
+
+</details>
+
 </Step>
 
 <Step title="Common misconceptions">
-A few ideas about flow matching sound right but are not.
 
-{/* NO WIDGET. Misconceptions:
-    1. Flow matching paths are straight. Actually the per-pair paths are straight; the paths samples
-       follow are curved where pairs cross (step 3).
-    2. The loss should go to zero. Actually random pairing leaves an irreducible floor (step 4).
-    3. Flow matching and diffusion are unrelated. Actually Gaussian diffusion is a special case with a
-       different path.
-    4. One sampling step is enough because paths are straight. Actually one step lands on the average,
-       between the moons (step 6).
-    5. Flow matching needs a noise-adding SDE. Actually it is defined directly by the path and is sampled
-       with an ODE. */}
+**You might think flow matching paths are straight.** Actually the training paths, one per pair, are straight. The paths that samples follow bend where pairs cross (step 3), and in the last figure they were longer relative to their straight-line distance than diffusion's.
+
+**You might think the loss should go to zero.** Actually random pairing leaves a floor. The exact field itself scores $1.20$ in step 4.
+
+**You might think flow matching and diffusion are unrelated.** Actually Gaussian diffusion is flow matching with a different path.
+
+**You might think one sampling step is enough because paths are straight.** Actually one step lands on the average, between the moons: $7\%$ of the points ended on a moon in step 6.
+
+**You might think flow matching needs a noise-adding process to run.** Actually it is defined directly by the path and sampled with a plain ODE.
+
 </Step>
 
 <Step title="Check yourself">
-Test your understanding with a few short questions.
 
-{/* NO WIDGET. Questions:
-    1. What is the target velocity for one pair (x_0, x_1)?
-    2. Why can't two particles following the learned field cross at the same time?
-    3. Why does a single Euler step put samples between the moons?
-    4. Where would the loss stop decreasing, and why?
-    5. Name one practical advantage over diffusion sampling seen in this lesson. */}
+<details>
+<summary>1. What is the target velocity for one pair $(\mathbf x_0, \mathbf x_1)$?</summary>
+$\mathbf x_1 - \mathbf x_0$, the same at every $t$ along the straight line.
+</details>
+
+<details>
+<summary>2. Why can't two particles following the learned field cross at the same time?</summary>
+At a given place and time the field has one arrow, so two particles at the same place at the same time would move together from then on. That is why the paths bend instead of crossing.
+</details>
+
+<details>
+<summary>3. Why does a single Euler step put samples between the moons?</summary>
+It moves each noise point along the field at $t = 0$, which is the average over all data. It lands on an average of the moons rather than on one of them.
+</details>
+
+<details>
+<summary>4. Where does the loss stop decreasing, and why?</summary>
+At the loss of the exact field, here $1.20$. Each target is one random pairing, and the best prediction is the average over pairings, which still differs from any one target.
+</details>
+
+<details>
+<summary>5. Name one practical advantage over diffusion sampling seen in this lesson.</summary>
+With the ideal fields, 4 steps put $76\%$ of the points on the moons against $42\%$ for diffusion, so far fewer network evaluations are needed for the same quality.
+</details>
+
 </Step>
 
 <Step title="Going deeper">
-Papers and resources for going further.
 
-{/* NO WIDGET. Cite:
-    - Lipman et al., "Flow Matching for Generative Modeling", ICLR 2023 (arXiv:2210.02747).
-    - Liu, Gong, Liu, "Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow",
-      ICLR 2023 (arXiv:2209.03003).
-    - Albergo and Vanden-Eijnden, "Building Normalizing Flows with Stochastic Interpolants", ICLR 2023
-      (arXiv:2209.15571, VERIFY).
-    - Tong et al., "Improving and Generalizing Flow-Based Generative Models with Minibatch Optimal
-      Transport", 2023 (arXiv:2302.00482, VERIFY).
-    - Esser et al., "Scaling Rectified Flow Transformers for High-Resolution Image Synthesis", 2024
-      (arXiv:2403.03206), flow matching at scale.
-    - Lipman et al., "Flow Matching Guide and Code", 2024 (arXiv:2412.06264, VERIFY).
-    Next: Day 14, /learn/applied/vector-search/. */}
+- Lipman et al., ["Flow Matching for Generative Modeling"](https://arxiv.org/abs/2210.02747), ICLR 2023.
+- Liu, Gong and Liu, ["Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow"](https://arxiv.org/abs/2209.03003), ICLR 2023.
+- Albergo and Vanden-Eijnden, ["Building Normalizing Flows with Stochastic Interpolants"](https://arxiv.org/abs/2209.15571), ICLR 2023.
+- Tong et al., ["Improving and Generalizing Flow-Based Generative Models with Minibatch Optimal Transport"](https://arxiv.org/abs/2302.00482), 2023: pairing noise and data less randomly.
+- Esser et al., ["Scaling Rectified Flow Transformers for High-Resolution Image Synthesis"](https://arxiv.org/abs/2403.03206), 2024: flow matching at scale.
+- Lipman et al., ["Flow Matching Guide and Code"](https://arxiv.org/abs/2412.06264), 2024.
+
+Back to [diffusion](/learn/graphs-generative/diffusion/). Next: Day 14, [vector search](/learn/applied/vector-search/).
+
 </Step>

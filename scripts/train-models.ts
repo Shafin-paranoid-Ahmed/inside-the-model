@@ -1,5 +1,5 @@
 /** Offline model pipeline. Bundle with esbuild and run with Node; no browser/server required.
- * Day 9 (tiny-lm*) and Day 10 (house, scaling, icl, icl-sweep, facts) jobs; later days add theirs here.
+ * Day 9 (tiny-lm*), Day 10 (house, scaling, icl, icl-sweep, facts) and Day 14 (prompt-model) jobs; later days add theirs here.
  * npx esbuild scripts/train-models.ts --bundle --platform=node --format=esm --outfile="$env:TEMP/train-models.mjs"
  * node "$env:TEMP/train-models.mjs" tiny-lm [--steps 6000 --seed 9 --batch 16 --lr 0.003]
  * node "$env:TEMP/train-models.mjs" day9   # tiny-lm plus tiny-lm-nomask
@@ -18,6 +18,7 @@ import { CHARSET, VOCAB as LM_VOCAB, encode, decode } from '../src/lib/lm/charse
 import { generate as lmGenerate } from '../src/lib/lm/sample';
 import { encodeWeights, parseModel, toFloat16, type DType, type Manifest } from '../src/lib/transformer/load';
 import { evaluate, probes, residualGradientProbe } from '../src/lib/transformer/report';
+import * as PM from '../src/lib/applied/promptmodel';
 
 const args = process.argv.slice(2), job = args[0] ?? 'day9';
 const option = (name: string, fallback: number) => {
@@ -610,6 +611,110 @@ function facts(idk = false) {
   console.log(JSON.stringify(manifest.metrics, null, 2));
 }
 
+// ---------------------------------------------------------------------------------------------
+// Day 14 (applied/prompting, applied/tool-use): prompt-model. Language, prompts and every measured effect live in
+// src/lib/applied/promptmodel.ts so the widgets and tests reproduce the numbers from the shipped bytes.
+// node train-models.mjs prompt-model [--steps 9000 --seed 14 --batch 24 --lr 0.003 --every 1000]
+// ---------------------------------------------------------------------------------------------
+const PROMPT_TOOL_SHARE = 0.2;
+/** One training sequence. Letter tasks (80%): task uniform, tag 50%, k = 0..8 examples (0..6 for sr scratchpads, to fit
+ * 96 tokens), inputs any 3 letters over a..h; loss on every answer (examples and query) and its `;`. Tool lines (20%):
+ * half `[tools] a*b>CALL calc(a*b) RESULT n >n;` (loss on the call and on `>n;`; RESULT n is written by the program),
+ * half direct `a*b>n;` (loss on n;). `=` and `|` never occur. */
+function promptSequence(rng: Rng): Example {
+  const parts: [string, boolean][] = [];
+  const word = () => Array.from({ length: 3 }, () => PM.LETTERS[Math.floor(rng.next() * 8)]).join('');
+  if (rng.next() < PROMPT_TOOL_SHARE) {
+    const a = 10 + Math.floor(rng.next() * 90), b = 10 + Math.floor(rng.next() * 90), n = a * b;
+    if (rng.next() < 0.5) parts.push([`[tools] ${a}*${b}>`, false], [`CALL calc(${a}*${b})`, true], [`RESULT ${n}`, false], [`>${n};`, true]);
+    else parts.push([`${a}*${b}>`, false], [`${n};`, true]);
+  } else {
+    const task = PM.TASKS[Math.floor(rng.next() * PM.TASKS.length)], tag = rng.next() < 0.5;
+    const scratchpad = task === 'sr' && rng.next() < 0.5, k = Math.floor(rng.next() * ((scratchpad ? 6 : 8) + 1));
+    if (tag) parts.push([PM.TAG[task], false]);
+    for (let i = 0; i <= k; i++) { const x = word(); parts.push([`${x}>`, false], [PM.answerBody({ task, query: x, scratchpad }) + ';', true]); }
+  }
+  const ids: number[] = [], sup: boolean[] = [];
+  for (const [text, s] of parts) for (const t of PM.encode(text)) { ids.push(t); sup.push(s); }
+  return { ids: ids.slice(0, -1), targets: ids.slice(1).map((t, i) => (sup[i + 1] ? t : -1)) };
+}
+/** Fast progress probe on the 50 test strings (not the acceptance metrics). */
+function promptProbe(w: Weights) {
+  const ex = PM.EXAMPLES;
+  return {
+    rev4: PM.evalPrompt(w, { task: 'rev', examples: ex.slice(0, 4) }).accuracy,
+    rev4unseen: PM.evalPrompt(w, { task: 'rev', examples: ex.slice(0, 4), delims: ['=', '|'] }).accuracy,
+    shift: [0, 2, 8].map((k) => PM.evalPrompt(w, { task: 'shift', examples: ex.slice(0, k) }).accuracy),
+    sort: [0, 2, 8].map((k) => PM.evalPrompt(w, { task: 'sort', examples: ex.slice(0, k) }).accuracy),
+    srDirect4: PM.evalPrompt(w, { task: 'sr', examples: ex.slice(0, 4) }).accuracy,
+    srPad4: PM.evalPrompt(w, { task: 'sr', examples: ex.slice(0, 4), scratchpad: true }).accuracy,
+    tool: PM.accuracy(PM.QUESTIONS.slice(0, 20).map(([a, b]) => PM.toolRun(w, a, b))),
+    direct: PM.accuracy(PM.QUESTIONS.slice(0, 20).map(([a, b]) => PM.directAnswer(w, a, b))),
+  };
+}
+function promptMeasure(w: Weights) {
+  const r = (x: number) => r4(x), t0 = Date.now();
+  const format = PM.formatExperiment(w), specific = PM.specificExperiment(w);
+  const shots = { shift: PM.shotsExperiment(w, 'shift'), sort: PM.shotsExperiment(w, 'sort') };
+  const order = PM.orderExperiment(w), steps = PM.stepsExperiment(w), structured = PM.structuredExperiment(w), evalx = PM.evalExperiment(w);
+  const tool = PM.toolExperiment(w);
+  // Inference cost: one full forward on a 70-token prompt (8 untagged reverse examples + query = 68 tokens, padded with a tag).
+  const prompt70 = PM.buildPrompt({ task: 'rev', tag: true, examples: [...PM.EXAMPLES, PM.TEST[0]], query: PM.TEST[1] }).slice(0, 70);
+  const c0 = performance.now(); for (let i = 0; i < 20; i++) forward(w, prompt70); const forwardMs = (performance.now() - c0) / 20;
+  return {
+    format: { trained: format.trained.accuracy, unseen: format.unseen.accuracy },
+    specific: { untaggedP: r(specific.untagged.meanP), taggedP: r(specific.tagged.meanP), untaggedAccuracy: specific.untagged.accuracy,
+      taggedAccuracy: specific.tagged.accuracy, untaggedSpread: Object.fromEntries(Object.entries(specific.spread).map(([k, v]) => [k, r(v)])) },
+    shots: { k: [...PM.SHOTS], shift: shots.shift.map((s) => s.accuracy), sort: shots.sort.map((s) => s.accuracy) },
+    order: { set: PM.ORDER_SET, min: order.min, median: order.median, max: order.max, accuracies: order.orders.map((o) => o.accuracy),
+      quirkySet: PM.QUIRKY_SET, quirkyMin: order.quirkyMin, quirkyMedian: order.quirkyMedian, quirkyMax: order.quirkyMax },
+    steps: { direct: steps.direct.accuracy, scratchpad: steps.scratchpad.accuracy, directFirstP: r(steps.direct.firstP), scratchpadFirstP: r(steps.scratchpad.firstP),
+      directFinalP: r(steps.direct.finalP), scratchpadFinalP: r(steps.scratchpad.finalP) },
+    structured: { unconstrainedParseable: structured.unconstrained.parseable, unconstrainedCorrect: structured.unconstrained.correctAmongParseable,
+      constrainedParseable: structured.constrained.parseable, constrainedCorrect: structured.constrained.correctAmongParseable },
+    eval: { accA: r(evalx.accA), accB: r(evalx.accB), trueDiff: r(evalx.trueDiff), bySize: evalx.bySize.map((s) => ({ size: s.size, worse: s.worse, tie: s.tie })) },
+    tool: { directAccuracy: tool.directAccuracy, pCallWithTools: r(tool.pCallWithTools), pCallWithoutTools: r(tool.pCallWithoutTools), toolAccuracy: tool.toolAccuracy,
+      firstAttemptRejected: tool.firstAttemptRejected, successWithRetries: tool.successWith, resultAttentionPerHead: tool.resultAttentionPerHead.map(r),
+      rejections: tool.sampled.flatMap((s) => s.attempts.filter((a) => !a.parse.ok).map((a) => PM.decode(a.output))) },
+    forwardMs70: r(forwardMs), measureSeconds: Math.round((Date.now() - t0) / 1000),
+  };
+}
+function promptAccept(m: Record<string, any>): string | undefined {
+  const fails: string[] = [], rises = (xs: number[]) => xs.at(-1)! - xs[0] >= 0.3 && xs.every((x, i) => !i || x >= xs[i - 1] - 0.06);
+  if (m.format.trained - m.format.unseen < 0.2) fails.push('format: trained delimiters not clearly better');
+  if (m.specific.taggedP - m.specific.untaggedP < 0.3 || m.specific.untaggedP > 0.6) fails.push('specific: tag does not lift p(correct first letter)');
+  if (!rises(m.shots.shift) || !rises(m.shots.sort)) fails.push('shots: accuracy does not rise with k');
+  if (m.order.max - m.order.min < 0.1 || m.order.quirkyMedian >= m.order.median) fails.push('order: no spread or quirky set not worse');
+  if (m.steps.scratchpad - m.steps.direct < 0.2) fails.push('steps: scratchpad not clearly better');
+  if (m.structured.unconstrainedParseable >= 50 || m.structured.constrainedParseable !== 50) fails.push('structured: parse rates');
+  if (m.eval.trueDiff <= 0) fails.push('eval: B (6-shot) not better');
+  if (m.tool.directAccuracy > 0.2 || m.tool.pCallWithTools < 0.9 || m.tool.toolAccuracy < 0.9) fails.push('tool: direct/call/with-tool accuracy');
+  const waived = (args.includes('--waive') ? args[args.indexOf('--waive') + 1].split(',') : []);
+  const left = fails.filter((f) => !waived.some((w) => f.startsWith(w)));
+  return left.length ? left.join('; ') : undefined;
+}
+function promptModel() {
+  const total = opt('steps', 9000), batchSize = opt('batch', 24), lr0 = opt('lr', 0.003), seed0 = opt('seed', 14), every = opt('every', 1000);
+  const cfg: Config = { vocab: PM.VOCAB, d: opt('d', 48), heads: 4, layers: 2, context: 96, ff: opt('ff', 128), positions: 'rope', causal: true, norm: 'pre', tied: true };
+  const rng = createRng(seed0), w = initWeights(cfg, rng), curve: { step: number; loss: number }[] = [];
+  console.log(`prompt-model: ${w.params.length} parameters, ${total} updates, batch ${batchSize}, lr ${lr0}, seed ${seed0}`);
+  const t0 = Date.now();
+  let avg = 0;
+  adamTrain(w, total, lr0, 200, () => Array.from({ length: batchSize }, () => promptSequence(rng)), (step, loss) => {
+    avg += loss;
+    if (step % 50 === 0) { curve.push({ step, loss: r4(avg / 50) }); avg = 0; }
+    if (step === 20) console.log(`prompt-model: ${((Date.now() - t0) / 20).toFixed(0)} ms/step`);
+    if (step % every === 0 || step === total) console.log(`prompt-model ${step}/${total} (${((Date.now() - t0) / 1000).toFixed(0)} s) loss ${curve.at(-1)?.loss}`, JSON.stringify(promptProbe(w)));
+  });
+  const wall = Math.round((Date.now() - t0) / 1000);
+  const { manifest } = ship('prompt-model', w, curve, { seed: seed0, steps: total, batch: batchSize, lr: lr0, wallSeconds: wall,
+    schedule: '200-update warmup, cosine decay to 0.1*lr', optimizer: 'Adam beta1=0.9 beta2=0.999 eps=1e-8, global clip 1',
+    data: `promptSequence: ${1 - PROMPT_TOOL_SHARE} letter tasks (rev/shift/sort/copy/sr uniform; tag 50%; 0-8 examples, 0-6 for sr scratchpads; sr scratchpad 50%), ${PROMPT_TOOL_SHARE} tool lines (half [tools] calls, half direct answers); loss on model-written tokens only`,
+    vocabNote: '"=" and "|" have their own ids and never occur in training; other symbols map to <unk>', lossCurveMeaning: 'mean training loss over the previous 50 updates' },
+  promptMeasure, (m) => args.includes('--dry') ? `dry run (acceptance would say: ${promptAccept(m) ?? 'pass'})` : promptAccept(m), 'int8');
+  console.log(JSON.stringify(manifest.metrics, null, 2));
+}
+
 if (job === 'report') {
   for (const name of ['tiny-lm', 'tiny-lm-nomask']) {
     const manifest: Manifest = JSON.parse(readFileSync(resolve(output, `${name}.json`), 'utf8'));
@@ -628,7 +733,8 @@ else if (job === 'icl') icl();
 else if (job === 'icl-sweep') iclSweep();
 else if (job === 'facts') facts();
 else if (job === 'facts-idk') facts(true);
+else if (job === 'prompt-model') promptModel();
 else if (job === 'day10') { house(); scaling(); icl(); iclSweep(); facts(); }
 else if (job === 'day9') { train('tiny-lm'); train('tiny-lm-nomask'); }
 else if (job === 'tiny-lm' || job === 'tiny-lm-nomask') train(job);
-else throw new Error(`Unknown job ${job}. Implemented jobs: day9, tiny-lm, tiny-lm-nomask, report. Later days add their own model entries here.`);
+else throw new Error(`Unknown job ${job}. Implemented jobs: day9, tiny-lm, tiny-lm-nomask, report, corpus, house, scaling, icl, icl-sweep, facts, facts-idk, day10, prompt-model. Later days add their own model entries here.`);

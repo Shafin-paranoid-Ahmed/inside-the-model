@@ -167,6 +167,7 @@
       for (let i = 0; i < n; i++) if (dist[i] <= reach) {
         ctx.globalAlpha = i === sIdx ? 1 : 0.9; ctx.fillStyle = c.soft.hex;
         ctx.beginPath(); ctx.arc(P[i][0], P[i][1], rad + 7, 0, 6.2832); ctx.fill();
+        ctx.strokeStyle = c.accent.hex; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.55; ctx.stroke();
       }
       ctx.globalAlpha = 1;
       // edges: one lane per direction
@@ -182,10 +183,11 @@
       }
       // coefficient labels on edges into the selected node
       ctx.font = `600 11px ${font}`; ctx.textAlign = 'center';
-      if (lanes) for (const m of layer.msgs) {
+      if (lanes && (gat || aggr === 'gcn' || aggr === 'mean')) for (const m of layer.msgs) {
         if (m.to !== sIdx || m.from === m.to) continue;
         const [x1, y1] = P[m.from], [x2, y2] = P[m.to], dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1;
-        const lx = x1 + dx * 0.62 - (dy / L) * 10, ly = y1 + dy * 0.62 + (dx / L) * 10;
+        // mid-edge, offset to the lower side (node letters sit above their nodes)
+        const sg = dx / L >= 0 ? 1 : -1, lx = x1 + dx * 0.5 - sg * (dy / L) * 15, ly = y1 + dy * 0.5 + sg * (dx / L) * 15;
         ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = c.raised.hex; ctx.strokeText(m.coef.toFixed(2), lx, ly + 4);
         ctx.fillStyle = c.text.hex; ctx.fillText(m.coef.toFixed(2), lx, ly + 4);
       }
@@ -283,7 +285,7 @@
 <FigureCard
   {title} role="group" aspect="720 / 400" narrowAspect="360 / 470"
   label="A small graph. Colored dots travel along its edges, are combined at each node, and the node's three feature bars change. Nodes can be dragged."
-  legend={[{ label: 'message', color: '--viz-forward' }, { label: 'positive feature', color: '--viz-pos' }, { label: 'negative feature', color: '--viz-neg' }, { label: 'receptive field', color: '--accent-soft' }, ...(model === 'gat' ? [{ label: 'attention', color: '--viz-seq-4', shape: 'line' as const }] : [])]}
+  legend={[{ label: 'message', color: '--viz-forward' }, { label: 'positive feature', color: '--viz-pos' }, { label: 'negative feature', color: '--viz-neg' }, { label: 'receptive field', color: '--accent' }, ...(model === 'gat' ? [{ label: 'attention', color: '--viz-seq-4', shape: 'line' as const }] : [])]}
   asideLabel="Calculation for the selected node"
   aside={showPanel ? panel : undefined}
 >
@@ -304,7 +306,7 @@
 
   {#snippet readout()}
     <p class="say" role="status" aria-live="polite">{narration}</p>
-    <p class="next num">
+    <p class="next">
       node {letter(S)} sees {reachN} of {n} nodes after {uiPhase === 'hold' || uiPhase === 'readout' ? nl : uiK} layer{(uiPhase === 'hold' || uiPhase === 'readout' ? nl : uiK) === 1 ? '' : 's'}
       · feature spread {sp[0].toFixed(2)} → {sp[1].toFixed(2)}
     </p>
@@ -372,7 +374,7 @@
 
   .say, .next { margin: 0; }
   .say { font: 0.92rem / 1.45 var(--font-ui); min-height: 2.6em; }
-  .next { color: var(--text-muted); font-size: var(--step--1); }
+  .next { color: var(--text-muted); font: var(--step--1) / 1.4 var(--font-ui); font-variant-numeric: tabular-nums; }
 
   .panel { font: var(--step--1) / 1.4 var(--font-ui); min-width: 0; }
   .panel h4 { margin: 0 0 var(--s-2); font: 650 1rem var(--font-ui); }

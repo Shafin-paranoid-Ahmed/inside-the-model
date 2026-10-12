@@ -7,148 +7,202 @@ order: 4
 level: advanced
 duration: 30
 prereqs: ["graphs-generative/autoencoders"]
-status: stub
+status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
+import GANDuel from '../../../components/widgets/GANDuel/GANDuel.svelte';
 
 Two networks play a forger-versus-detective game.
 
-{/* SKELETON (Day 13 plan: plans/day-13.md). Widget: GANDuel (to build). Same two-moons data as the rest
-    of the day (src/lib/gen/toy.ts). Generator 2-32-32-2 tanh from 2D standard-normal noise,
-    discriminator 2-32-32-1 with sigmoid output, non-saturating generator loss, Adam, trained in a
-    worker; parameter snapshots every few steps so the timeline scrubs real training. Runs: "stable"
-    (default), "unstable" (larger learning rate) and "collapse" (a configuration found by probing). The
-    discriminator's output D(x) is drawn as a background map (--viz-pos = looks real, --viz-neg = looks
-    fake), real data neutral, generated points in --viz-forward. Every claim below is probe-checked. */}
-
 <Step title="A forger and a detective">
-A GAN trains two networks against each other: one makes fake points, the other tries to tell them from real ones.
 
-{/* IDEA: the adversarial game in one picture; the generated cloud ends up on the moons.
-    WIDGET: GANDuel mode="duel" run="stable".
-    OVER t: scrubs the whole training run; generated points move from a blob at the centre onto the moons
-    while the background map shifts; a step counter.
-    LOOK: the background map near the end: almost uniform, because the detective can no longer tell.
-    QUOTE: final on-data fraction and moon shares (quality()), and D's average output on real and on fake
-    points at the end. */}
+The autoencoder and VAE lessons learned the two moons by compressing and rebuilding them. A **generative adversarial network** (GAN) takes a different route: it never rebuilds anything. It trains two networks against each other. The **generator** (the forger) makes fake points. The **discriminator** (the detective) looks at a point and says how likely it is to be real. Both train at the same time: the detective gets better at spotting fakes, and the forger gets better at fooling the detective. If the contest goes well, the forger ends up making points the detective cannot tell from the real ones.
+
+The figure trains one such pair on the same 600 points as the rest of Day 13, in your browser. The grey dots are the real data. The teal dots are 300 generated points, made from the same 300 noise values at every checkpoint so you can watch one cloud move. The background is the detective's opinion of every place on the plane: blue where it says "real", orange where it says "fake", pale where it is unsure.
+
+Drag the timeline to the end. At step 0 none of the 300 generated points is on the data. By step 1500, **82%** are. Here "on the data" is the measure used in every Day 13 lesson (the [autoencoder](/learn/graphs-generative/autoencoders/) lesson used it too): a point counts if it lies within 0.21 of the moons' centre curve. Of the points that land there, 47% are on the upper moon and 53% on the lower, so both moons are covered. On the discriminator's side, its average score is 0.58 on real points and 0.48 on generated ones. A score of 0.5 means "no idea", so it is barely better than guessing.
+
+<GANDuel client:visible mode="duel" run="stable" />
+
 </Step>
 
 <Step title="The generator: noise in, data out">
-The generator is an ordinary network that turns a random input into a point, and training bends that mapping until its outputs look like data.
 
-{/* IDEA: G maps noise z (2 numbers from a standard normal) to x; the whole distribution of outputs is what
-    is learned. It never sees real data directly; it only learns through D.
-    WIDGET: GANDuel mode="generator" (trained G; a small noise panel beside the data plane).
-    OVER t: a grid of noise points and its grid lines in the noise panel flow through G to their outputs,
-    so the reader sees the square grid folded onto the moons; loop.
-    LOOK: which part of the noise square lands between the moons (stretched grid cells).
-    QUOTE: the fraction of the noise grid that maps onto the data. */}
+The generator is an ordinary network, like the one in the [MLP lesson](/learn/neural-networks/mlp/): here 2 numbers in, two hidden layers of 32 units, 2 numbers out. Its input is random **noise** $\mathbf z$, two numbers drawn from a standard normal distribution. Each noise value comes out as one generated point, so feeding it fresh noise gives fresh points. What it learns is a whole distribution of outputs.
+
+Notice what it never does: it never sees a real data point. All it ever learns about the moons comes second-hand, through the detective's verdicts.
+
+The figure takes a square grid of noise values (15 by 15, from −2 to 2) and pushes it through the trained generator. Watch the grid lines. The square is stretched and folded until it lies over the moons: **85%** of the 225 grid points (192) end up on a moon. The rest are the long thin cells that bridge the gaps between the moons, where the generator has to cover distance with nothing to land on.
+
+<GANDuel client:visible mode="generator" />
+
 </Step>
 
 <Step title="The discriminator: a learned real-or-fake score">
-The discriminator is a classifier that outputs the probability that a point is real.
 
-{/* IDEA: D is logistic regression with a hidden layer (link /learn/foundations/logistic-regression/);
-    trained with cross-entropy on real (label 1) vs generated (label 0).
-    WIDGET: GANDuel mode="discriminator" (G frozen at its random start, only D trains for a few hundred
-    steps).
-    OVER t: the background map sharpens from flat 0.5 into a "real" region around the moons and a "fake"
-    region around the generator's blob; accuracy readout.
-    LOOK: the boundary where D(x) = 0.5.
-    QUOTE: D's accuracy after its training segment. */}
+The discriminator is a classifier: it takes a point and outputs a number between 0 and 1, the probability that the point is real. It is the same idea as [logistic regression](/learn/foundations/logistic-regression/) with a hidden layer in front: a small network (2, 32, 32, 1) whose last number goes through a sigmoid. It trains on a plain two-class problem. Real points have label 1, generated points have label 0, and the loss is cross-entropy.
+
+To see it on its own, this figure freezes the generator at its starting blob and trains only the discriminator. It starts at 48% accuracy, which is guessing, and the background is flat. Within the first 300 steps the background splits: orange around the blob, blue everywhere else. The edge of the orange patch is the **decision boundary**, where $D(x) = 0.5$. By step 300 the discriminator is 100% accurate on this fixed blob.
+
+That is the problem the forger faces. A fixed fake is easy to catch. In the real game the generator moves, so the discriminator's job keeps changing.
+
+<GANDuel client:visible mode="discriminator" />
+
 </Step>
 
 <Step title="The minimax objective">
-Both networks share one score: the discriminator tries to push it up and the generator tries to push it down.
 
-{/* IDEA: min over G, max over D of E[log D(x)] + E[log(1 - D(G(z)))]; at the ideal D the game measures the
-    Jensen-Shannon divergence; equilibrium D = 0.5 everywhere. In practice G maximises log D(G(z))
-    (non-saturating loss) because the original gives vanishing gradients early.
-    WIDGET: GANDuel mode="objective" run="stable".
-    OVER t: scrubs training; loss curves for D and G with a reference line at log 4 (the value at D = 0.5),
-    with the plane above sharing the step cursor.
-    LOOK: the two curves do not go down together the way a normal loss does.
-    QUOTE: D and G loss at the start and end, and log 4 = 1.386.
-    SHOW THE MATH: the minimax value, the optimal D for fixed G, the non-saturating swap.
-    SHOW THE CODE: a 12-line PyTorch training step (D step, then G step). */}
+Both networks share one number, a score that measures how well the discriminator is doing. The discriminator tries to push it up and the generator tries to push it down. Written as a game, $\min_G \max_D V(D, G)$. In a tidy model the game has an ideal ending: when the generated distribution equals the real one, the best the discriminator can do is output $\tfrac12$ everywhere, and the loss it is trained on equals $\log 4 = 1.386$.
+
+Look at the two curves in the figure. In an ordinary training run the loss falls and you can tell progress from it. Here, no. Early on they swing (at step 100 the detective's loss has dipped to 1.09 while the forger's has risen to 1.23). After that they sit still: averaged over steps 500 to 1500, the detective's loss is 1.26 and the forger's is 0.84, close to the dashed guessing values $\log 4$ and $\log 2 = 0.693$. Yet over the same stretch the share of generated points on the data climbs from 0% to 82%. The losses of a two-player game tell you who is ahead, not how good the samples are.
+
+<GANDuel client:visible mode="objective" run="stable" />
+
+<details>
+<summary>Show the math</summary>
+
+With real data $\mathbf x \sim p_\text{data}$ and noise $\mathbf z \sim \mathcal N(0, I)$:
+
+$$
+\begin{aligned}
+&\min_G \max_D \; V(D,G), \quad \text{with}\\
+V(D,G) &= \mathbb E_{\mathbf x}\big[\log D(\mathbf x)\big] \\
+&\quad + \mathbb E_{\mathbf z}\big[\log\big(1 - D(G(\mathbf z))\big)\big].
+\end{aligned}
+$$
+
+For a fixed generator, whose outputs have density $p_g$, the best discriminator is
+
+$$
+D^*(\mathbf x) = \frac{p_\text{data}}{p_\text{data} + p_g}.
+$$
+
+Putting $D^*$ back in gives $V = -\log 4 + 2\,\mathrm{JSD}(p_\text{data} \,\|\, p_g)$, where JSD is the Jensen-Shannon divergence. It is zero only when $p_g = p_\text{data}$, and then $D^* = \tfrac12$ everywhere. The curve labelled "detective" is $-V$ (a loss to minimise), which is why its guessing value is $\log 4$.
+
+Early in training $D$ rejects generated points with high confidence, so $\log(1 - D(G(\mathbf z)))$ is flat and gives the generator almost no gradient. In practice the generator is trained to minimise $-\log D(G(\mathbf z))$ instead. This is the same fixed point with a much stronger signal when it is losing, and it is the "forger" curve above, whose guessing value is $\log 2$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+for real in loader:                      # real: (64, 2)
+    z = torch.randn(64, 2)
+    fake = G(z)
+
+    # D step: real -> 1, generated -> 0
+    d_loss = (bce(D(real), ones)
+              + bce(D(fake.detach()), zeros))
+    opt_D.zero_grad(); d_loss.backward(); opt_D.step()
+
+    # G step: make D say "real"
+    g_loss = bce(D(fake), ones)
+    opt_G.zero_grad(); g_loss.backward(); opt_G.step()
+```
+
+`fake.detach()` stops the discriminator step from sending gradient into the generator. In the generator step the gradient does flow through $D$ into $G$, which is the next step's subject.
+
+</details>
+
 </Step>
 
 <Step title="How the detective steers the forger">
-The generator learns from the discriminator's gradient: each fake point is nudged in the direction that makes it look more real.
 
-{/* IDEA: the gradient of log D(x) at each generated point is the direction G is pushed; backprop carries it
-    into G's weights.
-    WIDGET: GANDuel mode="gradients" (one mid-training snapshot, chosen in the probe).
-    OVER t: arrows on generated points (gradient colour) grow in; then the points move one exaggerated
-    update along them; loop.
-    LOOK: arrows near the empty region between the moons point toward the moons.
-    QUOTE: the snapshot's step number and the mean arrow length before vs after the update. */}
+The generator never sees the real data, so how does it learn where to go? Through the detective's **gradient**. For a generated point $\mathbf x$, the discriminator's score $D(\mathbf x)$ is a function of where the point sits, so we can ask: in which direction does the score rise fastest? That direction is the gradient of $\log D$ with respect to $\mathbf x$. Backpropagation carries it on into the generator's weights, nudging them so each fake lands where the score is higher. The detective does not say "wrong"; it says "that way".
+
+The figure takes the generated points at step 200 and draws that direction as a magenta arrow on 60 of them. Then every point moves along its arrow. The step is exaggerated so you can see it (a real update changes the weights, and the points follow a little). For the 26 points that sit off the moons, **19** are pushed toward the nearest moon. This checkpoint was chosen because it shows the effect most clearly; at neighbouring checkpoints only half to three quarters of the off-moon points point toward a moon, because the signal is noisy. The result is visible in the numbers: the average score of the 60 points goes from 0.459 to 0.574, and the average arrow length, how steep the score is where they sit, falls from 0.83 to 0.44 because the points have moved to flatter ground.
+
+<GANDuel client:visible mode="gradients" />
+
 </Step>
 
 <Step title="Training dynamics and instability">
-Because each network chases a moving target, GAN training can circle or oscillate instead of settling.
 
-{/* IDEA: no single loss goes down; the game can rotate around the equilibrium. Larger learning rates
-    make it worse.
-    WIDGET: GANDuel mode="duel" run="unstable" with a learning-rate selector [stable rate, 4x] (exact
-    values from the probe) and a distance-to-data curve over training.
-    OVER t: scrubs the unstable run; the generated cloud swings between regions.
-    LOOK: the distance curve going up and down instead of settling.
-    QUOTE: the distance-to-data curve's min and max in the second half of training for both rates.
-    Probe first; if no oscillation appears, say what the sim shows instead. */}
+Each network chases a target that the other one keeps moving. If one of them moves too far in a step, the other's hard-won knowledge is out of date, and the pair can lurch back and forth instead of settling. The learning rate decides how far each step goes.
+
+The figure above ran the generator at a rate of 0.0003. Use the selector to switch to 0.004, 13 times larger (the discriminator's rate stays 0.005). The cloud stops converging. Over the second half of the run, from step 750 to 1500, the share of generated points on the data in the calm run stays between **64% and 82%**. In the larger-rate run it swings between **13% and 73%**, and it ends the run at 35%. Neither run is broken in the usual sense, and the loss values of the unstable one still sit near $\log 4$ and $\log 2$. The loss gives no warning: you only see the trouble in the samples.
+
+<GANDuel client:visible mode="duel" run="unstable" choose="rate" />
+
 </Step>
 
 <Step title="Mode collapse">
-A generator can fool the discriminator by producing only one kind of output, and then it stops covering the data.
 
-{/* IDEA: mode collapse: G puts all its mass on one moon (or part of one); D eventually notices, G jumps,
-    and the cycle repeats.
-    WIDGET: GANDuel mode="collapse" run="collapse" with per-moon share bars.
-    OVER t: scrubs the collapsing run; the generated cloud sits on one moon; share bars.
-    LOOK: the moon share bars.
-    QUOTE: per-moon share at the end of the collapsing run vs the stable run.
-    RISK: two moons may not collapse reliably at this size. If no honest configuration is found, ask the
-    coordinator before switching to a ring-of-Gaussians dataset (see plan, open questions). */}
+A generator can please the discriminator without covering all the data. If it produces only realistic points from some of the clusters, each fake looks fine, and no single fake is wrong. This is **mode collapse**: the generator covers only some of the data's **modes**, its separate clusters.
+
+With the tiny networks used here, no setting we tried made the generator settle on one moon: it either covered both or lurched between them. To show the effect, this step uses a different dataset, labelled in the figure: eight small Gaussian clusters on a ring, numbered 1 to 8, with the same networks and the same training. The default run uses the same rates as the first figure. It ends up with points on four clusters, 1, 3, 5 and 7, which hold 16%, 17%, 15% and 15% of the generated points. Clusters 2, 4, 6 and 8 get 0, 1, 0 and 0%, and another 36% of points are off the clusters altogether. The discriminator knows something is wrong: it is 77% accurate, and its loss (0.87) has fallen while the generator's (1.60) has risen. But within the run, the generator does not find its way to the empty clusters.
+
+Switch the selector to "Both rates 0.003". The same networks on the same data cover all eight clusters, with between 6% and 14% of the points on each, and only 11% off the clusters.
+
+<GANDuel client:visible mode="collapse" run="collapse" choose="ring" />
+
 </Step>
 
 <Step title="Common misconceptions">
-A few ideas about GANs sound right but are not.
 
-{/* NO WIDGET. Misconceptions:
-    1. A falling generator loss means better samples. Actually the losses of a two-player game do not
-       track sample quality.
-    2. The generator copies training examples. Actually it never sees them, only D's gradient.
-    3. The discriminator should be as strong as possible. Actually a perfect D gives the original G loss
-       almost no gradient (why the non-saturating loss is used).
-    4. Mode collapse means the generator outputs one single point. Actually it usually covers a subset
-       of the modes.
-    5. GANs are obsolete. Actually adversarial losses still appear inside other systems (for example
-       GAN-style losses in image autoencoders); VERIFY a concrete cited example before writing it. */}
+**You might think a falling generator loss means better samples.** Actually the two losses of the game do not track sample quality. In the objective step the losses sat near their guessing values for 1000 steps while the share of points on the data rose to 82%, and in the collapse run the generator's loss rose to 1.6 while it covered four of eight modes.
+
+**You might think the generator copies the training examples.** Actually it never sees them. Its only information is the discriminator's gradient, which says which way a point's score rises.
+
+**You might think the discriminator should be as strong as possible.** Actually a discriminator that wins completely gives the generator little to learn from: with the original loss $\log(1 - D(G(\mathbf z)))$ its gradient nearly vanishes. That is why the non-saturating loss is used. A balanced contest teaches best.
+
+**You might think mode collapse means the generator outputs a single point.** Actually the usual case is partial: it covers some modes and not others, as the four of eight clusters above.
+
+**You might think GANs are obsolete now that diffusion models make most images.** Actually adversarial losses still appear inside other systems. The autoencoder that Stable Diffusion's latent diffusion model works in is trained with a perceptual loss and a patch-based adversarial objective (Rombach et al., 2022, section 3.1).
+
 </Step>
 
 <Step title="Check yourself">
-Test your understanding with a few short questions.
 
-{/* NO WIDGET. Questions:
-    1. What value does D output everywhere at the equilibrium, and why?
-    2. Why does G need D's gradient rather than D's verdict?
-    3. What does the non-saturating loss change, and why?
-    4. How would you detect mode collapse from samples alone?
-    5. Why can't you stop training when the G loss is lowest? */}
+<details>
+<summary>1. What value does the discriminator output everywhere at the equilibrium, and why?</summary>
+
+$\tfrac12$. At the equilibrium the generated distribution equals the real one, so at any point a real and a generated sample are equally likely, and the best guess is a coin flip. The best discriminator for a fixed generator is $p_\text{data} / (p_\text{data} + p_g)$, which is $\tfrac12$ when the two are equal.
+
+</details>
+
+<details>
+<summary>2. Why does the generator need the discriminator's gradient rather than its verdict?</summary>
+
+A verdict ("fake") says only that a point is wrong. The gradient of $\log D$ says in which direction the score rises, and that is what backpropagation needs to change the generator's weights.
+
+</details>
+
+<details>
+<summary>3. What does the non-saturating loss change, and why?</summary>
+
+The generator minimises $-\log D(G(\mathbf z))$ instead of $\log(1 - D(G(\mathbf z)))$. When the discriminator confidently rejects a fake, the original loss is nearly flat and gives almost no gradient. The new loss is steep exactly then.
+
+</details>
+
+<details>
+<summary>4. How would you detect mode collapse from samples alone?</summary>
+
+Count what the samples cover: look at whether every cluster or category of the data appears among them, or measure the share of samples near each mode, as the bars above do. Samples that are all individually realistic can still miss whole parts of the data.
+
+</details>
+
+<details>
+<summary>5. Why can't you stop training when the generator loss is lowest?</summary>
+
+The generator's loss depends on the discriminator, which is changing too. In the runs above it stayed near its guessing value while the samples improved, and rose while the generator covered half the modes. It does not measure sample quality.
+
+</details>
+
 </Step>
 
 <Step title="Going deeper">
-Papers and resources for going further.
 
-{/* NO WIDGET. Cite:
-    - Goodfellow et al., "Generative Adversarial Nets", NeurIPS 2014 (arXiv:1406.2661).
-    - Goodfellow, "NIPS 2016 Tutorial: Generative Adversarial Networks" (arXiv:1701.00160).
-    - Radford, Metz, Chintala, DCGAN, 2015 (arXiv:1511.06434).
-    - Arjovsky, Chintala, Bottou, "Wasserstein GAN", 2017 (arXiv:1701.07875).
-    - Metz et al., "Unrolled Generative Adversarial Networks", 2016 (arXiv:1611.02163), mode collapse on
-      toy mixtures.
-    - Mescheder, Geiger, Nowozin, "Which Training Methods for GANs do actually Converge?", ICML 2018
-      (arXiv:1801.04406).
-    - Karras, Laine, Aila, StyleGAN, 2019 (arXiv:1812.04948).
-    Next: /learn/graphs-generative/diffusion/. */}
+- Goodfellow et al., [Generative Adversarial Nets](https://arxiv.org/abs/1406.2661), NeurIPS 2014: the original game, the optimal discriminator and the Jensen-Shannon result.
+- Goodfellow, [NIPS 2016 Tutorial: Generative Adversarial Networks](https://arxiv.org/abs/1701.00160): the non-saturating loss and the failure modes in one place.
+- Radford, Metz and Chintala, [DCGAN](https://arxiv.org/abs/1511.06434), 2015: the convolutional recipe that made GANs train on images.
+- Arjovsky, Chintala and Bottou, [Wasserstein GAN](https://arxiv.org/abs/1701.07875), 2017: a different divergence with a loss that tracks sample quality better.
+- Metz et al., [Unrolled Generative Adversarial Networks](https://arxiv.org/abs/1611.02163), 2016: mode collapse on toy mixtures like the ring here.
+- Mescheder, Geiger and Nowozin, [Which Training Methods for GANs do actually Converge?](https://arxiv.org/abs/1801.04406), ICML 2018: why the game circles instead of settling.
+- Karras, Laine and Aila, [StyleGAN](https://arxiv.org/abs/1812.04948), 2019.
+- Rombach et al., [High-Resolution Image Synthesis with Latent Diffusion Models](https://arxiv.org/abs/2112.10752), 2022: the adversarial loss inside the autoencoder.
+
+Next: [diffusion](/learn/graphs-generative/diffusion/).
+
 </Step>

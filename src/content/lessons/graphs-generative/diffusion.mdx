@@ -7,167 +7,209 @@ order: 5
 level: advanced
 duration: 45
 prereqs: ["graphs-generative/vaes","math/probability"]
-status: stub
+status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
+import DiffusionDenoiser from '../../../components/widgets/DiffusionDenoiser/DiffusionDenoiser.svelte';
 
 An image emerges from static, one small denoising step at a time.
 
-{/* SKELETON (Day 13 plan: plans/day-13.md). Widget: DiffusionDenoiser (exists; reuse with the fixes in the
-    plan). Dataset switches to the shared two-moons data (src/lib/gen/toy.ts) so it matches the other
-    lessons. Two denoisers: "exact" (closed-form ideal denoiser of the moons mixture, already in sim.ts)
-    and "learned" (a small noise-prediction MLP trained in a worker with the shared core). VP schedule
-    beta(tau) = 0.1 + 19.9 tau from sim.ts. IDEA.md 8.6 (scrub from pure noise to image and back) is
-    met by the "image" mode in step 7. Numbers from sim.ts probes only. */}
-
 <Step title="From static to data">
-Every point in this cloud starts as pure random noise and is moved, a little at a time, onto the data.
 
-{/* IDEA: the whole lesson in one loop: data dissolves into noise, then a denoiser walks noise back.
-    WIDGET: DiffusionDenoiser mode="both" dataset="moons" denoiser="exact" showControls=[false].
-    OVER t: forward half (points dissolve), hold on noise, reverse half (points gather onto the moons).
-    LOOK: at the hold, there is no trace of the moons left, yet the reverse half rebuilds them.
-    QUOTE: alpha-bar at tau = 1 (signal left) from the readout. */}
+Every generative model in this day learns the same data: 600 points on two moons. A diffusion model learns it with an odd-sounding recipe. First, destroy the data on purpose by mixing in random noise until nothing is left. Then learn to run that destruction backwards.
+
+The figure plays the whole loop. In the first half, every point is pushed into pure noise. Watch the middle of the timeline: the moons are completely gone, and the picture is a round cloud of random numbers. In the second half, a denoiser walks each point back, and the moons come out again. They were not stored anywhere in the noise. They come from the denoiser, which here is the ideal one, worked out exactly from the shape of the moons. The readout gives the number to compare later: the share of the points that end up on a moon is $100\%$, split $55\%$ on the upper moon and $45\%$ on the lower. At the noisiest moment, $\bar\alpha = 0.00004$: almost none of the original signal is left.
+
+<DiffusionDenoiser client:visible mode="both" showControls={false} showScore={false} title="Noise in, then data out, with the ideal denoiser" />
+
 </Step>
 
 <Step title="The forward process: adding noise">
-The forward process destroys data on purpose: at each small step it shrinks every point a little and adds a little Gaussian noise.
 
-{/* IDEA: x_t from x_(t-1) by scaling and adding noise with variance beta_t; after enough steps the data is
-    a standard normal. No learning here.
-    WIDGET: DiffusionDenoiser mode="forward" dataset="moons" showScore=[false].
-    OVER t: tau runs 0 to 1, points blur; the side plot shows the data share sqrt(alpha-bar) falling and
-    the noise share rising, with a cursor.
-    LOOK: the side plot: the noise share passes the data share at one tau.
-    QUOTE: the tau where the two shares cross (signal-to-noise 1) and the signal share at tau = 0.5.
-    SHOW THE MATH: the one-step forward kernel q(x_t given x_(t-1)). */}
+The **forward process** adds noise a little at a time. At each small step every point is shrunk slightly toward the origin and a small amount of fresh Gaussian noise (a bell-shaped random number, drawn independently for each coordinate) is added. Nothing is learned here; it is a fixed recipe.
+
+The figure shows the points while the noise level $\tau$ runs from 0 (clean) to 1 (noise). The plot on the right tracks two shares: how much of each point is still the original data, and how much is noise. The data share falls and the noise share rises. They cross at $\tau = 0.26$, where signal and noise are equal, a signal-to-noise ratio of 1. By $\tau = 0.5$ the data share is only $0.28$ and the noise share is $0.96$, and the moons are already hard to see.
+
+<DiffusionDenoiser client:visible mode="forward" showScore={false} title="The forward process: the moons dissolve into noise" />
+
+<details>
+<summary>Show the math</summary>
+
+One small step turns $\mathbf x_{t-1}$ into $\mathbf x_t$ by shrinking and adding noise with variance $\beta_t$:
+
+$$
+q(\mathbf x_t \mid \mathbf x_{t-1}) = \mathcal N\!\left(\sqrt{1-\beta_t}\,\mathbf x_{t-1},\ \beta_t \mathbf I\right).
+$$
+
+The figure uses the continuous version of Song et al. (2021), with $\beta(\tau) = 0.1 + 19.9\,\tau$, so noise is added slowly at first and quickly at the end.
+
+</details>
+
 </Step>
 
 <Step title="Jumping to any noise level at once">
-You never have to run the noising steps one by one: a point at any noise level is the clean point, scaled down, plus scaled noise.
 
-{/* IDEA: closed form x_t = sqrt(alpha-bar_t) x_0 + sqrt(1 - alpha-bar_t) eps, with eps from N(0, I).
-    This is what makes training cheap: pick a random t, jump there.
-    WIDGET: DiffusionDenoiser mode="closed" dataset="moons" focus=[index of one point, chosen in probe].
-    OVER t: tau sweeps; for the focused point the two parts are drawn as arrows head to tail: the scaled
-    clean point and the scaled noise vector eps (fixed for that point); the rest of the cloud is faint.
-    LOOK: the readout with the formula filled in, and the noise arrow growing while the data arrow shrinks.
-    QUOTE: x_0, eps and x_t for the focused point at tau = 0.5.
-    SHOW THE MATH: derivation of alpha-bar as a product of (1 - beta) terms. */}
+You never have to run the noising steps one by one. Because every step shrinks and adds Gaussian noise, and Gaussians add up into Gaussians, the whole chain collapses into one line: a point at any noise level is the clean point scaled down, plus a random noise vector scaled up.
+
+$$
+\mathbf x_\tau = \sqrt{\bar\alpha_\tau}\,\mathbf x_0 + \sqrt{1-\bar\alpha_\tau}\,\boldsymbol\varepsilon, \qquad \boldsymbol\varepsilon \sim \mathcal N(0, \mathbf I).
+$$
+
+The figure follows one highlighted point. The long blue arrow is the scaled clean point $\sqrt{\bar\alpha}\,\mathbf x_0$, drawn from the origin. The second arrow starts where the first ends and is the scaled noise $\sqrt{1-\bar\alpha}\,\boldsymbol\varepsilon$. The dot where the two meet is the noisy point. As $\tau$ grows the first arrow shrinks and the second grows. At $\tau = 0.5$: $\mathbf x_0 = (0.76, -0.48)$, $\boldsymbol\varepsilon = (-1.05, -1.09)$, and $\mathbf x_\tau = 0.28\,\mathbf x_0 + 0.96\,\boldsymbol\varepsilon = (-0.80, -1.18)$.
+
+This is what makes training cheap: to practise at noise level $\tau$, jump straight there. No chain to simulate.
+
+<DiffusionDenoiser client:visible mode="closed" focus={0} title="One point, jumped to any noise level" />
+
+<details>
+<summary>Show the math</summary>
+
+With $\alpha_t = 1 - \beta_t$ and $\bar\alpha_t = \prod_{s \le t} \alpha_s$, composing the one-step kernels gives $q(\mathbf x_t \mid \mathbf x_0) = \mathcal N(\sqrt{\bar\alpha_t}\,\mathbf x_0,\ (1-\bar\alpha_t)\mathbf I)$, which is the line above. In the continuous schedule, $\bar\alpha(\tau) = \exp\!\big(-\int_0^\tau \beta\big)$.
+
+</details>
+
 </Step>
 
 <Step title="What a denoiser must know">
-To undo the noise, a model needs one thing at every place and noise level: the direction back toward the data.
 
-{/* IDEA: the best guess of the added noise (eps-hat) is equivalent to the score, the direction of higher
-    data density. For the moons mixture it has a closed form, so the widget shows the ideal answer.
-    WIDGET: DiffusionDenoiser mode="field" dataset="moons" denoiser="exact".
-    OVER t: tau sweeps from 1 down to 0.02; the arrow field changes from "point to the centre" to "point
-    to the nearest moon". Hover any spot to read the predicted noise.
-    LOOK: at high noise all arrows point to the middle; near tau = 0.1 they point to the moons.
-    QUOTE: the score and eps-hat at one hovered location at two tau values (fix the location in prose).
-    SHOW THE MATH: eps-hat = -sqrt(1 - alpha-bar) times the score (Tweedie); link to the denoising
-    autoencoder arrows in /learn/graphs-generative/autoencoders/. */}
+To undo noise, a model needs one thing at every place and every noise level: which way is the data from here? That direction is called the **score**: the arrow along which the density of the (noised) data rises fastest. Equivalently, the model can guess **the noise that was added**; the guess $\hat{\boldsymbol\varepsilon}$ and the score point in opposite directions.
+
+For two moons built from small Gaussian blobs, the score has a closed form, so the figure shows the ideal answer. Look at the white-ringed probe at $(1.5, 0)$, to the right of the upper moon. At the start of the timeline (high noise) its score is $(-1.50, 0.00)$, which is just $-\mathbf x$: pure noise carries no memory of the moons, so the arrow points at the centre. Scrub to about $\tau = 0.1$ and the same spot reads $(1.26, -1.20)$, pointing down and to the right, at the nearby curve of the lower moon, with predicted noise $\hat{\boldsymbol\varepsilon} = (-0.41, 0.39)$. Hover the plot to move the probe.
+
+<DiffusionDenoiser client:visible mode="field" title="Which way is the data, at each noise level?" />
+
+<details>
+<summary>Show the math</summary>
+
+By Tweedie's formula, the best guess of the noise is the score scaled by the noise level, $\hat{\boldsymbol\varepsilon}(\mathbf x_\tau) = -\sqrt{1-\bar\alpha_\tau}\;\nabla_{\mathbf x}\log p_\tau(\mathbf x)$. This is the same idea as the arrows of the denoising autoencoder in [the autoencoders lesson](/learn/graphs-generative/autoencoders/): a model that cleans up noisy inputs has implicitly learned the direction toward the data.
+
+</details>
+
 </Step>
 
 <Step title="Training a network to predict the noise">
-A diffusion model is a network trained on one simple task: given a noisy point and its noise level, guess the noise that was added.
 
-{/* IDEA: DDPM loss: pick x_0, t and eps, build x_t in closed form, regress eps-hat(x_t, t) onto eps with
-    squared error. Simple regression, no adversary, no KL.
-    WIDGET: DiffusionDenoiser mode="train" dataset="moons" denoiser="learned".
-    OVER t: scrubs the worker's training snapshots: the learned arrow field at tau = 0.3 lines up with the
-    exact field drawn faintly beneath; a log-scale loss curve has the matching cursor.
-    LOOK: early snapshots point the wrong way near the moons; late ones match the exact arrows.
-    QUOTE: loss at start and end, and the mean angle between learned and exact arrows at the end.
-    SHOW THE MATH: L = E over t, x_0, eps of the squared norm of eps - eps-hat(x_t, t).
-    SHOW THE CODE: an 8-line PyTorch training step. */}
+A real diffusion model does not know the moons in closed form. It is a neural network trained on one simple task: given a noisy point and its noise level, guess the noise that was added. Each training step picks a data point, a noise level and a noise vector, builds the noisy point with the jump from the previous step, and nudges the network to predict the noise vector. It is plain regression, with no opponent and no sampling inside the loss.
+
+The network here is a small [MLP](/learn/neural-networks/mlp/) (two hidden layers of 64 units) trained on the 600 points for 1,800 updates, in your browser when the page loaded. Scrub through the saved snapshots. Thin grey arrows are the exact denoising directions at $\tau = 0.3$; pink arrows are what the network predicts. Untrained, they are unrelated, an average angle of $89^\circ$ apart. After training the angle is $5^\circ$. The loss falls from $0.62$ to $0.43$, and does not go to zero: the best any denoiser can do is $0.39$, because noise can never be recovered exactly from a noisy point. Switch the arrows to $\tau = 0.1$, close to clean data, and the network is still $31^\circ$ off on average. Fine detail near the moons is the hard part.
+
+<DiffusionDenoiser client:visible mode="train" denoiser="learned" title="The network's arrows against the exact ones, as it trains" />
+
+<details>
+<summary>Show the math</summary>
+
+$$
+L = \mathbb E_{\tau,\ \mathbf x_0,\ \boldsymbol\varepsilon}\ \big\|\boldsymbol\varepsilon - \hat{\boldsymbol\varepsilon}_\theta(\mathbf x_\tau,\ \tau)\big\|^2, \qquad \mathbf x_\tau = \sqrt{\bar\alpha_\tau}\,\mathbf x_0 + \sqrt{1-\bar\alpha_\tau}\,\boldsymbol\varepsilon .
+$$
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+def train_step(model, x0, opt):
+    tau = torch.rand(x0.shape[0], 1)                     # a random noise level per example
+    abar = torch.exp(-(0.1 * tau + 0.5 * 19.9 * tau**2)) # the schedule
+    eps = torch.randn_like(x0)                           # the noise to be predicted
+    xt = abar.sqrt() * x0 + (1 - abar).sqrt() * eps      # jump straight to level tau
+    loss = ((model(xt, tau) - eps) ** 2).mean()          # guess the noise
+    opt.zero_grad(); loss.backward(); opt.step()
+```
+
+</details>
+
 </Step>
 
 <Step title="Reverse sampling: denoising step by step">
-To generate, start from pure noise and repeatedly remove a little of the predicted noise until clean points remain.
 
-{/* IDEA: reverse process: each step uses the network's eps-hat to move x_t toward lower noise.
-    Deterministic version (probability-flow ODE, DDIM-like) vs stochastic (ancestral, DDPM-like, adds
-    fresh noise each step).
-    WIDGET: DiffusionDenoiser mode="reverse" dataset="moons" denoiser="learned" sampler="ode" (sampler
-    toggle visible).
-    OVER t: 600 fresh noise points walk to the moons along their paths, with short trails.
-    LOOK: switch to stochastic and compare the paths (jittery) and the end result.
-    QUOTE: on-data fraction and moon shares (quality() in src/lib/gen/toy.ts) for learned ODE, learned SDE
-    and exact ODE; these are the numbers the flow-matching lesson compares against. */}
+To generate, start from pure noise and repeatedly move a little along the predicted denoising direction, lowering the noise level step by step until clean points remain. There are two ways to do this. The **deterministic** sampler (the probability-flow ODE, close to DDIM) follows the arrows exactly, so the same noise always gives the same result. The **stochastic** sampler (an SDE, close to DDPM) adds a little fresh noise at every step, so paths wobble.
+
+The figure starts 600 fresh noise points and walks them with the trained network, with short trails. Colour shows which moon a point ends on. After the walk, $67\%$ of the points are on the moons with the deterministic sampler ($60\%$ on the upper moon, $40\%$ on the lower) and $64\%$ with the stochastic one. The ideal denoiser from step 1 put essentially every point on a moon; a network trained for under four seconds on 600 points is visibly worse. The deterministic paths are smooth curves; switch to stochastic and they jitter, but the result is no better. These numbers are the baseline for the flow-matching lesson.
+
+<DiffusionDenoiser client:visible mode="reverse" denoiser="learned" sampler="ode" showScore={false} title="Sampling with the trained network" />
+
 </Step>
 
 <Step title="From noise to an image and back">
-The same process works on images: each pixel is one coordinate, and the slider moves the whole picture between static and a clean image.
 
-{/* IDEA: an image is a point with many coordinates; noising and denoising act on all pixels at once.
-    Uses the exact ideal denoiser for a small set of 8x8 glyph images (closed-form posterior mean), so
-    it is honest that this denoiser can only reproduce images it was given (say so in one sentence:
-    real models generalise because they are imperfect estimators trained on huge datasets).
-    WIDGET: DiffusionDenoiser mode="image".
-    OVER t: tau sweeps 0 to 1 and back; three panels: the noisy image x_t, the denoiser's guess of the
-    clean image x_0-hat, and the added noise. Scrubbing the timeline is the slider IDEA.md asks for.
-    LOOK: at mid noise, the guess panel already shows the glyph while x_t looks like static.
-    QUOTE: the tau at which the guess first settles on the right glyph (from the probe). */}
+Nothing in this recipe cares that the data is two-dimensional. An image is a point with many coordinates, one per pixel, and noising and denoising act on all pixels at once. The figure uses tiny 8 by 8 images of the digits 0 to 9, so the ideal denoiser can again be written down exactly. In real models the data is millions of images and the denoiser is a learned network, which can produce images it was never shown; this ideal one can only mix the ten digits it knows.
+
+Three panels show the noisy image, the denoiser's best guess of the clean image, and the noise in the image. The bars underneath show how much the guess leans on each digit. In the first half a 3 is buried in noise: the guess keeps recognising the 3 until $\tau = 0.41$, after which the bars flatten out. In the second half, fresh static is denoised. The guess is blurry at first, an average of all digits, then at $\tau = 0.56$ it settles on a single digit, here a 7, while the image on the left still looks like static. The 7 is a new sample, not the 3 that was erased.
+
+<DiffusionDenoiser client:visible mode="image" title="Static to a digit, and a digit to static" />
+
 </Step>
 
 <Step title="Guidance: steering what gets generated">
-Text-to-image models add a condition, such as a caption, and guidance turns up how strongly the samples follow it.
 
-{/* IDEA: conditioning: the denoiser also receives a label c. Classifier-free guidance mixes conditional
-    and unconditional predictions: eps-hat_w = (1 + w) eps-hat(x, c) - w eps-hat(x). Larger w: samples
-    hug the condition more tightly, with less variety. In text-to-image models c is a text embedding;
-    here it is one of two labels, "upper moon" or "lower moon".
-    WIDGET: DiffusionDenoiser mode="guide" dataset="moons" guidance=[3] with selectors label (upper or
-    lower moon) and w (0, 1, 3, 7). Exact conditional scores (mixture restricted to one moon).
-    OVER t: guided reverse sampling from the same noise points.
-    LOOK: raise w and watch samples crowd toward the middle of the chosen moon.
-    QUOTE: share on the chosen moon and spread along it for w = 0 and w = 7.
-    SHOW THE MATH: the guided score and why w = 0 is plain conditional sampling. */}
+Text-to-image models take a condition, such as a caption, and **guidance** controls how strongly the samples follow it. Here the condition is a label: "upper moon" or "lower moon". Classifier-free guidance runs the denoiser twice, once with the label and once without, and exaggerates the difference. With strength $w$:
+
+$$
+\hat{\boldsymbol\varepsilon}_w = (1+w)\,\hat{\boldsymbol\varepsilon}(\mathbf x \mid c) - w\,\hat{\boldsymbol\varepsilon}(\mathbf x).
+$$
+
+At $w = 0$ this is plain conditional sampling. The figure starts from the same noise every time. At $w = 0$, all samples land on the upper moon, spread along it by $7.3$ positions (out of 26). At $w = 7$ the spread shrinks to $2.9$ positions, the samples bunch up near the end of the moon farthest from the other one, and $3\%$ now miss the moon altogether. Stronger guidance buys closeness to the label at the price of variety, and eventually of quality.
+
+<DiffusionDenoiser client:visible mode="guide" guidance={3} showScore={false} title="Guided sampling toward one moon" />
+
 </Step>
 
 <Step title="Common misconceptions">
-A few ideas about diffusion models sound right but are not.
 
-{/* NO WIDGET. Misconceptions:
-    1. The model removes noise from one image in one shot. Actually it takes many small steps; one-shot
-       guesses are blurry averages (step 7 guess panel).
-    2. The forward process is learned. Actually it is fixed; only the denoiser is trained.
-    3. The network predicts the clean image. Actually DDPM predicts the noise (equivalent
-       parameterisations exist, but the loss in this lesson is noise prediction).
-    4. Generation reverses the exact noise that was added. Actually the starting noise is fresh; the model
-       produces new samples, not recovered training points.
-    5. More guidance is always better. Actually high guidance reduces variety and can distort samples. */}
+**You might think the model removes the noise from an image in one shot.** Actually it takes many small steps. A one-shot guess is a blurry average over everything the image could be, like the early guess panel in the digit figure.
+
+**You might think the forward process is learned.** Actually it is a fixed recipe. Only the denoiser is trained.
+
+**You might think the network predicts the clean image.** In this lesson (and in DDPM) it predicts the noise. Predicting the clean image or the score is an equivalent choice, since each can be computed from the others.
+
+**You might think generation reverses the exact noise that was added.** Actually the starting noise is fresh each time. The model makes new samples; the digit figure ends on a 7 after erasing a 3.
+
+**You might think more guidance is always better.** Actually high guidance narrows the samples and can push them off the data, as in the last figure.
+
 </Step>
 
 <Step title="Check yourself">
-Test your understanding with a few short questions.
 
-{/* NO WIDGET. Questions:
-    1. Why does the closed-form jump make training efficient?
-    2. At tau near 1, where do the denoising arrows point, and why?
-    3. What is the difference between the ODE and SDE samplers in what you saw?
-    4. Write the guided prediction for w = 0 and w = 1.
-    5. Why can a perfect denoiser on a small training set only reproduce training examples? */}
+<details>
+<summary>1. Why does the one-line jump make training efficient?</summary>
+You can build a noisy example at any noise level directly from a clean one, without simulating the chain of small steps. Every training step can use a different random level.
+</details>
+
+<details>
+<summary>2. At $\tau$ near 1, where do the denoising arrows point, and why?</summary>
+Toward the centre: the noisy point carries almost no information about which moon it came from, so the best guess is the average of the data, near the origin.
+</details>
+
+<details>
+<summary>3. What is the difference between the ODE and SDE samplers in what you saw?</summary>
+The ODE follows the arrows exactly: smooth paths, same noise gives the same sample. The SDE adds fresh noise each step: jittery paths. Both ended with about two thirds of the points on the moons.
+</details>
+
+<details>
+<summary>4. Write the guided prediction for $w = 0$ and $w = 1$.</summary>
+$w = 0$: $\hat{\boldsymbol\varepsilon}(\mathbf x \mid c)$, plain conditional sampling. $w = 1$: $2\,\hat{\boldsymbol\varepsilon}(\mathbf x \mid c) - \hat{\boldsymbol\varepsilon}(\mathbf x)$.
+</details>
+
+<details>
+<summary>5. Why can a perfect denoiser on a small training set only reproduce training examples?</summary>
+With only ten images to be explained, the best guess of the clean image is always a mixture of those ten, so generation can only end on one of them. Real models generalise because they are imperfect, smooth estimators trained on huge datasets.
+</details>
+
 </Step>
 
 <Step title="Going deeper">
-Papers and resources for going further.
 
-{/* NO WIDGET. Cite:
-    - Sohl-Dickstein et al., "Deep Unsupervised Learning using Nonequilibrium Thermodynamics", ICML 2015
-      (arXiv:1503.03585).
-    - Ho, Jain, Abbeel, "Denoising Diffusion Probabilistic Models", NeurIPS 2020 (arXiv:2006.11239).
-    - Song et al., "Score-Based Generative Modeling through Stochastic Differential Equations", ICLR 2021
-      (arXiv:2011.13456). Source of the VP schedule used here.
-    - Song, Meng, Ermon, "Denoising Diffusion Implicit Models", ICLR 2021 (arXiv:2010.02502).
-    - Ho and Salimans, "Classifier-Free Diffusion Guidance", 2022 (arXiv:2207.12598).
-    - Rombach et al., "High-Resolution Image Synthesis with Latent Diffusion Models", CVPR 2022
-      (arXiv:2112.10752).
-    - Karras et al., "Elucidating the Design Space of Diffusion-Based Generative Models", NeurIPS 2022
-      (arXiv:2206.00364).
-    - Vincent, "A Connection Between Score Matching and Denoising Autoencoders", Neural Computation 2011.
-    - Lilian Weng, "What are Diffusion Models?" (blog, 2021; VERIFY URL).
-    Next: /learn/graphs-generative/flow-matching/. */}
+- Sohl-Dickstein et al., ["Deep Unsupervised Learning using Nonequilibrium Thermodynamics"](https://arxiv.org/abs/1503.03585), ICML 2015: the original idea.
+- Ho, Jain and Abbeel, ["Denoising Diffusion Probabilistic Models"](https://arxiv.org/abs/2006.11239), NeurIPS 2020: noise prediction as simple regression.
+- Song et al., ["Score-Based Generative Modeling through Stochastic Differential Equations"](https://arxiv.org/abs/2011.13456), ICLR 2021: the schedule used in this lesson.
+- Song, Meng and Ermon, ["Denoising Diffusion Implicit Models"](https://arxiv.org/abs/2010.02502), ICLR 2021: the deterministic sampler.
+- Ho and Salimans, ["Classifier-Free Diffusion Guidance"](https://arxiv.org/abs/2207.12598), 2022.
+- Rombach et al., ["High-Resolution Image Synthesis with Latent Diffusion Models"](https://arxiv.org/abs/2112.10752), CVPR 2022.
+- Karras et al., ["Elucidating the Design Space of Diffusion-Based Generative Models"](https://arxiv.org/abs/2206.00364), NeurIPS 2022.
+- Vincent, "A Connection Between Score Matching and Denoising Autoencoders", Neural Computation, 2011.
+- Lilian Weng, ["What are Diffusion Models?"](https://lilianweng.github.io/posts/2021-07-11-diffusion-models/) (blog, 2021).
+
+Next: [flow matching](/learn/graphs-generative/flow-matching/).
+
 </Step>

@@ -35,6 +35,14 @@ There are two standard penalties.
 - **L2** (also called *ridge* regression or *weight decay*) adds the sum of squares, $\sum_j w_j^2$. Big weights are punished much more than small ones.
 - **L1** (the *lasso*) adds the sum of absolute values, $\sum_j |w_j|$. Every unit of weight costs the same, big or small.
 
+(Here $w_j$ is the $j$-th weight and $\sum_j$ means "add up over every weight".) **Two quick examples.** For weights $(1.6,\ 0.7)$: L2 $= 1.6^2 + 0.7^2 = 2.56 + 0.49 = 3.05$ and L1 $= 1.6 + 0.7 = 2.3$. For weights $(3,\ 0)$: L2 $= 9$ and L1 $= 3$. The L1 totals are close (2.3 and 3), but L2 charges the one big weight about three times as much as the two moderate ones (9 against 3.05).
+
+**What L2 does to a gradient-descent update.** Written with a convenient $\tfrac12$ (see the math below), the L2 penalty on one weight is $\tfrac{\lambda}{2} w^2$, whose gradient is $\lambda w$, so the update from the [gradient descent lesson](/learn/foundations/gradient-descent/) becomes
+
+$$w \leftarrow w - \text{lr} \times (\text{loss gradient} + \lambda w) = (1 - \text{lr} \times \lambda)\,w - \text{lr} \times \text{loss gradient}.$$
+
+With that lesson's learning rate $0.08$ and $\lambda = 0.5$, every update first multiplies each weight by $1 - 0.08 \times 0.5 = 0.96$, then takes the usual step. The weights shrink by 4% each update unless the data pushes back. That is why L2 is also called **weight decay**.
+
 Both push weights toward zero. The difference is in *how* they get there, and the rest of this lesson is about that difference.
 
 The figure below runs both penalties side by side at the same $\lambda$: L1 on the left, L2 on the right. Each line is one of the model's six weights, and the horizontal axis is $\lambda$, rising as the timeline plays. Don't read the details yet; a later step does. Just notice the shapes. On the left, lines hit zero one after another and stay there. On the right, every line bends toward zero, but none reaches it.
@@ -44,7 +52,7 @@ The figure below runs both penalties side by side at the same $\lambda$: L1 on t
 <details>
 <summary>Show the math</summary>
 
-For a linear model with squared error, using the convention that the loss is $\tfrac12$ of the mean squared error over $n$ training points:
+For a linear model with squared error, using the convention that the loss is $\tfrac12$ of the mean squared error over $n$ training points (half the MSE from linear regression; halving a loss does not move its minimum, it only changes which $\lambda$ gives which result):
 
 $$J_{\text{L2}}(\mathbf{w}) = \frac{1}{2n}\lVert \mathbf{y} - X\mathbf{w}\rVert^2 + \frac{\lambda}{2}\lVert \mathbf{w}\rVert_2^2, \qquad J_{\text{L1}}(\mathbf{w}) = \frac{1}{2n}\lVert \mathbf{y} - X\mathbf{w}\rVert^2 + \lambda\lVert \mathbf{w}\rVert_1 .$$
 
@@ -71,6 +79,13 @@ The L2 region is a circle. A contour touches a smooth circle at a generic point,
 Now the region is an L1 diamond. It has flat sides and sharp corners, and the corners sit exactly on the axes, where one weight is zero. A growing ellipse tends to touch a corner first, because a corner sticks out further than a flat side does.
 
 Watch the timeline in the figure. At about $\lambda = 1.12$ the optimum reaches the $w_1$ axis at $(0.90, 0)$, and from then on $w_2$ stays at exactly zero while $w_1$ keeps shrinking. That is not rounding: the solution really is zero, and the readout counts it. This is **sparsity**: L1 acts as an automatic feature selector.
+
+**Where $(0.90, 0)$ comes from.** In this example the two inputs are correlated, so the best value for each weight depends on the other. With no penalty, the best $w_1$ for a given $w_2$ is $2.02 - 0.6\,w_2$, and the best $w_2$ for a given $w_1$ is $1.66 - 0.6\,w_1$. (Check: $w_1 = 1.6$, $w_2 = 0.7$ satisfies both, $2.02 - 0.6 \times 0.7 = 1.6$ and $1.66 - 0.6 \times 1.6 = 0.7$. That is the ringed minimum.) The L1 penalty changes each "best value" in one way: move it toward zero by $\lambda$, and stop at zero if it would cross.
+
+- At $\lambda = 1.12$, try $w_2 = 0$. The best $w_1$ is $2.02 - 0.6 \times 0 = 2.02$, moved toward zero by $1.12$: $2.02 - 1.12 = 0.90$.
+- With $w_1 = 0.90$, the best $w_2$ is $1.66 - 0.6 \times 0.90 = 1.12$. Moving it toward zero by $1.12$ gives exactly $0$.
+
+Both conditions hold, so $(0.90, 0)$ is the answer. For a larger $\lambda$, $w_1 = 2.02 - \lambda$, and the pull on $w_2$ is $1.66 - 0.6 \times (2.02 - \lambda) = 0.448 + 0.6\lambda$. That grows more slowly than $\lambda$, so $w_2$ stays clipped at zero. At $\lambda = 1.2$, for example, $w_1 = 2.02 - 1.2 = 0.82$ and the pull on $w_2$ is $1.17$, less than $1.2$. L2 instead *divides* each best value by $1 + \lambda$, which never reaches zero: at the same $\lambda = 1.12$ it gives $(0.79,\ 0.56)$.
 
 <RegularizationPaths client:visible view="region" penalty="l1" toggle={false} title="L1: a diamond budget, the optimum snaps onto an axis" />
 

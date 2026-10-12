@@ -14,7 +14,7 @@
   interface Props {
     title?: string;
     dataset?: Dataset;
-    /** 'linear': features x, y. 'poly': adds x², xy, y². */
+    /** 'linear': features x₁, x₂. 'poly': adds x₁², x₁x₂, x₂². */
     model?: Model;
     /** Show the dataset / model pickers and the add-point tools. */
     editable?: boolean;
@@ -127,8 +127,8 @@
       }
       ctx.restore();
       ctx.font = stage.body(12, true); ctx.fillStyle = c.muted.hex; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-      ctx.fillText('x', L.px0 + L.s, L.main.y + L.main.h - 1);
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('y', L.px0 - 24, L.py0 - 4);
+      ctx.fillText('x₁', L.px0 + L.s, L.main.y + L.main.h - 1);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('x₂', L.px0 - 24, L.py0 - 4);
 
       // side panel: loss over training steps, with the playhead
       const sd = L.sd, mx = Math.max(0.75, run.loss[0]) * 1.05;
@@ -184,7 +184,7 @@
   {/snippet}
   {#snippet readout()}
     <p class="vals num">step <b>{Math.round(ui.k)}</b> · loss <b>{f2(ui.loss, 3)}</b> · accuracy <b>{Math.round(ui.acc * 100)}%</b>
-      {#if hov}<span class="base">· at ({f2(hov.x)}, {f2(hov.y)}): P(class 1) = {f2(hov.p, 3)}, score z = {f2(hov.z)}{#if mdl === 'linear'}, distance to the line = {f2(hov.d)}{/if}</span>{/if}</p>
+      {#if hov}<span class="base">· at x₁ = {f2(hov.x)}, x₂ = {f2(hov.y)}: P(class 1) = {f2(hov.p, 3)}, score z = {f2(hov.z)}{#if mdl === 'linear'}, distance to the line = {f2(hov.d)}{/if}</span>{/if}</p>
     <p class="say" role="status" aria-live="polite">{narration}</p>
   {/snippet}
   {#snippet footer()}
@@ -197,7 +197,7 @@
         </label>
         <label>Features
           <select value={mdl} onchange={(e) => setModel(e.currentTarget.value as Model)}>
-            <option value="linear">x, y (a line)</option><option value="poly">x, y, x², xy, y² (a curve)</option>
+            <option value="linear">x₁, x₂ (a line)</option><option value="poly">x₁, x₂, x₁², x₁x₂, x₂² (a curve)</option>
           </select>
         </label>
         <label>Click adds

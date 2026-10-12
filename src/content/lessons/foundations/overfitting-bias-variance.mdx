@@ -14,7 +14,9 @@ import PolyOverfit from '../../../components/widgets/PolyOverfit/PolyOverfit.sve
 
 <Step title="A perfect score that means nothing">
 
-A model can score perfectly on its training data and still be useless. The figure shows why. Fourteen points were sampled from a smooth curve (dashed) with a little random noise added, so none of them sits exactly on the curve. We fit a **polynomial** to them: a curve $\hat y = c_0 + c_1 x + c_2 x^2 + \dots + c_d x^d$. The **degree** $d$ is the model's flexibility. A degree-1 polynomial is a straight line; a degree-12 polynomial has thirteen knobs and can bend many times.
+A model can score perfectly on its training data and still be useless. The figure shows why. Fourteen points were sampled from a smooth curve (dashed) with a little random noise added, so none of them sits exactly on the curve. We fit a **polynomial** to them: a curve $\hat y = c_0 + c_1 x + c_2 x^2 + \dots + c_d x^d$. Here $\hat y$ (read "y-hat") is the prediction, $y$ is the observed answer as in [linear regression](/learn/foundations/linear-regression/), and $c_0, c_1, \dots$ are the parameters. The **degree** $d$ is the highest power, and it sets the model's flexibility. A degree-1 polynomial is $c_0 + c_1 x$, the straight line from linear regression with $b = c_0$ and $w = c_1$. A degree-12 polynomial has thirteen parameters and can bend many times.
+
+Keep the three pieces apart. The **model** is the polynomial. The **loss** is the same mean squared error as in linear regression. The **procedure** here is the least-squares shortcut from that lesson, which jumps straight to the parameters with the lowest MSE instead of taking gradient steps. It works for any degree because $x^2, x^3, \dots$ are just extra inputs, each with its own parameter.
 
 Watch the timeline raise the degree from 1 to 12. The fitted curve (solid) bends more and more to reach the points. Each short vertical segment is a training residual, blue above the curve and orange below. Near the end the curve passes almost through every point, yet it swings far from the dashed truth between them.
 
@@ -26,7 +28,15 @@ Watch the timeline raise the degree from 1 to 12. The fitted curve (solid) bends
 
 At degree 1 the model is a straight line. No choice of slope and intercept can follow an S-shaped curve, so it misses in a systematic way: it is wrong in the same direction wherever it is wrong. This is **underfitting**, and the error it causes is called **bias**.
 
-The tell-tale sign is that the error is high on *both* the training data and fresh data. Here the degree-1 fit has a training error of 0.18 and a test error of 0.19 (mean squared error; the test error is measured on a separate set of 200 points from the same source). Getting more data would not help: the line is simply not expressive enough.
+The tell-tale sign is that the error is high on *both* the training data and fresh data.
+
+**Where the 0.18 comes from.** The best line for these 14 points is $\hat y = -0.051 + 0.764\,x$. The leftmost point has $x = -0.932$ and observed $y = -0.338$:
+
+- prediction: $-0.051 + 0.764 \times (-0.932) = -0.051 - 0.712 = -0.763$
+- error: $-0.763 - (-0.338) = -0.426$
+- squared error: $(-0.426)^2 = 0.182$
+
+Do the same for all 14 points and the squared errors add up to $2.525$. Divide by 14: the **training error** is $2.525 / 14 = 0.180$. The **test error** is the same calculation on a separate set of 200 points from the same source that the fit never saw: $0.193$. Getting more data would not help: the line is simply not expressive enough.
 
 <PolyOverfit client:visible degree={1} title="Degree 1: underfitting" />
 
@@ -68,7 +78,9 @@ Press **New data** to resample, or use the tick box to draw the fits from 20 oth
 
 We can split the expected error of a model into three parts. Fit the same degree to many fresh datasets and average. The **bias** squared is how far the *average* fit is from the truth; the **variance** is how much individual fits scatter around that average; the **noise** is the part no model can remove.
 
-The chart now adds two more lines, computed from 40 independent datasets. Bias² falls from 0.109 at degree 1 to 0.003 at degree 3. Variance climbs the other way, from 0.008 at degree 1 to 0.017 at degree 3, 0.155 at degree 9 and 24 at degree 12. The test error is roughly their sum plus the noise floor, so it is high at both ends and lowest in between. Making a model more flexible trades bias for variance.
+The chart now adds two more lines, computed from 40 independent datasets. Bias² falls from 0.109 at degree 1 to 0.003 at degree 3. Variance climbs the other way, from 0.008 at degree 1 to 0.017 at degree 3, 0.155 at degree 9 and 24 at degree 12.
+
+The expected test error is their sum plus the noise floor. At degree 1: $0.109 + 0.008 + 0.0625 = 0.180$. At degree 3: $0.003 + 0.017 + 0.0625 = 0.083$. Our one dataset measured $0.193$ and $0.075$: close, but not equal, because these three parts are averages over many possible datasets and ours is just one of them. Either way the total is high at both ends and lowest in between. Making a model more flexible trades bias for variance.
 
 <PolyOverfit client:visible decompose degree={3} title="Bias², variance and the noise floor" />
 
@@ -93,7 +105,7 @@ from numpy.polynomial import chebyshev as C
 x = np.linspace(-0.95, 0.95, 14)
 y = 0.8 * np.sin(3 * x) + np.random.default_rng(3).normal(0, 0.25, 14)
 for d in (1, 3, 12):
-    p = C.Chebyshev.fit(x, y, d)         # Chebyshev basis: well-conditioned least squares
+    p = C.Chebyshev.fit(x, y, d)         # least squares; Chebyshev form = same curves, steadier arithmetic
     print(d, np.mean((p(x) - y) ** 2))   # train error only ever goes down
 ```
 

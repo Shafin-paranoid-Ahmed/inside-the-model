@@ -7,147 +7,206 @@ order: 3
 level: advanced
 duration: 35
 prereqs: ["graphs-generative/autoencoders","math/probability"]
-status: stub
+status: draft
 ---
 import Step from '../../../components/ui/Step.astro';
+import LatentSpace from '../../../components/widgets/LatentSpace/LatentSpace.svelte';
 
-A plain autoencoder cannot generate, since its latent space has holes.
-
-{/* SKELETON (Day 13 plan: plans/day-13.md). Widget: LatentSpace (built for the autoencoders lesson) with
-    model="vae". Same 600 two-moons points (src/lib/gen/toy.ts, seed 7), same 1-number latent, same
-    network sizes as the AE so the two lessons compare directly. Encoder outputs mu and log-variance;
-    prior N(0, 1); decoder output is its mean (state this once: real VAEs also model decoder noise).
-    VAEs for beta 0.1, 1 and 4 are trained in one worker run. All numbers from LatentSpace/sim.ts probes. */}
+An autoencoder compresses data. A variational autoencoder (VAE) is trained so that you can also draw new data from it, by choosing codes from a distribution you know in advance.
 
 <Step title="Where do you pick a code?">
-To generate new data from an autoencoder you need to know which codes are safe to decode, and a plain autoencoder never tells you.
 
-{/* IDEA: restate the AE failure as the question a VAE answers: choose a known distribution for the codes
-    (the prior, N(0, 1)) and train the encoder to fill it.
-    WIDGET: LatentSpace model="ae" mode="sample" showPrior=[true] (the prior curve is drawn on the strip
-    over the AE's code histogram; codes are drawn from N(0, 1), not uniform as in the AE lesson).
-    OVER t: prior codes drop onto the strip and decode one by one.
-    LOOK: how many prior codes fall where the AE has no training codes at all.
-    QUOTE: fraction of prior samples on the data for the AE (quality()). */}
+To make new data with a decoder, you have to choose a code for it to decode. The [autoencoder lesson](/learn/graphs-generative/autoencoders/) picked codes uniformly between the smallest and largest code of the training points, which needed the training data to find out where "safe" codes are.
+
+Try a rule that needs no data: draw each code from the **standard normal distribution**, the bell curve with mean 0 and spread 1, written $\mathcal N(0, 1)$. The figure draws 300 such codes and decodes each with the autoencoder from that lesson. The black curve is $\mathcal N(0, 1)$, and the bars are where the autoencoder put its 600 training codes. **297** of the 300 decoded points land on the moons (99%).
+
+That is better than it has any right to be, and the bars show why: this autoencoder's codes happen to have mean −0.03 and spread 1.07, close to the bell curve. Nothing in training asked for that. If you multiplied every code by 10 and divided the decoder's first-layer weights by 10, the network would rebuild exactly the same points from codes ten times wider, and the loss could not tell the difference. So an autoencoder gives no rule for where codes go; here the scale came out right by luck. A VAE makes the rule part of training.
+
+<LatentSpace client:visible model="ae" mode="sample" showPrior />
+
 </Step>
 
 <Step title="Encoding to a mean and a variance">
-A variational autoencoder's encoder does not output one code per input but a small bell curve: a mean and a spread.
 
-{/* IDEA: encoder outputs mu(x) and sigma(x) (as log-variance); the code is a sample from N(mu, sigma^2).
-    Nearby codes must therefore decode to nearby, similar points, which smooths the latent space.
-    WIDGET: LatentSpace model="vae" mode="encode" focus=[same point index as the AE focus step].
-    OVER t: for the focused point, its bell curve is drawn on the strip; sampled codes stream out of the
-    bell and their decoded points scatter around the reconstruction; the other points show their mean
-    codes only.
-    LOOK: the width of the focused point's bell compared with the gap between the two moons' codes.
-    QUOTE: mu and sigma of the focused point; the spread of its decoded samples. */}
+A VAE's encoder does not output one code per input. It outputs a small bell curve: a **mean** $\mu$, where the code is centred, and a **spread** $\sigma$, how far a code may stray from it. The code that goes to the decoder is a random draw from that bell curve.
+
+The figure follows the same training point as before, near the left tip of the upper moon, at $x = (-1.90, -0.32)$. The encoder turns it into $\mu = 2.15$ and $\sigma = 0.31$. (The autoencoder gave this point the code −2.32. The sign and size of a code are arbitrary; only which points are close to each other matters.) Watch 40 codes drawn from its bell curve being decoded: they land within 0.12 of the rebuilt point on average. A bell that is 0.31 wide overlaps the bells of neighbouring points, so the decoder is trained to give similar outputs for codes that are close together. That is what makes the code line smooth.
+
+<LatentSpace client:visible model="vae" mode="encode" />
+
 </Step>
 
 <Step title="The reparameterization trick">
-Sampling is random, and gradients cannot flow through a dice roll, so the VAE moves the randomness out of the way.
 
-{/* IDEA: write z = mu + sigma * eps with eps from N(0, 1). The randomness lives in eps, a fixed input, so
-    the gradient of the loss reaches mu and sigma by the ordinary chain rule.
-    WIDGET: LatentSpace model="vae" mode="reparam" focus=[same point].
-    OVER t: eps sweeps from -2 to 2 on a small standard-normal strip; a linked arrow scales it by sigma and
-    shifts it by mu onto the latent strip; the decoded point moves accordingly. A two-path diagram shows
-    the gradient (gradient colour) reaching mu and sigma, not eps.
-    LOOK: the readout z = mu + sigma * eps with real numbers as eps moves.
-    QUOTE: mu, sigma and z at eps = 1.
-    SHOW THE MATH: dz/dmu = 1, dz/dsigma = eps. SHOW THE CODE: z = mu + torch.exp(0.5*logvar) *
-    torch.randn_like(mu). */}
+Training needs gradients, and a gradient cannot flow through a dice roll: "draw $z$ from $\mathcal N(\mu, \sigma^2)$" gives the optimizer nothing to differentiate. The fix is to move the dice out of the way. Draw $\varepsilon$ ("epsilon") from $\mathcal N(0, 1)$ first, as if it were an input, and then compute
+
+$$
+z = \mu + \sigma\,\varepsilon .
+$$
+
+$z$ has exactly the same distribution as before, but now it is an ordinary formula in $\mu$ and $\sigma$, so the chain rule reaches both. The figure sweeps $\varepsilon$ from −2 to 2: the code $z$ slides across the bell curve and the decoded point follows. At $\varepsilon = 1$ the code is $2.147 + 0.306 \times 1 = 2.453$. The pink arrows show where the gradient goes: back to $\mu$ and $\sigma$, and not to $\varepsilon$, which is just an input.
+
+<LatentSpace client:visible model="vae" mode="reparam" />
+
+<details>
+<summary>Show the math</summary>
+
+With $z = \mu + \sigma\varepsilon$ and $\varepsilon$ fixed, the derivatives are
+
+$$
+\frac{\partial z}{\partial \mu} = 1, \qquad \frac{\partial z}{\partial \sigma} = \varepsilon ,
+$$
+
+so for any loss $L$ that depends on $z$ through the decoder, $\partial L/\partial \mu = \partial L/\partial z$ and $\partial L/\partial \sigma = \varepsilon\,\partial L/\partial z$.
+
+</details>
+
+<details>
+<summary>Show the code</summary>
+
+```python
+mu, logvar = encoder(x).chunk(2, dim=-1)       # two numbers per code number
+eps = torch.randn_like(mu)                      # the randomness, outside the graph
+z = mu + torch.exp(0.5 * logvar) * eps          # sigma = exp(0.5 * logvar)
+x_hat = decoder(z)
+```
+
+The encoder predicts the logarithm of the variance because it can then output any real number and $\sigma = e^{\frac12 \log \sigma^2}$ stays positive.
+
+</details>
+
 </Step>
 
 <Step title="The loss: reconstruction plus KL">
-The VAE's loss has two parts that pull in opposite directions: rebuild the input well, and keep every bell curve close to the standard normal.
 
-{/* IDEA: the ELBO = expected reconstruction log-likelihood minus KL(q(z given x) to the prior). The KL term
-    pulls means to 0 and spreads to 1, closing gaps; reconstruction pushes codes apart.
-    WIDGET: LatentSpace model="vae" mode="train" beta=[1].
-    OVER t: scrubs training snapshots; the code histogram on the strip spreads out to match the prior curve;
-    the decoder curve forms; two loss curves (reconstruction, KL) share a step cursor.
-    LOOK: the KL curve rising early while reconstruction falls, then both settling.
-    QUOTE: final reconstruction term and final KL term (from snapshots).
-    SHOW THE MATH: KL for a 1D Gaussian, 0.5 * (mu^2 + sigma^2 - log sigma^2 - 1); the ELBO derivation
-    from log p(x) in three lines (Jensen). */}
+If the loss were only reconstruction, the encoder would shrink every $\sigma$ towards zero and spread the means as far apart as it liked, and the VAE would turn back into an autoencoder. The second term stops that. The **KL divergence** measures how far a bell curve is from the standard normal (zero when they are the same), and the VAE adds it, per point, to the reconstruction error. The two pull in opposite directions: reconstruction wants distinct, sharp codes; KL wants every bell curve to sit on $\mathcal N(0, 1)$, centred at 0 with spread 1.
+
+The timeline replays training. On the code line the bars are the means of the 600 training points, split by moon. They start in a lump at 0 and spread out until they roughly fill the black curve. Below are the two loss terms. In the first 50 steps KL jumps from 0.01 to 1.18 while the reconstruction term falls from 1.51 to 0.49. Then reconstruction keeps improving, to 0.13 at step 1500, and KL creeps up to 2.07: better reconstruction is paid for with bell curves that stray from the prior.
+
+<LatentSpace client:visible model="vae" mode="train" beta={0.1} />
+
+<details>
+<summary>Show the math</summary>
+
+For one Gaussian bell curve $q = \mathcal N(\mu, \sigma^2)$ against the standard normal prior, the KL divergence has a closed form:
+
+$$
+\mathrm{KL}\big(q \,\|\, \mathcal N(0,1)\big) = \tfrac12\left(\mu^2 + \sigma^2 - \log \sigma^2 - 1\right).
+$$
+
+It is zero exactly when $\mu = 0$ and $\sigma = 1$. The training loss is
+
+$$
+L = \underbrace{\lVert \mathbf x - g(z)\rVert^2}_{\text{reconstruction}} + \beta\,\underbrace{\mathrm{KL}}_{\text{prior}}, \qquad z = \mu(\mathbf x) + \sigma(\mathbf x)\,\varepsilon ,
+$$
+
+averaged over the training points, with $\beta = 0.1$ here. The standard derivation starts from the log-probability of the data, $\log p(\mathbf x)$, and uses Jensen's inequality to bound it from below by "expected reconstruction log-likelihood minus KL". That bound is the **ELBO** (evidence lower bound), and a VAE maximises it. With a Gaussian decoder of variance $s^2$ the reconstruction term is $\lVert \mathbf x - g(z)\rVert^2 / 2s^2$, so the loss above is the ELBO with $\beta = 2s^2$ (and a constant factor).
+
+</details>
+
 </Step>
 
 <Step title="Balancing the two terms">
-How hard the KL term pulls decides whether the VAE behaves like a plain autoencoder or forgets its input entirely.
 
-{/* IDEA: weight the KL term by beta (Higgins et al. 2017). Small beta: sharp reconstructions, gaps remain.
-    Large beta: codes collapse onto the prior and the decoder ignores the input (posterior collapse:
-    every point decodes near the same place).
-    WIDGET: LatentSpace model="vae" mode="beta" beta=[4] with a beta selector 0.1 / 1 / 4.
-    OVER t: the decoder curve and code histogram tween between the three trained models (each segment
-    snaps its readout to the real model, never a blend).
-    LOOK: switch to beta 4 and watch the decoded curve shrink.
-    QUOTE: reconstruction error and on-data sample fraction for each beta. Probe: if beta 4 does not
-    visibly collapse, pick the beta that does and change the selector. */}
+The weight $\beta$ on the KL term decides how hard the prior pulls. It also says how blurry the VAE assumes the data to be: $\beta = 2s^2$ means the decoder is assumed to miss each coordinate by about $s$. The moons here are only 0.07 thick, so a large $\beta$ tells the VAE that a lot of blur is fine, and it takes the offer.
+
+The figure shows the same network trained with four weights, one at a time. Reconstruction error (for the rebuilt point, with the mean code) and the share of prior samples that land on the data:
+
+- $\beta = 0.03$: error 0.041, KL 2.95, 294 of 300 samples on the data. This is as good as the autoencoder of the last lesson (error 0.053).
+- $\beta = 0.1$: error 0.076, KL 2.07, 260 of 300. Bell curves are wider (a typical $\sigma$ of 0.12 against 0.05), so the decoder averages over more neighbours and the curve loses sharpness at the junction between the moons.
+- $\beta = 1$: error 0.37, KL 0.50, 114 of 300. Bell curves are wide ($\sigma$ about 0.6), so the bridge between the moons grows into a long stretch of the code line and most samples land in the middle.
+- $\beta = 4$: error 1.47, KL 0.00, 0 of 300. The bell curves equal the prior ($\sigma$ is 1.0 for every point), so the codes carry no information about the input and every code decodes to a point near the centre. This is **posterior collapse**.
+
+So in this experiment the VAE is not better than the autoencoder on either number: at every weight it matches the autoencoder or loses to it, and what it buys is the known prior. Switch weights with the buttons or the timeline and watch the curve, the histogram and the crosses.
+
+<LatentSpace client:visible model="vae" mode="beta" />
+
 </Step>
 
 <Step title="Sampling new data from the prior">
-Once trained, a VAE generates by drawing a code from the standard normal and decoding it.
 
-{/* IDEA: generation = z from N(0, 1), x = decoder(z). Most samples land on the moons. Because the decoder
-    is continuous and the code line is one piece, some samples land on a thin bridge between the moons.
-    WIDGET: LatentSpace model="vae" mode="sample" beta=[1].
-    OVER t: 300 prior codes drop and decode (same seed as step 1, so the comparison is fair).
-    LOOK: the bridge between the moons.
-    QUOTE: VAE on-data fraction vs the AE's from step 1; share of samples on each moon. */}
+Once trained, a VAE generates by drawing $z$ from $\mathcal N(0, 1)$ and decoding it, with no peeking at the training data. These are the same 300 random draws as in the first step, now decoded by the VAE with $\beta = 0.1$. **260** of the 300 land on the data (87%), against the autoencoder's 297 (99%), and the 40 that miss sit on a thin bridge between the two moons. The shares of the points that do land are 48% on the upper moon and 52% on the lower, so both moons are covered.
+
+Why is the VAE worse here? Its bell curves are wide enough that points near where the moons come close have overlapping codes, and the decoder is forced to give one answer to codes that serve both. That answer is an average of the two moons, which is a point in the empty middle. Real image VAEs show this as blurry pictures: the decoder returns the mean of everything the code could have meant.
+
+<LatentSpace client:visible model="vae" mode="sample" beta={0.1} />
+
 </Step>
 
 <Step title="Walking through the latent space">
-Sliding through a VAE's latent space now traces a single smooth path across both moons.
 
-{/* IDEA: the regularised latent space is continuous and has no empty stretches, so interpolation is
-    meaningful.
-    WIDGET: LatentSpace model="vae" mode="explore" beta=[1].
-    OVER t: a marker sweeps z from -2.5 to 2.5; decoded point traces the decoder curve; prior curve and
-    code histogram on the strip. Draggable marker.
-    LOOK: where on the strip the decoded point crosses between the moons, and how much prior mass is there.
-    QUOTE: the z interval that decodes into the gap and its probability under N(0, 1). */}
+Because the code line is one smooth piece, sliding along it traces a single path through both moons. The marker sweeps $z$ from −2.5 to 2.5; the black curve is the prior, and the bars show where the training codes sit. The two moons' codes overlap in the middle: the upper moon's means run from −0.38 to 2.30 and the lower moon's from −2.45 to 0.64.
+
+Watch the marker between −0.15 and 0.30: there the decoded point crosses the middle and turns into a cross, off the data. That stretch holds 18% of the prior's probability, which is why a few draws fall into it. The autoencoder's bridge was narrower (about 2% of its code line) but it had no prior to say how likely a code there was.
+
+<LatentSpace client:visible model="vae" mode="explore" beta={0.1} />
+
 </Step>
 
 <Step title="Common misconceptions">
-A few ideas about VAEs sound right but are not.
 
-{/* NO WIDGET. Misconceptions:
-    1. The encoder outputs a code. Actually it outputs the parameters of a distribution over codes.
-    2. The KL term is just a regulariser added for convenience. Actually it comes out of a lower bound on
-       log p(x), the ELBO.
-    3. VAE samples are blurry because the network is too small. Actually a large part comes from the
-       objective (averaging under the Gaussian decoder and the KL pressure), visible here as the bridge.
-    4. The reparameterization trick changes what is sampled. Actually z has exactly the same distribution;
-       only the gradient path changes.
-    5. Higher beta always gives a better latent space. Actually too high a beta makes the decoder ignore the
-       code (posterior collapse). */}
+**You might think the encoder outputs a code.** Actually it outputs the parameters of a distribution over codes, a mean and a spread, and the code is a random draw from it.
+
+**You might think the KL term is a regulariser added for convenience.** Actually it comes out of the derivation: maximising a lower bound on the log-probability of the data, the ELBO, gives reconstruction minus KL.
+
+**You might think a VAE always generates better than an autoencoder.** Actually on this data the VAE reconstructs and samples worse at every weight above 0.03. What it gives is a rule for sampling that does not depend on reading the training codes, and it matters most when the data is complicated.
+
+**You might think blurry VAE samples mean the network is too small.** Actually much of it comes from the objective: with a squared-error decoder and overlapping bell curves, the best answer for an ambiguous code is the average, which here is the bridge between the moons.
+
+**You might think the reparameterization trick changes what is sampled.** Actually $z$ has exactly the same distribution; only the path the gradient takes changes.
+
+**You might think a larger $\beta$ is always better.** Actually too large a $\beta$ makes the decoder ignore the code entirely (posterior collapse, $\beta = 4$ above).
+
 </Step>
 
 <Step title="Check yourself">
-Test your understanding with a few short questions.
 
-{/* NO WIDGET. Questions:
-    1. Compute the KL term for mu = 0, sigma = 1. (zero)
-    2. Why can't gradients pass through "sample z from N(mu, sigma^2)" directly?
-    3. What happens to the codes if the KL weight is set to 0?
-    4. Why do some VAE samples land between the moons?
-    5. Which loss term pushes the moons' codes apart, and which pulls them together? */}
+<details>
+<summary>1. Compute the KL term for μ = 0 and σ = 1.</summary>
+
+$\tfrac12(0 + 1 - \log 1 - 1) = 0$. A bell curve equal to the prior costs nothing.
+
+</details>
+
+<details>
+<summary>2. Why can't gradients pass through "draw z from N(μ, σ²)" directly?</summary>
+
+A random draw is not a differentiable function of $\mu$ and $\sigma$; there is nothing to take a derivative of. Writing $z = \mu + \sigma\varepsilon$ with $\varepsilon$ drawn separately makes $z$ an ordinary function of them.
+
+</details>
+
+<details>
+<summary>3. What happens to the codes if the KL weight is set to 0?</summary>
+
+Nothing holds the bell curves near the prior. The encoder shrinks every $\sigma$ towards zero and the model behaves like a plain autoencoder, with codes anywhere and at any scale.
+
+</details>
+
+<details>
+<summary>4. Why do some VAE samples land between the moons?</summary>
+
+Near the junction the bell curves of points from both moons overlap, so the decoder must give one answer to codes that mean different things, and it returns a blend: a point in the empty middle.
+
+</details>
+
+<details>
+<summary>5. Which loss term pushes the moons' codes apart, and which pulls them together?</summary>
+
+Reconstruction pushes them apart, because points that need different outputs need different codes. KL pulls every bell curve towards the prior, so the codes crowd together around 0.
+
+</details>
+
 </Step>
 
 <Step title="Going deeper">
-Papers and resources for going further.
 
-{/* NO WIDGET. Cite:
-    - Kingma and Welling, "Auto-Encoding Variational Bayes", ICLR 2014 (arXiv:1312.6114).
-    - Rezende, Mohamed, Wierstra, "Stochastic Backpropagation and Approximate Inference in Deep Generative
-      Models", ICML 2014 (arXiv:1401.4082).
-    - Higgins et al., "beta-VAE: Learning Basic Visual Concepts with a Constrained Variational Framework",
-      ICLR 2017 (VERIFY OpenReview link).
-    - Kingma and Welling, "An Introduction to Variational Autoencoders", 2019 (arXiv:1906.02691).
-    - Doersch, "Tutorial on Variational Autoencoders", 2016 (arXiv:1606.05908).
-    - Bowman et al., "Generating Sentences from a Continuous Space", 2016 (arXiv:1511.06349), on posterior
-      collapse.
-    Next: /learn/graphs-generative/gans/. */}
+- Diederik Kingma and Max Welling, "Auto-Encoding Variational Bayes", ICLR 2014 ([arXiv:1312.6114](https://arxiv.org/abs/1312.6114)).
+- Danilo Rezende, Shakir Mohamed and Daan Wierstra, "Stochastic Backpropagation and Approximate Inference in Deep Generative Models", ICML 2014 ([arXiv:1401.4082](https://arxiv.org/abs/1401.4082)).
+- Irina Higgins et al., "beta-VAE: Learning Basic Visual Concepts with a Constrained Variational Framework", ICLR 2017 ([OpenReview](https://openreview.net/forum?id=Sy2fzU9gl)).
+- Diederik Kingma and Max Welling, "An Introduction to Variational Autoencoders", 2019 ([arXiv:1906.02691](https://arxiv.org/abs/1906.02691)).
+- Carl Doersch, "Tutorial on Variational Autoencoders", 2016 ([arXiv:1606.05908](https://arxiv.org/abs/1606.05908)).
+- Samuel Bowman et al., "Generating Sentences from a Continuous Space", 2016 ([arXiv:1511.06349](https://arxiv.org/abs/1511.06349)): posterior collapse in text VAEs.
+
+Next: [generative adversarial networks](/learn/graphs-generative/gans/).
+
 </Step>

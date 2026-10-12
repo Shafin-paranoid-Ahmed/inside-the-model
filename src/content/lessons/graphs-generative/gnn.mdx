@@ -18,7 +18,7 @@ A molecule is atoms joined by bonds. A social network is people joined by friend
 
 That breaks the networks you know. An MLP needs a fixed-length input vector in a fixed order. A convolution needs a regular grid to slide over. A graph neural network (GNN) needs a different idea, and it is a simple one: **let each node learn from its neighbors**.
 
-Below is a small graph with seven nodes. Each node carries three numbers (its **features**), drawn as three little bars: blue up for positive, orange down for negative. Watch. Colored dots travel along the edges, each node combines what arrived, and its bars change. Then it repeats one more time, and finally the whole graph is squeezed into one vector on the right. The rest of this lesson takes that loop apart.
+Below is a small graph with seven nodes. Each node carries three numbers (its **features**), drawn as three little bars: blue up for positive, orange-red down for negative. Watch. Colored dots travel along the edges, each node combines what arrived, and its bars change. Then it repeats one more time, and finally the whole graph is squeezed into one vector, the box labelled "graph vector". The rest of this lesson takes that loop apart.
 
 <GNNMessagePassing client:visible title="Two rounds of message passing, then a readout" layers={2} editable={false} showControls={false} showPanel={false} />
 
@@ -108,7 +108,7 @@ The square roots make the weighting symmetric: a message between a hub and a lea
 
 $$H' = \sigma\bigl(\hat D^{-1/2}\hat A\,\hat D^{-1/2}\, H\, W\bigr), \qquad \hat A = A + I.$$
 
-Row $i$ of $H$ is the feature vector of node $i$, and $\hat D$ is the diagonal degree matrix of $\hat A$. The widget computes exactly this, with $\sigma = \tanh$ so signed features stay visible. The unit tests compare it against the dense matrix formula.
+Row $i$ of $H$ is the feature vector of node $i$, and $\hat D$ is the diagonal degree matrix of $\hat A$. The widget computes exactly this, with $\sigma = \tanh$ so signed features stay visible.
 
 <GNNMessagePassing client:visible title="GCN: each message is scaled by 1 / sqrt(d_i d_j)" layers={1} agg="gcn" readout={false} select={3} showControls={false} />
 
@@ -146,7 +146,7 @@ In PyTorch Geometric this is `GCNConv(in_channels, out_channels)`.
 
 One layer only lets a node hear from its direct neighbors. But the neighbors' features already contain *their* neighbors' news from the previous layer. So after $k$ layers a node's features depend on every node within $k$ hops: its **receptive field**, the same idea as in a CNN.
 
-In the figure the selected node is D and the shaded halo marks the nodes that have reached it. D is a leaf hanging off C. After one layer it hears from C. After two, from A and B (two hops away). After three, from E. The last two nodes, F and G, are four hops away, so D needs four layers to see them. Use the layers slider and drag the timeline: the halo grows exactly when the update phase finishes.
+In the figure the selected node is D and the shaded halo marks the nodes that have reached it. D is a leaf hanging off C. After one layer it hears from C. After two, from A and B (two hops away). After three, from E. The last two nodes, F and G, are four hops away, so D needs four layers to see them. Use the layers slider and drag the timeline: the halo grows halfway through each update, when the new features arrive.
 
 This is a hard limit and a design lever. If the answer for a node depends on something five hops away, a three-layer GNN can never see it.
 
@@ -162,7 +162,7 @@ $$e_{ij} = \text{LeakyReLU}\bigl(\mathbf a^{\top}[\,W\mathbf h_i \,\Vert\, W\mat
 
 The new features are then $\mathbf h_i' = \sigma\bigl(\sum_j \alpha_{ij} W\mathbf h_j\bigr)$. Because of the softmax, the coefficients into any node sum to 1, so it is a *weighted average* whose weights depend on the data.
 
-In the figure each edge has two lanes, one per direction. Lane color and width show $\alpha$ in the same purple scale used for attention elsewhere on this site, and the numbers on the edges into node C are its attention weights. With these random weights, C gives $\alpha = 0.55$ to its own message and only $0.14$ to A, $0.17$ to B and $0.15$ to D. In general $\alpha_{ij} \ne \alpha_{ji}$: attention is not symmetric.
+In the figure each edge has two lanes, one per direction. Lane width and color strength show $\alpha$ (a wider, stronger lane means more attention), and the numbers on the edges into node C are its attention weights. With these random weights, C gives $\alpha = 0.55$ to its own message and only $0.14$ to A, $0.17$ to B and $0.15$ to D. In general $\alpha_{ij} \ne \alpha_{ji}$: attention is not symmetric.
 
 In this figure the vector $\mathbf a$ is random. A trained GAT would learn $\mathbf a$ and $W$ so that the weights help with the task, for example to trust neighbors of the same class.
 
@@ -171,7 +171,7 @@ In this figure the vector $\mathbf a$ is random. A trained GAT would learn $\mat
 <details>
 <summary>Show the math</summary>
 
-The concatenation form splits into two dot products, $\mathbf a^{\top}[W\mathbf h_i \Vert W\mathbf h_j] = \mathbf a_L^{\top} W\mathbf h_i + \mathbf a_R^{\top} W\mathbf h_j$. The first term is the same for every neighbor of $i$, so it shifts all scores equally *before* the LeakyReLU, but not after it, which is why the ranking of neighbors depends on both ends. Softmax is unchanged by adding a constant to all scores, which the unit tests check.
+The concatenation form splits into two dot products, $\mathbf a^{\top}[W\mathbf h_i \Vert W\mathbf h_j] = \mathbf a_L^{\top} W\mathbf h_i + \mathbf a_R^{\top} W\mathbf h_j$. The first term is the same for every neighbor of $i$, so it shifts all scores equally *before* the LeakyReLU, but not after it, which is why the ranking of neighbors depends on both ends. Softmax is unchanged by adding a constant to all scores.
 
 Veličković et al. use several attention heads and concatenate or average their outputs, as in a Transformer. The widget shows one head. Note also the relation to the Transformer: self-attention is a GAT on a complete graph, where every token is connected to every other.
 
@@ -185,7 +185,7 @@ Sometimes you want one answer for the whole graph: is this molecule toxic, is th
 
 $$\mathbf h_{\text{graph}} = \frac{1}{n}\sum_{v} \mathbf h_v^{T}.$$
 
-This vector goes into an ordinary MLP that predicts the label. Watch the end of the timeline: the seven feature vectors flow into the box on the right, and its bars are their average. Try adding or removing a node: the readout is still a vector of length three, which is what lets one network handle graphs of any size.
+This vector goes into an ordinary MLP that predicts the label. Watch the end of the timeline: the seven feature vectors flow into the box labelled "graph vector", and its bars are their average. Try adding or removing a node: the readout is still a vector of length three, which is what lets one network handle graphs of any size.
 
 Mean is the simplest readout. Sum keeps the graph's size, which matters when counting matters (the number of atoms of some type), and max detects a feature present anywhere.
 
@@ -197,7 +197,7 @@ Mean is the simplest readout. Sum keeps the graph's size, which matters when cou
 
 Stack many layers and something goes wrong. Each GCN layer replaces a node's features with a weighted average of its neighborhood. Averaging over and over pushes every node toward the same vector, and the differences that make nodes distinguishable wash out. This is **over-smoothing** (Li, Han and Wu, 2018), and it is a big reason most GNNs are shallow, two to four layers, unlike CNNs with dozens.
 
-The readout line under the figure measures it: the *feature spread* is the standard deviation of the features across nodes, averaged over the three features. On this graph it starts at 0.53 and, with six GCN layers, ends at 0.03. It does not shrink at every single layer, since the random weights $W$ also stretch and rotate features, but the trend is clear. Try the other aggregators: with these random weights they also end small (0.03 for sum, 0.06 for max), because $\tanh$ saturation and the shared weights shrink differences too. The cleanest picture of over-smoothing is the normalized average alone: repeatedly applying $\tilde A$ converges toward a vector that depends only on node degrees.
+The readout line under the figure measures it: the *feature spread* is the standard deviation of the features across nodes, averaged over the three features. On this graph it starts at 0.53 and, with six GCN layers, ends at 0.03. It does not shrink at every single layer, since the random weights $W$ also stretch and rotate features, but the trend is clear. With these random weights the other aggregators also end small (0.03 for sum, 0.06 for max). The cleanest picture of over-smoothing is the normalized average alone: repeatedly applying $\tilde A$ converges toward a vector that depends only on node degrees.
 
 Other known limits:
 
