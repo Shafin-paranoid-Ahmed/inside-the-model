@@ -51,7 +51,7 @@
   --s-1: 0.25rem; --s-2: 0.5rem; --s-3: 0.75rem; --s-4: 1rem;
   --s-5: 1.5rem; --s-6: 2rem; --s-7: 3rem; --s-8: 5rem;
   --r-1: 3px; --r-2: 6px;
-  --measure: 40rem;
+  --measure: 60rem;
   --wide: 64rem;
   --gutter: 1rem;
   --ease: cubic-bezier(0.2, 0, 0, 1);
