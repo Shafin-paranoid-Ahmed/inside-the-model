@@ -121,6 +121,13 @@ function ship(name: string, w: Weights, lossCurve: { step: number; loss: number 
     training: { ...training, generator: 'scripts/train-models.ts', node: process.version,
       deterministicMath: 'arithmetic exp/tanh/sin/cos; Adam running bias products; mulberry32 createRng' } };
   const rounded = parseModel(manifest, packed.bytes);
+  // Keep a recoverable candidate before the expensive lesson probes. A failed
+  // teaching hypothesis must not discard training or publish unreviewed weights.
+  if (name === 'prompt-model') {
+    mkdirSync(resolve('tmp'), { recursive: true });
+    writeFileSync(resolve('tmp/prompt-model-candidate.bin'), packed.bytes);
+    writeFileSync(resolve('tmp/prompt-model-candidate.json'), JSON.stringify(manifest) + '\n');
+  }
   manifest.metrics = measure(rounded);
   const problem = accept(manifest.metrics);
   if (problem) { console.log(JSON.stringify(manifest.metrics, null, 2)); throw new Error(name + ' acceptance failed (nothing written): ' + problem); }

@@ -106,7 +106,7 @@ export function run(w: Weights, prompt: readonly number[], n: number, o: GenOpti
   const V = w.config.vocab.length, T = o.temperature ?? 0, ids: number[] = [], steps: GenStep[] = [];
   if (T > 0 && (o.us?.length ?? 0) < n) throw new Error('Need one uniform per sampled token');
   const pre = prefill(w, prompt);
-  let logits = pre.logits.slice(-V);
+  let logits: Float64Array = pre.logits.slice(-V);
   for (let i = 0; i < n && prompt.length + i < w.config.context; i++) {
     const z = Array.from(logits);
     if (o.mask) {

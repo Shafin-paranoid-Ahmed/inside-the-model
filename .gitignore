@@ -30,7 +30,7 @@ pnpm-debug.log*
 .playwright-mcp/
 
 
-
+tmp/
 .vitest/
 graphify-out/
 .tokensave/

@@ -201,21 +201,23 @@ export const BLOCK = 64;
 export interface Quant { norm: Float64Array; snapped: Float64Array; deq: Float64Array; absmax: Float64Array; mse: number }
 /** Blockwise absmax quantization: divide each block of 64 by its largest |w|, snap to the nearest level, multiply back. */
 export function quantize(w: Float64Array, scheme: Scheme): Quant {
-  const L = levelsOf(scheme), n = w.length, nb = n / BLOCK;
+  const L = levelsOf(scheme), n = w.length, nb = Math.ceil(n / BLOCK);
   const norm = new Float64Array(n), snapped = new Float64Array(n), deq = new Float64Array(n), absmax = new Float64Array(nb);
   let se = 0;
   for (let b = 0; b < nb; b++) {
     let m = 0;
-    for (let i = 0; i < BLOCK; i++) m = Math.max(m, Math.abs(w[b * BLOCK + i]));
+    for (let i = 0; i < Math.min(BLOCK, n - b * BLOCK); i++) m = Math.max(m, Math.abs(w[b * BLOCK + i]));
     absmax[b] = m;
     for (let i = 0; i < BLOCK; i++) {
-      const j = b * BLOCK + i, x = w[j] / m;
+      const j = b * BLOCK + i;
+      if (j >= n) break;
+      const x = m === 0 ? 0 : w[j] / m;
       let best = L[0];
       for (const l of L) if (Math.abs(l - x) < Math.abs(best - x)) best = l;
       norm[j] = x; snapped[j] = best; deq[j] = best * m; se += (w[j] - deq[j]) ** 2;
     }
   }
-  return { norm, snapped, deq, absmax, mse: se / n };
+  return { norm, snapped, deq, absmax, mse: n ? se / n : 0 };
 }
 export const variance = (w: ArrayLike<number>): number => {
   let m = 0, s = 0;
@@ -296,7 +298,7 @@ export function modeTime(mode: Mode, r = 2): { dur: number; markers: Marker[] } 
   }
 }
 /** Update number reached at time t (training modes): 50 per second, held at 300. */
-export const updateAt = (t: number): number => Math.min(STEPS, Math.floor(t * UPDATES_PER_S));
+export const updateAt = (t: number): number => Math.max(0, Math.min(STEPS, Math.floor(t * UPDATES_PER_S)));
 export const checkpointAt = (t: number): number => Math.floor(updateAt(t) / EVERY);
 
 export function memoryFrame(t: number) {
@@ -333,4 +335,15 @@ export function dataFrame(t: number) {
 }
 export function qloraFrame(t: number) {
   return { ck: checkpointAt(t), bars: ease(seg(t, 0, 3)) };
+}
+
+
+/** Visual sum of rank-one corrections; only its reveal fades, trained values stay fixed. */
+export function correctionFrame(t: number, c: Curve): Float64Array {
+  const f = lowrankFrame(Math.max(0,t),c.r), out = new Float64Array(D*D);
+  for (let k=0;k<=f.k;k++) {
+    const part=layer(c.B!,c.A!,c.r,k), opacity=k===f.k?f.fade:1;
+    for(let i=0;i<out.length;i++) out[i]+=part[i]*opacity;
+  }
+  return out;
 }

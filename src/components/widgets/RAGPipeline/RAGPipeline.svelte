@@ -1,0 +1,42 @@
+﻿<script lang="ts">
+ import {onMount} from 'svelte';
+ import FigureCard from '../_shared/FigureCard.svelte';
+ import Timeline from '../_shared/Timeline.svelte';
+ import {createLoop,reducedMotion} from '../_shared/loop';
+ import {pipeline,chunking,frameAt,QUESTION,type Reader,type evaluate} from './sim';
+ let {mode='pipeline',title='Answer from the handbook'}:{mode?:string;title?:string}=$props();
+ let query=$state(mode==='miss'?'What does the handbook say about sunday hours?':mode==='conflict'?'What are the opening hours on Saturday?':QUESTION),reader=$state.raw<Reader>(),evaluation=$state.raw<{k:number;semantic:ReturnType<typeof evaluate>;hybrid:ReturnType<typeof evaluate>}[]>(),t=$state(0),playing=$state(false),speed=$state(.5),hybrid=$state(false),newest=$state(false),budget=$state(mode==='conflict'?160:256),k=$state(mode==='prompt'?5:3),overlap=$state(false),host:HTMLDivElement,wake=()=>{};
+ const frame=$derived(frameAt(t)),out=$derived(reader?pipeline(reader,query,mode==='closed-book'?0:k,budget,hybrid,newest):null),size=$derived([16,32,64][Math.min(2,Math.floor(t/8*3))]),chunks=$derived(reader?chunking(reader.index,size,overlap?Math.floor(size/4):0):[]),ev=$derived(evaluation?.[Math.min(7,Math.floor(t/8*8))]),metrics=$derived(hybrid?ev?.hybrid:ev?.semantic);
+ $effect(()=>{playing;speed;wake();});
+ onMount(()=>{const worker=new Worker(new URL('./worker.ts',import.meta.url),{type:'module'});worker.onmessage=e=>{reader=e.data.reader;evaluation=e.data.evaluation;worker.terminate();};worker.postMessage('reader');let live=0,last=0;const loop=createLoop(host,(dt,now)=>{if(playing)live=(live+dt*speed)%8;else live=t;if(now-last>100||!playing){t=live;last=now;}return playing;},{onView:(_,first)=>{if(first&&!reducedMotion())playing=true;}});wake=loop.wake;return()=>{worker.terminate();loop.destroy();};});
+</script>
+<div bind:this={host}><FigureCard {title} label="Retrieval and an extractive reader on an invented handbook" role="group" aspect="1.4 / 1" narrowAspect="0.55 / 1">
+ <div class="scene"><p class="honesty">Invented Elm Street Tool Library handbook.<br/><b>Reader: copies the best-supported sentence (not a language model).</b></p>
+ {#if !out}<p>Preparing the search index and tokenizer…</p>
+ {:else if mode==='chunking'}
+ <p><b>{size} words per chunk · {overlap?Math.floor(size/4):0} words overlap</b></p>
+ {#each chunks as c}<div class:complete={c.complete} class="passage"><b>Chunk {c.id+1} · cosine {c.score.toFixed(3)}</b><p>{c.text}</p><small>{c.complete?'Seven days AND the holiday exception stay together.':'Does not contain the whole loan rule.'}</small></div>{/each}
+ {:else if mode==='eval'&&metrics&&ev}
+ <p><b>Retrieve {ev.k} passages for each of 24 questions</b></p>
+ <div class="metric">Evidence found: {metrics.rows.filter(r=>r.retrieved).length}/24 = {(100*metrics.recall).toFixed(1)}%<div style:width="{100*metrics.recall}%"></div></div>
+ <div class="metric">Exact answer: {metrics.rows.filter(r=>r.correct).length}/24 = {(100*metrics.accuracy).toFixed(1)}%<div style:width="{100*metrics.accuracy}%"></div></div>
+ <div class="cells">{#each metrics.rows as row,i}<button class:correct={row.correct} class:missing={!row.retrieved} title={row.q} onclick={()=>query=row.q}>{i+1}</button>{/each}</div>
+ {@const selected=metrics.rows.find(r=>r.q===query)}<p>{selected?selected.q:'Choose a numbered question to inspect its answer.'}</p>{#if selected}<p>Reader: {selected.answer}<br/>Evidence found: {selected.retrieved?'yes':'no'} · Exact answer: {selected.correct?'yes':'no'}</p>{/if}
+ {:else if mode==='prompt'}
+ <p><b>{out.total} / {budget} BPE tokens used</b> · instructions and question: {out.baseTokens}</p>
+ {#each out.allocation.slice(0,Math.min(5,Math.floor(t/8*6)+1)) as block}<div class="passage" class:rejected={!block.fits}><b>[{block.passage.id}] · {block.tokens} tokens · {block.fits?'included':'does not fit'}</b><p>{block.passage.text}</p></div>{/each}
+ <p>Whole passages are kept or skipped. We never cut a rule halfway through a sentence.</p>
+ {:else}
+ <div class="stages">{#each ['Embed','Search','Prompt','Read'] as stage,i}<span class:active={i===frame.stage}>{i+1}. {stage}</span>{/each}</div>
+ <p class="question">{query}</p>
+ {#if frame.stage===0}<p>The question becomes {reader?.index.S.length} numbers. Search compares its direction with every passage vector.</p>
+ {:else if frame.stage===1}<div>{#each out.ranks.slice(0,5) as row,i}<div class="rank" class:cut={i>=k}><span>{i+1}. [{row.id}]</span><span>{row.score.toFixed(3)}</span></div>{/each}<p>The first {mode==='closed-book'?0:k} passages are requested.</p></div>
+ {:else if frame.stage===2}{#each out.allocation as b}<div class="passage" class:rejected={!b.fits}><b>[{b.passage.id}]{b.passage.date?` · ${b.passage.date}`:''} · {b.fits?'in prompt':'budget excludes'}</b><p>{b.passage.text}</p></div>{/each}{#if !out.included.length}<p>No passage supplied.</p>{/if}
+ {:else}<p class="answer">{out.answer.text}{out.answer.id?` [${out.answer.id}]`:''}</p><p>Sentence score: {out.answer.score.toFixed(3)}. Copied from {out.included.length} included passages.</p>{#if mode==='conflict'}<p>A high matching score does not establish that a notice is current.</p>{/if}{/if}
+ {/if}</div>
+ {#snippet controls()}<Timeline bind:t bind:playing bind:speed duration={8} markers={mode==='chunking'?[{at:0,label:'16 words'},{at:2.67,label:'32 words'},{at:5.34,label:'64 words'}]:mode==='eval'?[{at:0,label:'k = 1'},{at:2,label:'k = 3'},{at:7,label:'k = 8'}]:[{at:0,label:'Embed'},{at:2,label:'Search'},{at:4,label:'Prompt'},{at:6,label:'Read'}]} onSeek={v=>{t=v;wake();}} onReset={()=>{t=0;wake();}} />{/snippet}
+ {#snippet readout()}<p>{mode==='eval'?'Solid cells: exact answer. Dashed cells: missing evidence. Other cells: evidence found, reader wrong.':mode==='chunking'?'Outlined chunks keep the duration and its holiday exception together.':mode==='prompt'?'Token counts use the same byte-level BPE algorithm as the tokenization lesson, trained on this handbook.':`${frame.label}. Retrieval supplies evidence; the reader still has to select the right sentence.`}</p>{/snippet}
+ {#snippet footer()}<div class="inputs">{#if mode==='miss'||mode==='eval'}<label><input type="checkbox" bind:checked={hybrid} /> Combine keyword and vector ranks</label>{:else if mode==='conflict'}<label><input type="checkbox" bind:checked={newest} /> Exclude superseded hours notice</label><label>Token budget {budget}<input type="range" min="120" max="512" step="8" bind:value={budget} /></label>{:else if mode==='chunking'}<label><input type="checkbox" bind:checked={overlap} /> Overlap neighbouring chunks by 25%</label>{:else if mode==='prompt'}<label>Token budget {budget}<input type="range" min="160" max="512" step="8" bind:value={budget} /></label>{:else}<label>Question<input value={query} oninput={e=>{query=e.currentTarget.value;t=0;wake();}} /></label>{/if}</div>{/snippet}
+</FigureCard></div>
+<style>.scene{position:absolute;inset:0;overflow:auto;padding:.5rem;font-family:var(--font-body);font-size:.94rem}.honesty{font-size:.85rem;border-bottom:1px solid var(--rule);padding-bottom:.7rem}.stages{display:flex;gap:.3rem;flex-wrap:wrap}.stages span{padding:.4rem;background:var(--bg-sunken)}.stages .active{outline:2px solid var(--accent)}.question{font-weight:600}.passage{padding:.6rem;margin:.6rem 0;border:1px solid var(--rule)}.passage p{margin:.3rem 0}.complete{border:2px solid var(--accent)}.rejected{border-style:dashed;color:var(--text-muted)}.rank{display:flex;justify-content:space-between;gap:1rem;padding:.6rem;border-bottom:1px solid var(--rule)}.cut{color:var(--text-muted)}.answer{font-size:1.2rem;line-height:1.6;padding:1rem;border-left:3px solid var(--accent)}.inputs{display:flex;flex-wrap:wrap;gap:1rem;padding:1rem}.inputs label{display:grid;gap:.4rem;flex:1;min-width:180px}.inputs input{accent-color:var(--accent)}.inputs input:not([type]){min-width:0;width:100%;padding:.5rem;background:var(--bg);border:1px solid var(--rule);color:var(--text)}.metric{margin:1rem 0}.metric div{height:12px;background:var(--viz-forward);margin-top:.4rem}.cells{display:grid;grid-template-columns:repeat(8,1fr);gap:.4rem}.cells button{padding:.5rem 0;border:2px solid var(--text-muted);background:var(--bg);color:var(--text)}.cells button.correct{background:var(--viz-seq-2);border-color:var(--accent)}.cells button.missing{border-style:dashed}@container (width < 540px){.scene{font-size:.9rem}.cells{grid-template-columns:repeat(6,1fr)}}
+</style>

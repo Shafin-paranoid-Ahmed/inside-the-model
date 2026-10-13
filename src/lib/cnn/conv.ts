@@ -23,7 +23,7 @@ export interface ConvLayer {
   bias: Float64Array;
 }
 
-export const map3 = (c: number, h: number, w: number, data = new Float64Array(c * h * w)): Map3 => ({
+export const map3 = (c: number, h: number, w: number, data: Float64Array = new Float64Array(c * h * w)): Map3 => ({
   c, h, w, data,
 });
 

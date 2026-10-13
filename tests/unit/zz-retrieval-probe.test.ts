@@ -1,0 +1,5 @@
+﻿import {it} from 'vitest';
+import {searchModel} from '../../src/components/widgets/EmbedSearch/sim';
+import {makeReader,pipeline,evaluate,chunking} from '../../src/components/widgets/RAGPipeline/sim';
+import {sweep} from '../../src/components/widgets/AnnIndex/sim';
+it('probe',()=>{const m=searchModel();console.log('SIMILARITY',JSON.stringify(m.raw.find(r=>r.id==='overdue')));const r=makeReader();for(const q of ['How much is the late fee for the pressure washer?','What is the deposit for item PW-200?','What are the opening hours on Saturday?'])for(const h of [false,true]){const p=pipeline(r,q,3,512,h);console.log('RAG',q,h,JSON.stringify({rank:p.ranks.slice(0,8),answer:p.answer,tokens:p.allocation.map(a=>[a.passage.id,a.tokens,a.fits]),base:p.baseTokens,total:p.total}));}console.log('EVAL',JSON.stringify([false,true].map(h=>{const e=evaluate(r,3,h);return[h,e.recall,e.accuracy,e.rows.filter(x=>!x.correct)]})));console.log('CHUNKS',JSON.stringify([20,40,80].map(n=>[n,chunking(r.index,n,0)])));console.log('SWEEP',JSON.stringify(sweep()));},120000);
