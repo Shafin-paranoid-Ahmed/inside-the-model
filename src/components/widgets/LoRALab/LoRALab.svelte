@@ -66,7 +66,7 @@
     {@const j=320}
     {@const f=S.quantFrame(t)}
     <svg viewBox="0 0 320 230" aria-hidden="true">
-      <text x="8" y="20">Block 6 · normalized weights</text>
+      <text x="8" y="20">Block 6 Â· normalized weights</text>
       {#each S.levelsOf(scheme) as l (l)}<line x1={160+l*140} x2={160+l*140} y1="42" y2="170" stroke="var(--rule)"/>{/each}
       {#each Array.from(q.norm.slice(j,j+64)) as v,i (i)}
         <circle cx={160+140*(v+(q.snapped[j+i]-v)*f.slide)} cy={55+(i%8)*14} r="2.5" fill="var(--viz-forward)"/>
@@ -74,20 +74,20 @@
       <text x="8" y="195">-1</text><text x="155" y="195">0</text><text x="295" y="195">1</text>
       <text x="8" y="222">Whole-matrix weight MSE: {q.mse.toFixed(6)}</text>
     </svg>
-  {:else if !run}<p class="loading">Training the comparison…</p>
+  {:else if !run}<p class="loading">Training the comparisonâ€¦</p>
   {:else if mode === 'lowrank' && curve}
     {@const f = S.lowrankFrame(t,rank)}
     {@const product = S.correctionFrame(t,curve)}
     <svg viewBox="0 0 320 230" aria-hidden="true">
-      <text x="8" y="20">B (32 × {rank}) · A ({rank} × 32)</text>
+      <text x="8" y="20">B (32 Ã— {rank}) Â· A ({rank} Ã— 32)</text>
       {#each Array.from(product) as v,i (i)}
         <rect x={72+(i%32)*5} y={32+Math.floor(i/32)*5} width="4.8" height="4.8" fill={v>=0?'var(--viz-pos)':'var(--viz-neg)'} opacity={Math.min(1,Math.abs(v)/0.65)}/>
       {/each}
-      <text x="8" y="214">Layer {f.k+1}/{rank} of 2BA · {64*rank} values</text>
+      <text x="8" y="214">Layer {f.k+1}/{rank} of 2BA Â· {64*rank} values</text>
     </svg>
   {:else if mode === 'spectrum' && task}
     <svg viewBox="0 0 320 230" aria-hidden="true">
-      <text x="8" y="20">Change directions · log size</text>
+      <text x="8" y="20">Change directions Â· log size</text>
       {#each Array.from(task.sv) as v,i (i)}
         <rect x={12+i*9.2} y={175-45*Math.log10(1+v/0.01)} width="7" height={45*Math.log10(1+v/0.01)} fill="var(--viz-forward)" opacity={i<S.spectrumFrame(t).bars?1:0.15}/>
       {/each}
@@ -106,12 +106,12 @@
     </svg>
   {:else}
     <svg viewBox="0 0 320 230" aria-hidden="true">
-      <text x="8" y="18">MSE per output · log scale</text>
+      <text x="8" y="18">MSE per output Â· log scale</text>
       {#each [0.001,0.01,0.1,1] as v (v)}<line x1="35" x2="285" y1={y(v)} y2={y(v)} stroke="var(--rule)"/><text x="1" y={y(v)+4}>{v}</text>{/each}
       {#each series as s,i (s.label)}<path d={path(s.curve,i)} fill="none" stroke={`var(${s.color})`} stroke-width="2"/>{/each}
       <line x1={35+index*250/60} x2={35+index*250/60} y1="25" y2="180" stroke="var(--text-muted)" stroke-dasharray="3 3"/>
       <text x="35" y="200">0</text><text x="248" y="200">300</text>
-      <text x="35" y="224">Update {index*5}{mode==='data'?` · ${run.data[S.dataFrame(t).i].n} examples`:''}</text>
+      <text x="35" y="224">Update {index*5}{mode==='data'?` Â· ${run.data[S.dataFrame(t).i].n} examples`:''}</text>
     </svg>
   {/if}
   {#snippet controls()}
@@ -122,14 +122,14 @@
     <p aria-live="polite">{time.markers.filter(m=>m.at<=t).at(-1)?.label}</p>
     {#if mode === 'memory'}<p>2 bytes weights + 2 bytes gradients + 12 bytes optimizer = 16 bytes per parameter. Activations and temporary buffers not counted. 1 GB = 10? bytes.</p>
     {:else if mode==='lowrank' && curve}
-      <p>Heat map adds the rank-one layers of the trained correction. Positive and negative changes use their signed colors. Completed first update entry = 2 × ({Array.from({length:rank},(_,k)=>`${curve.B![k].toFixed(4)} × ${curve.A![k*32].toFixed(4)}`).join(' + ')}) = {S.lowRank(curve.B!,curve.A!,rank)[0].toFixed(4)}.</p>
+      <p>Heat map adds the rank-one layers of the trained correction. Positive and negative changes use their signed colors. Completed first update entry = 2 Ã— ({Array.from({length:rank},(_,k)=>`${curve.B![k].toFixed(4)} Ã— ${curve.A![k*32].toFixed(4)}`).join(' + ')}) = {S.lowRank(curve.B!,curve.A!,rank)[0].toFixed(4)}.</p>
       <p>Base {W[0].toFixed(4)} + update {S.lowRank(curve.B!,curve.A!,rank)[0].toFixed(4)} = adapted {curve.W[0].toFixed(4)}. Entries above are rounded.</p>
     {:else if mode==='quantize'}
-      <p>One weight: {W[320].toFixed(5)} ÷ scale {q.absmax[5].toFixed(5)} = {q.norm[320].toFixed(5)} ? nearest level {q.snapped[320].toFixed(5)} ? × {q.absmax[5].toFixed(5)} = {q.deq[320].toFixed(5)}.</p>
-      <p>{scheme==='nf4'?'NF4: 16 uneven levels':'Symmetric int4: 15 levels (-7…7), one code unused'}. Dots move to their stored levels; the caption gives the completed conversion.</p>
+      <p>One weight: {W[320].toFixed(5)} Ã· scale {q.absmax[5].toFixed(5)} = {q.norm[320].toFixed(5)} ? nearest level {q.snapped[320].toFixed(5)} ? Ã— {q.absmax[5].toFixed(5)} = {q.deq[320].toFixed(5)}.</p>
+      <p>{scheme==='nf4'?'NF4: 16 uneven levels':'Symmetric int4: 15 levels (-7â€¦7), one code unused'}. Dots move to their stored levels; the caption gives the completed conversion.</p>
     {:else if mode==='train' || mode==='qlora' || mode==='data'}
       <p>Loss below 0.001 is drawn on the bottom line.</p>{#each series as s,i (s.label)}<p><span class="key" style:background={`var(${s.color})`}></span>{s.label}: <strong>{lossValues(s.curve,i)[index].toFixed(3)}</strong></p>{/each}
-      {#if mode==='qlora' && run}<p>NF4 base without adaptation: {run.qlora.baseNf4.toFixed(3)} MSE.</p><p>{model} model states (rank 16 adapters): {(['full','lora','qlora'] as const).map(s=>`${s} ${S.memory(s,preset).total.toFixed(2)} GB`).join(' · ')}. Activations excluded; quantization scales included.</p>{/if}
+      {#if mode==='qlora' && run}<p>NF4 base without adaptation: {run.qlora.baseNf4.toFixed(3)} MSE.</p><p>{model} model states (rank 16 adapters): {(['full','lora','qlora'] as const).map(s=>`${s} ${S.memory(s,preset).total.toFixed(2)} GB`).join(' Â· ')}. Activations excluded; quantization scales included.</p>{/if}
     {:else if mode==='spectrum'}<p>A larger bar means the learned change uses that direction more strongly. The top-two share uses squared singular values.</p>
     {:else if mode==='merge'}<p>The same trained rank-4 adapter and input go through both expressions. Folding the adapter removes its extra matrix products.</p>{/if}
     </div>
